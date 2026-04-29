@@ -15,14 +15,8 @@ const PUBLIC_API_PATHS = [
   "/api/automations/send-emails",
 ];
 
-const PUBLIC_FILE = /\.(.*)$/;
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  if (PUBLIC_FILE.test(pathname)) {
-    return NextResponse.next();
-  }
 
   if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
     return NextResponse.next();
@@ -32,11 +26,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/"
-  ) {
+  if (pathname === "/") {
     return NextResponse.next();
   }
 
@@ -83,5 +73,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    /*
+      Match all request paths except:
+      - _next static files
+      - _next image optimization files
+      - favicon
+      - any public/static file with an extension, like .png, .jpg, .svg, .css, .ico
+    */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
+  ],
 };
