@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -54,17 +53,16 @@ export default function LogoutPage() {
             marginBottom: 20,
           }}
         >
-          <Image
+          <img
             src="/cozy-logo.png"
             alt="Cozy Adventure Vacations logo"
-            width={220}
-            height={220}
             style={{
-              width: "220px",
+              width: 220,
               height: "auto",
+              maxWidth: "100%",
               objectFit: "contain",
+              display: "block",
             }}
-            priority
           />
         </div>
 

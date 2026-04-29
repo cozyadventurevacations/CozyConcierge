@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
@@ -120,17 +119,16 @@ function LoginPageContent() {
             marginBottom: 20,
           }}
         >
-          <Image
+          <img
             src="/cozy-logo.png"
             alt="Cozy Adventure Vacations logo"
-            width={220}
-            height={220}
             style={{
-              width: "220px",
+              width: 220,
               height: "auto",
+              maxWidth: "100%",
               objectFit: "contain",
+              display: "block",
             }}
-            priority
           />
         </div>
 
@@ -300,18 +298,17 @@ function LoginPageFallback() {
           textAlign: "center",
         }}
       >
-        <Image
+        <img
           src="/cozy-logo.png"
           alt="Cozy Adventure Vacations logo"
-          width={180}
-          height={180}
           style={{
-            width: "180px",
+            width: 180,
             height: "auto",
+            maxWidth: "100%",
             objectFit: "contain",
             margin: "0 auto",
+            display: "block",
           }}
-          priority
         />
 
         <p
