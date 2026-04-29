@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -25,6 +26,9 @@ type TravelerProfile = {
   passport_number: string | null;
   passport_country: string | null;
   passport_expiration_date: string | null;
+  relationship_to_client: string | null;
+  is_primary_traveler: boolean | null;
+  is_minor: boolean | null;
   notes: string | null;
   created_at: string | null;
 };
@@ -42,6 +46,19 @@ type LoyaltyNumber = {
   created_at: string | null;
 };
 
+type TravelerPassportDocument = {
+  id: string;
+  traveler_profile_id: string | null;
+  document_type: string;
+  document_title: string;
+  file_name: string;
+  storage_path: string;
+  content_type: string | null;
+  notes: string | null;
+  created_at: string | null;
+  signedUrl: string | null;
+};
+
 const VALID_LOYALTY_TYPES = [
   "airline",
   "hotel",
@@ -55,9 +72,33 @@ const VALID_LOYALTY_TYPES = [
   "other",
 ];
 
+function createSupabaseAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function cleanCheckbox(formData: FormData, fieldName: string) {
+  return formData.get(fieldName) === "on";
 }
 
 function buildTravelerNotes(formData: FormData) {
@@ -75,6 +116,12 @@ function buildTravelerNotes(formData: FormData) {
   }
 
   return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function buildName(firstName: string | null, middleName: string | null, lastName: string | null) {
+  return `${firstName ?? ""} ${middleName ?? ""} ${lastName ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
@@ -96,17 +143,19 @@ function formatDateTime(value: string | null | undefined, fallback = "Not provid
 function getTravelerName(traveler: TravelerProfile | null | undefined) {
   if (!traveler) return "Unnamed Traveler";
 
-  return `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
-    traveler.last_name ?? ""
-  }`
-    .replace(/\s+/g, " ")
-    .trim() || "Unnamed Traveler";
+  return (
+    buildName(traveler.first_name, traveler.middle_name, traveler.last_name) ||
+    traveler.passport_full_name ||
+    "Unnamed Traveler"
+  );
 }
 
-function getClientName(client: ClientAccount | null | undefined) {
-  if (!client) return "Unknown Client";
-
-  return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Unnamed Client";
+function sanitizeFileName(fileName: string) {
+  return fileName
+    .trim()
+    .replace(/[^a-zA-Z0-9.\-_]/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
 }
 
 function getLoyaltyTypeLabel(type: string | null | undefined) {
@@ -150,6 +199,41 @@ function LoyaltyTypeBadge({ type }: { type: string | null | undefined }) {
       }}
     >
       {getLoyaltyTypeLabel(type)}
+    </span>
+  );
+}
+
+function TravelerBadge({
+  relationship,
+  isPrimary,
+  isMinor,
+}: {
+  relationship?: string | null;
+  isPrimary?: boolean | null;
+  isMinor?: boolean | null;
+}) {
+  const label = isPrimary
+    ? "Primary Traveler"
+    : relationship
+      ? relationship
+      : "Additional Traveler";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: isPrimary ? "#f0fdf4" : "#f0f7f8",
+        color: isPrimary ? "#166534" : "var(--accent-dark)",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+      {isMinor ? " • Minor" : ""}
     </span>
   );
 }
@@ -225,45 +309,91 @@ async function getCurrentClientAccount() {
   };
 }
 
-async function addTravelerProfile(formData: FormData) {
-  "use server";
+async function ensurePrimaryTravelerProfile(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  clientAccount: ClientAccount,
+) {
+  const { data: existingPrimary, error: primaryError } = await supabase
+    .from("traveler_profiles")
+    .select("*")
+    .eq("client_account_id", clientAccount.id)
+    .eq("is_primary_traveler", true)
+    .maybeSingle();
 
-  const { supabase, clientAccount } = await getCurrentClientAccount();
-
-  const firstName = cleanText(formData, "first_name");
-  const lastName = cleanText(formData, "last_name");
-  const passportFullName = cleanText(formData, "passport_full_name");
-
-  if (!firstName && !lastName && !passportFullName) {
-    throw new Error("Please enter at least a traveler name or passport full name.");
+  if (primaryError) {
+    throw new Error(primaryError.message);
   }
 
-  const payload = {
-    client_account_id: clientAccount.id,
-    first_name: firstName,
-    middle_name: cleanText(formData, "middle_name"),
-    last_name: lastName,
-    date_of_birth: cleanText(formData, "date_of_birth"),
-    passport_full_name: passportFullName,
-    known_traveler_number: cleanText(formData, "known_traveler_number"),
-    redress_number: cleanText(formData, "redress_number"),
-    global_entry_passid: cleanText(formData, "global_entry_passid"),
-    passport_number: cleanText(formData, "passport_number"),
-    passport_country: cleanText(formData, "passport_country"),
-    passport_expiration_date: cleanText(formData, "passport_expiration_date"),
-    notes: buildTravelerNotes(formData),
-  };
-
-  const { error } = await supabase.from("traveler_profiles").insert(payload);
-
-  if (error) {
-    throw new Error(error.message);
+  if (existingPrimary) {
+    return existingPrimary as TravelerProfile;
   }
 
-  revalidatePath("/profile/traveler-numbers");
+  const { data: existingTravelers, error: existingTravelersError } = await supabase
+    .from("traveler_profiles")
+    .select("*")
+    .eq("client_account_id", clientAccount.id)
+    .order("created_at", { ascending: true });
+
+  if (existingTravelersError) {
+    throw new Error(existingTravelersError.message);
+  }
+
+  const travelerRows = (existingTravelers ?? []) as TravelerProfile[];
+
+  const matchingTraveler =
+    travelerRows.find((traveler) => {
+      const firstMatches =
+        (traveler.first_name ?? "").trim().toLowerCase() ===
+        (clientAccount.first_name ?? "").trim().toLowerCase();
+
+      const lastMatches =
+        (traveler.last_name ?? "").trim().toLowerCase() ===
+        (clientAccount.last_name ?? "").trim().toLowerCase();
+
+      return firstMatches && lastMatches;
+    }) ?? travelerRows[0];
+
+  if (matchingTraveler) {
+    const { data: updatedTraveler, error: updateError } = await supabase
+      .from("traveler_profiles")
+      .update({
+        is_primary_traveler: true,
+        relationship_to_client: "Self",
+        is_minor: false,
+      })
+      .eq("id", matchingTraveler.id)
+      .eq("client_account_id", clientAccount.id)
+      .select("*")
+      .single();
+
+    if (updateError || !updatedTraveler) {
+      throw new Error(updateError?.message ?? "Unable to update primary traveler.");
+    }
+
+    return updatedTraveler as TravelerProfile;
+  }
+
+  const { data: insertedTraveler, error: insertError } = await supabase
+    .from("traveler_profiles")
+    .insert({
+      client_account_id: clientAccount.id,
+      first_name: clientAccount.first_name,
+      last_name: clientAccount.last_name,
+      relationship_to_client: "Self",
+      is_primary_traveler: true,
+      is_minor: false,
+    })
+    .select("*")
+    .single();
+
+  if (insertError || !insertedTraveler) {
+    throw new Error(insertError?.message ?? "Unable to create primary traveler.");
+  }
+
+  return insertedTraveler as TravelerProfile;
 }
 
-async function updateTravelerProfile(formData: FormData) {
+async function updatePrimaryTravelerNumbers(formData: FormData) {
   "use server";
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
@@ -274,32 +404,219 @@ async function updateTravelerProfile(formData: FormData) {
     throw new Error("Missing traveler ID.");
   }
 
-  const payload = {
-    first_name: cleanText(formData, "first_name"),
-    middle_name: cleanText(formData, "middle_name"),
-    last_name: cleanText(formData, "last_name"),
-    date_of_birth: cleanText(formData, "date_of_birth"),
-    passport_full_name: cleanText(formData, "passport_full_name"),
-    known_traveler_number: cleanText(formData, "known_traveler_number"),
-    redress_number: cleanText(formData, "redress_number"),
-    global_entry_passid: cleanText(formData, "global_entry_passid"),
-    passport_number: cleanText(formData, "passport_number"),
-    passport_country: cleanText(formData, "passport_country"),
-    passport_expiration_date: cleanText(formData, "passport_expiration_date"),
-    notes: buildTravelerNotes(formData),
-  };
-
   const { error } = await supabase
     .from("traveler_profiles")
-    .update(payload)
+    .update({
+      known_traveler_number: cleanText(formData, "known_traveler_number"),
+      redress_number: cleanText(formData, "redress_number"),
+      global_entry_passid: cleanText(formData, "global_entry_passid"),
+      notes: buildTravelerNotes(formData),
+    })
     .eq("id", travelerId)
-    .eq("client_account_id", clientAccount.id);
+    .eq("client_account_id", clientAccount.id)
+    .eq("is_primary_traveler", true);
 
   if (error) {
     throw new Error(error.message);
   }
 
   revalidatePath("/profile/traveler-numbers");
+}
+
+async function addAdditionalTravelerProfile(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const firstName = cleanText(formData, "first_name");
+  const middleName = cleanText(formData, "middle_name");
+  const lastName = cleanText(formData, "last_name");
+
+  if (!firstName || !lastName) {
+    throw new Error("First name and last name are required for additional travelers.");
+  }
+
+  const travelerName = buildName(firstName, middleName, lastName);
+
+  const { error } = await supabase.from("traveler_profiles").insert({
+    client_account_id: clientAccount.id,
+    first_name: firstName,
+    middle_name: middleName,
+    last_name: lastName,
+    date_of_birth: cleanText(formData, "date_of_birth"),
+    passport_full_name: travelerName || null,
+    known_traveler_number: cleanText(formData, "known_traveler_number"),
+    redress_number: cleanText(formData, "redress_number"),
+    global_entry_passid: cleanText(formData, "global_entry_passid"),
+    passport_number: cleanText(formData, "passport_number"),
+    passport_country: cleanText(formData, "passport_country"),
+    passport_expiration_date: cleanText(formData, "passport_expiration_date"),
+    relationship_to_client: cleanText(formData, "relationship_to_client"),
+    is_primary_traveler: false,
+    is_minor: cleanCheckbox(formData, "is_minor"),
+    notes: buildTravelerNotes(formData),
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/profile/traveler-numbers");
+}
+
+async function updateAdditionalTravelerProfile(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const travelerId = String(formData.get("traveler_id") ?? "").trim();
+  const firstName = cleanText(formData, "first_name");
+  const middleName = cleanText(formData, "middle_name");
+  const lastName = cleanText(formData, "last_name");
+
+  if (!travelerId) {
+    throw new Error("Missing traveler ID.");
+  }
+
+  if (!firstName || !lastName) {
+    throw new Error("First name and last name are required for additional travelers.");
+  }
+
+  const travelerName = buildName(firstName, middleName, lastName);
+
+  const { error } = await supabase
+    .from("traveler_profiles")
+    .update({
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      date_of_birth: cleanText(formData, "date_of_birth"),
+      passport_full_name: travelerName || null,
+      known_traveler_number: cleanText(formData, "known_traveler_number"),
+      redress_number: cleanText(formData, "redress_number"),
+      global_entry_passid: cleanText(formData, "global_entry_passid"),
+      passport_number: cleanText(formData, "passport_number"),
+      passport_country: cleanText(formData, "passport_country"),
+      passport_expiration_date: cleanText(formData, "passport_expiration_date"),
+      relationship_to_client: cleanText(formData, "relationship_to_client"),
+      is_minor: cleanCheckbox(formData, "is_minor"),
+      notes: buildTravelerNotes(formData),
+    })
+    .eq("id", travelerId)
+    .eq("client_account_id", clientAccount.id)
+    .neq("is_primary_traveler", true);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/profile/traveler-numbers");
+}
+
+async function uploadAdditionalTravelerPassport(formData: FormData) {
+  "use server";
+
+  const { user, clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const travelerId = String(formData.get("traveler_id") ?? "").trim();
+
+  if (!travelerId) {
+    throw new Error("Missing traveler ID.");
+  }
+
+  const { data: traveler, error: travelerError } = await supabaseAdmin
+    .from("traveler_profiles")
+    .select("id, client_account_id, first_name, middle_name, last_name, is_primary_traveler")
+    .eq("id", travelerId)
+    .eq("client_account_id", clientAccount.id)
+    .single();
+
+  if (travelerError || !traveler) {
+    throw new Error(travelerError?.message ?? "Traveler not found.");
+  }
+
+  if (traveler.is_primary_traveler === true) {
+    throw new Error("Use the main passport upload page for the primary traveler.");
+  }
+
+  const consent = String(formData.get("passport_upload_consent") ?? "");
+
+  if (consent !== "accepted") {
+    throw new Error("You must acknowledge the passport upload notice before uploading.");
+  }
+
+  const file = formData.get("passport_file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Please choose a passport image or PDF to upload.");
+  }
+
+  const maxFileSize = 15 * 1024 * 1024;
+
+  if (file.size > maxFileSize) {
+    throw new Error("File is too large. Please upload a file under 15MB.");
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+  ];
+
+  if (file.type && !allowedTypes.includes(file.type)) {
+    throw new Error("Please upload a JPG, PNG, WEBP, or PDF file.");
+  }
+
+  const travelerName =
+    buildName(
+      traveler.first_name as string | null,
+      traveler.middle_name as string | null,
+      traveler.last_name as string | null,
+    ) || "Additional Traveler";
+
+  const documentTitle =
+    cleanText(formData, "document_title") ?? `${travelerName} Passport`;
+
+  const notes = cleanText(formData, "passport_notes");
+
+  const originalFileName = sanitizeFileName(file.name || "passport-document");
+
+  const storagePath = `${clientAccount.id}/passport/${travelerId}/${crypto.randomUUID()}-${originalFileName}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("client-documents")
+    .upload(storagePath, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { error: insertError } = await supabaseAdmin.from("client_documents").insert({
+    client_account_id: clientAccount.id,
+    traveler_profile_id: travelerId,
+    uploaded_by_user_id: user.id,
+    document_type: "passport",
+    document_title: documentTitle,
+    file_name: file.name || originalFileName,
+    storage_path: storagePath,
+    content_type: file.type || null,
+    notes,
+  });
+
+  if (insertError) {
+    await supabaseAdmin.storage.from("client-documents").remove([storagePath]);
+    throw new Error(insertError.message);
+  }
+
+  revalidatePath("/profile");
+  revalidatePath("/profile/passport-upload");
+  revalidatePath("/profile/traveler-numbers");
+  redirect("/profile/traveler-numbers?passportUploaded=true");
 }
 
 async function deleteTravelerProfile(formData: FormData) {
@@ -311,6 +628,21 @@ async function deleteTravelerProfile(formData: FormData) {
 
   if (!travelerId) {
     throw new Error("Missing traveler ID.");
+  }
+
+  const { data: traveler, error: travelerError } = await supabase
+    .from("traveler_profiles")
+    .select("id, is_primary_traveler")
+    .eq("id", travelerId)
+    .eq("client_account_id", clientAccount.id)
+    .single();
+
+  if (travelerError || !traveler) {
+    throw new Error(travelerError?.message ?? "Traveler not found.");
+  }
+
+  if (traveler.is_primary_traveler) {
+    throw new Error("The primary traveler cannot be deleted.");
   }
 
   const { error } = await supabase
@@ -365,11 +697,7 @@ async function addLoyaltyNumber(formData: FormData) {
 
   const travelerName =
     traveler.passport_full_name ||
-    `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
-      traveler.last_name ?? ""
-    }`
-      .replace(/\s+/g, " ")
-      .trim();
+    buildName(traveler.first_name, traveler.middle_name, traveler.last_name);
 
   const { error } = await supabase.from("traveler_loyalty_numbers").insert({
     traveler_profile_id: travelerId,
@@ -433,11 +761,7 @@ async function updateLoyaltyNumber(formData: FormData) {
 
   const travelerName =
     traveler.passport_full_name ||
-    `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
-      traveler.last_name ?? ""
-    }`
-      .replace(/\s+/g, " ")
-      .trim();
+    buildName(traveler.first_name, traveler.middle_name, traveler.last_name);
 
   const { error } = await supabase
     .from("traveler_loyalty_numbers")
@@ -484,152 +808,243 @@ async function deleteLoyaltyNumber(formData: FormData) {
   revalidatePath("/profile/traveler-numbers");
 }
 
-export default async function TravelerNumbersPage() {
-  const { supabase, clientAccount } = await getCurrentClientAccount();
-
-  const { data: travelers, error: travelersError } = await supabase
-    .from("traveler_profiles")
-    .select("*")
-    .eq("client_account_id", clientAccount.id)
-    .order("created_at", { ascending: true });
-
-  const travelerRows = (travelers ?? []) as TravelerProfile[];
-
-  const { data: loyaltyNumbers, error: loyaltyError } = await supabase
-    .from("traveler_loyalty_numbers")
-    .select("*")
-    .eq("client_account_id", clientAccount.id)
-    .order("created_at", { ascending: false });
-
-  const loyaltyRows = (loyaltyNumbers ?? []) as LoyaltyNumber[];
-
+function PrimaryTravelerNumbersForm({ traveler }: { traveler: TravelerProfile }) {
   return (
-    <PageShell
-      title="Traveler Numbers"
-      subtitle="Store trusted traveler numbers, passport reference details, and rewards memberships."
+    <form action={updatePrimaryTravelerNumbers} className="stack">
+      <input type="hidden" name="traveler_id" value={traveler.id} />
+
+      <div className="grid grid-3">
+        <label className="stack-sm">
+          <span className="label">Known Traveler Number / KTN</span>
+          <input
+            className="input"
+            name="known_traveler_number"
+            defaultValue={traveler.known_traveler_number ?? ""}
+          />
+        </label>
+
+        <label className="stack-sm">
+          <span className="label">Redress Number</span>
+          <input
+            className="input"
+            name="redress_number"
+            defaultValue={traveler.redress_number ?? ""}
+          />
+        </label>
+
+        <label className="stack-sm">
+          <span className="label">Global Entry PASSID</span>
+          <input
+            className="input"
+            name="global_entry_passid"
+            defaultValue={traveler.global_entry_passid ?? ""}
+          />
+        </label>
+      </div>
+
+      <label className="stack-sm">
+        <span className="label">Other Traveler Numbers / IDs</span>
+        <input
+          className="input"
+          name="other_traveler_numbers"
+          placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
+        />
+      </label>
+
+      <label className="stack-sm">
+        <span className="label">Notes</span>
+        <textarea
+          className="textarea"
+          name="notes"
+          defaultValue={traveler.notes ?? ""}
+          rows={3}
+          placeholder="Optional notes about trusted traveler numbers or travel IDs"
+        />
+      </label>
+
+      <button type="submit" className="btn btn-primary">
+        Save Traveler Numbers
+      </button>
+    </form>
+  );
+}
+
+function AdditionalTravelerForm({
+  traveler,
+  passportDocuments,
+}: {
+  traveler: TravelerProfile;
+  passportDocuments: TravelerPassportDocument[];
+}) {
+  return (
+    <details
+      className="card stack"
+      style={{
+        background: "#fbfdfe",
+        border: "1px solid #e6f0f2",
+      }}
     >
-      <div
-        className="card stack"
+      <summary
         style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-          border: "1px solid #e6f0f2",
+          cursor: "pointer",
+          listStyle: "none",
         }}
       >
-        <p
+        <div
           style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
           }}
         >
-          Cozy Concierge
-        </p>
+          <div>
+            <TravelerBadge
+              relationship={traveler.relationship_to_client}
+              isPrimary={false}
+              isMinor={traveler.is_minor}
+            />
+            <h3 style={{ margin: "8px 0 0" }}>{getTravelerName(traveler)}</h3>
+            <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.5 }}>
+              Added {formatDateTime(traveler.created_at)}
+            </p>
+          </div>
 
-        <h1 style={{ margin: "4px 0 0", fontSize: 30 }}>
-          Traveler Numbers & Rewards Memberships
-        </h1>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Profile owner: <strong>{getClientName(clientAccount)}</strong>
-          {clientAccount.email ? ` — ${clientAccount.email}` : ""}
-        </p>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/profile" className="btn btn-primary">
-            Back to Profile
-          </Link>
-
-          <Link href="/dashboard" className="btn btn-primary">
-            Dashboard
-          </Link>
+          <span
+            style={{
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+              fontSize: 14,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Edit Traveler
+          </span>
         </div>
-      </div>
+      </summary>
 
-      <div
-        className="card"
-        style={{
-          border: "1px solid #fed7aa",
-          background: "#fff7ed",
-          color: "#9a3412",
-          lineHeight: 1.6,
-        }}
-      >
-        <strong>Sensitive information notice:</strong> Do not store passwords here.
-        Only add traveler numbers and rewards information needed for travel planning
-        or reservation support.
-      </div>
+      <form action={updateAdditionalTravelerProfile} className="stack">
+        <input type="hidden" name="traveler_id" value={traveler.id} />
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Add Traveler</h2>
+        <section className="stack">
+          <h4 style={{ margin: 0 }}>Traveler Details</h4>
 
-        <form action={addTravelerProfile} className="stack">
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            Enter the traveler&apos;s name exactly as it appears on their passport
+            or travel document.
+          </p>
+
           <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">First Name</span>
-              <input className="input" name="first_name" />
-            </label>
-
-            <label className="stack-sm">
-              <span className="label">Middle Name</span>
-              <input className="input" name="middle_name" />
-            </label>
-
-            <label className="stack-sm">
-              <span className="label">Last Name</span>
-              <input className="input" name="last_name" />
-            </label>
-          </div>
-
-          <div className="grid grid-2">
-            <label className="stack-sm">
-              <span className="label">Passport Full Name</span>
               <input
                 className="input"
-                name="passport_full_name"
-                placeholder="Full name exactly as shown on passport"
+                name="first_name"
+                defaultValue={traveler.first_name ?? ""}
+                required
               />
             </label>
 
             <label className="stack-sm">
-              <span className="label">Date of Birth</span>
-              <input className="input" type="date" name="date_of_birth" />
+              <span className="label">Middle Name</span>
+              <input
+                className="input"
+                name="middle_name"
+                defaultValue={traveler.middle_name ?? ""}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Last Name</span>
+              <input
+                className="input"
+                name="last_name"
+                defaultValue={traveler.last_name ?? ""}
+                required
+              />
             </label>
           </div>
+
+          <div className="grid grid-3">
+            <label className="stack-sm">
+              <span className="label">Relationship to Client</span>
+              <select
+                className="select"
+                name="relationship_to_client"
+                defaultValue={traveler.relationship_to_client ?? ""}
+              >
+                <option value="">Select relationship</option>
+                <option value="Spouse">Spouse</option>
+                <option value="Child">Child</option>
+                <option value="Parent">Parent</option>
+                <option value="Grandparent">Grandparent</option>
+                <option value="Grandchild">Grandchild</option>
+                <option value="Friend">Friend</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Date of Birth</span>
+              <input
+                className="input"
+                type="date"
+                name="date_of_birth"
+                defaultValue={traveler.date_of_birth ?? ""}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Minor Traveler</span>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  minHeight: 46,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="is_minor"
+                  defaultChecked={traveler.is_minor === true}
+                />
+                This traveler is a minor child
+              </label>
+            </label>
+          </div>
+        </section>
+
+        <section className="stack">
+          <h4 style={{ margin: 0 }}>Traveler Numbers</h4>
 
           <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">Known Traveler Number / KTN</span>
-              <input className="input" name="known_traveler_number" />
+              <input
+                className="input"
+                name="known_traveler_number"
+                defaultValue={traveler.known_traveler_number ?? ""}
+              />
             </label>
 
             <label className="stack-sm">
               <span className="label">Redress Number</span>
-              <input className="input" name="redress_number" />
+              <input
+                className="input"
+                name="redress_number"
+                defaultValue={traveler.redress_number ?? ""}
+              />
             </label>
 
             <label className="stack-sm">
               <span className="label">Global Entry PASSID</span>
-              <input className="input" name="global_entry_passid" />
-            </label>
-          </div>
-
-          <div className="grid grid-3">
-            <label className="stack-sm">
-              <span className="label">Passport Number</span>
-              <input className="input" name="passport_number" />
-            </label>
-
-            <label className="stack-sm">
-              <span className="label">Passport Country</span>
-              <input className="input" name="passport_country" placeholder="US" />
-            </label>
-
-            <label className="stack-sm">
-              <span className="label">Passport Expiration Date</span>
-              <input className="input" type="date" name="passport_expiration_date" />
+              <input
+                className="input"
+                name="global_entry_passid"
+                defaultValue={traveler.global_entry_passid ?? ""}
+              />
             </label>
           </div>
 
@@ -641,320 +1056,472 @@ export default async function TravelerNumbersPage() {
               placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
             />
           </label>
+        </section>
+
+        <section
+          className="stack"
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <h4 style={{ margin: 0 }}>Additional Traveler Passport Information</h4>
+
+          <div className="grid grid-3">
+            <label className="stack-sm">
+              <span className="label">Passport Number</span>
+              <input
+                className="input"
+                name="passport_number"
+                defaultValue={traveler.passport_number ?? ""}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Passport Country</span>
+              <input
+                className="input"
+                name="passport_country"
+                defaultValue={traveler.passport_country ?? ""}
+                placeholder="US"
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Passport Expiration Date</span>
+              <input
+                className="input"
+                type="date"
+                name="passport_expiration_date"
+                defaultValue={traveler.passport_expiration_date ?? ""}
+              />
+            </label>
+          </div>
+        </section>
+
+        <label className="stack-sm">
+          <span className="label">Notes</span>
+          <textarea
+            className="textarea"
+            name="notes"
+            defaultValue={traveler.notes ?? ""}
+            rows={3}
+          />
+        </label>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <button type="submit" className="btn btn-primary">
+            Save Additional Traveler
+          </button>
+        </div>
+      </form>
+
+      <div
+        className="stack"
+        style={{
+          padding: 14,
+          borderRadius: 14,
+          border: "1px solid #e6f0f2",
+          background: "#ffffff",
+        }}
+      >
+        <h4 style={{ margin: 0 }}>Passport Photo / Document Upload</h4>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Upload a passport image or PDF for this additional traveler. The file stays
+          connected to this client account and this traveler.
+        </p>
+
+        <form action={uploadAdditionalTravelerPassport} className="stack">
+          <input type="hidden" name="traveler_id" value={traveler.id} />
 
           <label className="stack-sm">
-            <span className="label">Notes</span>
-            <textarea
-              className="textarea"
-              name="notes"
-              placeholder="Optional traveler notes"
-              rows={3}
+            <span className="label">Document Title</span>
+            <input
+              className="input"
+              name="document_title"
+              placeholder={`${getTravelerName(traveler)} Passport`}
             />
           </label>
 
+          <label className="stack-sm">
+            <span className="label">Passport File</span>
+            <input
+              className="input"
+              type="file"
+              name="passport_file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              required
+            />
+          </label>
+
+          <label className="stack-sm">
+            <span className="label">Passport Upload Notes</span>
+            <textarea
+              className="textarea"
+              name="passport_notes"
+              rows={3}
+              placeholder="Optional notes about this passport upload"
+            />
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              padding: "12px",
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+              lineHeight: 1.5,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              name="passport_upload_consent"
+              value="accepted"
+              required
+              style={{ marginTop: 4 }}
+            />
+            <span>
+              I authorize Cozy Adventure Vacations to store this passport document
+              in my secure client document area for travel planning, supplier
+              documentation, or trip support purposes.
+            </span>
+          </label>
+
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#c2410c",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Upload limits:</strong> JPG, PNG, WEBP, or PDF. Maximum file size
+            is 15MB.
+          </div>
+
           <button type="submit" className="btn btn-primary">
-            Add Traveler
+            Upload Passport for This Traveler
           </button>
         </form>
-      </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Add New Rewards Membership</h2>
-
-        {travelerRows.length === 0 ? (
+        {passportDocuments.length === 0 ? (
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            Add a traveler profile first, then you can add rewards memberships.
+            No passport documents have been uploaded for this traveler yet.
           </p>
         ) : (
-          <form action={addLoyaltyNumber} className="stack">
-            <div className="grid grid-3">
-              <label className="stack-sm">
-                <span className="label">Traveler</span>
-                <select className="select" name="traveler_profile_id" required>
-                  <option value="">Choose traveler</option>
-                  {travelerRows.map((traveler) => (
-                    <option key={traveler.id} value={traveler.id}>
-                      {getTravelerName(traveler)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>File Name</th>
+                  <th>Uploaded</th>
+                  <th>Open</th>
+                </tr>
+              </thead>
 
-              <label className="stack-sm">
-                <span className="label">Rewards Type</span>
-                <select className="select" name="loyalty_type" defaultValue="airline">
-                  <option value="airline">Airline</option>
-                  <option value="hotel">Hotel</option>
-                  <option value="cruise">Cruise Line</option>
-                  <option value="rental_car">Rental Car</option>
-                  <option value="rail">Rail</option>
-                  <option value="theme_park">Theme Park</option>
-                  <option value="credit_card">Credit Card Travel Program</option>
-                  <option value="tour">Tour / Activity</option>
-                  <option value="vacation_package">Vacation Package / Supplier</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-
-              <label className="stack-sm">
-                <span className="label">Company Name</span>
-                <input
-                  className="input"
-                  name="company_name"
-                  placeholder="American Airlines, Hilton, Disney, Royal Caribbean"
-                  required
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-3">
-              <label className="stack-sm">
-                <span className="label">Program Name</span>
-                <input
-                  className="input"
-                  name="program_name"
-                  placeholder="AAdvantage, Hilton Honors, Castaway Club"
-                />
-              </label>
-
-              <label className="stack-sm">
-                <span className="label">Rewards / Membership Number</span>
-                <input className="input" name="loyalty_number" required />
-              </label>
-
-              <label className="stack-sm">
-                <span className="label">Notes</span>
-                <input className="input" name="notes" placeholder="Optional notes" />
-              </label>
-            </div>
-
-            <button type="submit" className="btn btn-primary">
-              Add Rewards Membership
-            </button>
-          </form>
+              <tbody>
+                {passportDocuments.map((document) => (
+                  <tr key={document.id}>
+                    <td>{document.document_title}</td>
+                    <td>{document.file_name}</td>
+                    <td>{formatDateTime(document.created_at)}</td>
+                    <td>
+                      {document.signedUrl ? (
+                        <a
+                          href={document.signedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-primary"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Open 5-Min Link
+                        </a>
+                      ) : (
+                        "Unavailable"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Traveler Profiles & Existing Rewards Memberships</h2>
+      <form action={deleteTravelerProfile}>
+        <input type="hidden" name="traveler_id" value={traveler.id} />
+        <button type="submit" className="btn btn-primary">
+          Delete Additional Traveler
+        </button>
+      </form>
+    </details>
+  );
+}
 
-        {travelersError ? (
-          <div>
-            <p>
-              <strong>Error loading travelers:</strong>
-            </p>
-            <pre>{JSON.stringify(travelersError, null, 2)}</pre>
-          </div>
-        ) : loyaltyError ? (
-          <div>
-            <p>
-              <strong>Error loading loyalty numbers:</strong>
-            </p>
-            <pre>{JSON.stringify(loyaltyError, null, 2)}</pre>
-          </div>
-        ) : travelerRows.length === 0 ? (
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            No traveler profiles have been added yet.
+export default async function TravelerNumbersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ passportUploaded?: string }>;
+}) {
+  const { passportUploaded } = await searchParams;
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const primaryTraveler = await ensurePrimaryTravelerProfile(supabase, clientAccount);
+
+  const { data: travelers, error: travelersError } = await supabase
+    .from("traveler_profiles")
+    .select("*")
+    .eq("client_account_id", clientAccount.id)
+    .order("is_primary_traveler", { ascending: false })
+    .order("created_at", { ascending: true });
+
+  const travelerRows = (travelers ?? []) as TravelerProfile[];
+  const additionalTravelers = travelerRows.filter(
+    (traveler) => traveler.is_primary_traveler !== true,
+  );
+
+  const { data: loyaltyNumbers, error: loyaltyError } = await supabase
+    .from("traveler_loyalty_numbers")
+    .select("*")
+    .eq("client_account_id", clientAccount.id)
+    .order("created_at", { ascending: false });
+
+  const loyaltyRows = (loyaltyNumbers ?? []) as LoyaltyNumber[];
+
+  const { data: travelerPassportDocuments, error: passportDocumentsError } =
+    await supabase
+      .from("client_documents")
+      .select(
+        "id, traveler_profile_id, document_type, document_title, file_name, storage_path, content_type, notes, created_at",
+      )
+      .eq("client_account_id", clientAccount.id)
+      .eq("document_type", "passport")
+      .not("traveler_profile_id", "is", null)
+      .order("created_at", { ascending: false });
+
+  const passportDocumentRows =
+    (travelerPassportDocuments ?? []) as Omit<TravelerPassportDocument, "signedUrl">[];
+
+  const passportDocumentsWithUrls: TravelerPassportDocument[] = await Promise.all(
+    passportDocumentRows.map(async (document) => {
+      const { data } = await supabaseAdmin.storage
+        .from("client-documents")
+        .createSignedUrl(document.storage_path, 60 * 5);
+
+      return {
+        ...document,
+        signedUrl: data?.signedUrl ?? null,
+      };
+    }),
+  );
+
+  return (
+    <PageShell
+      title="Traveler Numbers & Rewards"
+      subtitle="Manage trusted traveler numbers and rewards memberships."
+    >
+      {passportUploaded === "true" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <strong>Additional traveler passport document uploaded successfully.</strong>
+        </div>
+      ) : null}
+
+      {passportDocumentsError ? (
+        <div className="card">
+          <p>
+            <strong>Error loading additional traveler passport documents:</strong>
           </p>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {travelerRows.map((traveler) => {
-              const travelerLoyaltyRows = loyaltyRows.filter(
-                (loyalty) => loyalty.traveler_profile_id === traveler.id,
-              );
+          <pre>{JSON.stringify(passportDocumentsError, null, 2)}</pre>
+        </div>
+      ) : null}
 
-              return (
-                <div
-                  key={traveler.id}
-                  className="card stack"
-                  style={{ background: "#fbfdfe" }}
-                >
-                  <form action={updateTravelerProfile} className="stack">
-                    <input type="hidden" name="traveler_id" value={traveler.id} />
+      <div
+        className="card stack"
+        style={{
+          border: "1px solid #fed7aa",
+          background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
+        }}
+      >
+        <p style={{ margin: 0 }}>
+          <strong>Sensitive information notice:</strong> Do not store passwords here.
+          Only add traveler numbers and rewards information needed for travel planning
+          or reservation support.
+        </p>
+      </div>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <div>
-                        <h3 style={{ margin: 0 }}>{getTravelerName(traveler)}</h3>
-                        <p style={{ margin: "4px 0 0", color: "#667085" }}>
-                          Added {formatDateTime(traveler.created_at)}
-                        </p>
-                      </div>
+      {travelersError ? (
+        <div className="card">
+          <p>
+            <strong>Error loading travelers:</strong>
+          </p>
+          <pre>{JSON.stringify(travelersError, null, 2)}</pre>
+        </div>
+      ) : (
+        <>
+          <div className="card stack">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "flex-start",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Your Traveler Numbers</h2>
+                <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+                  These numbers are connected to your primary client profile. Your
+                  name, date of birth, and passport details are managed from your
+                  main profile and passport section.
+                </p>
+              </div>
 
-                      <p style={{ margin: 0, color: "#667085" }}>
-                        Rewards Memberships:{" "}
-                        <strong>{travelerLoyaltyRows.length}</strong>
-                      </p>
-                    </div>
+              <TravelerBadge
+                relationship="Self"
+                isPrimary={true}
+                isMinor={false}
+              />
+            </div>
 
-                    <div className="grid grid-3">
-                      <label className="stack-sm">
-                        <span className="label">First Name</span>
-                        <input
-                          className="input"
-                          name="first_name"
-                          defaultValue={traveler.first_name ?? ""}
-                        />
-                      </label>
+            <PrimaryTravelerNumbersForm traveler={primaryTraveler} />
+          </div>
 
-                      <label className="stack-sm">
-                        <span className="label">Middle Name</span>
-                        <input
-                          className="input"
-                          name="middle_name"
-                          defaultValue={traveler.middle_name ?? ""}
-                        />
-                      </label>
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Rewards Memberships</h2>
 
-                      <label className="stack-sm">
-                        <span className="label">Last Name</span>
-                        <input
-                          className="input"
-                          name="last_name"
-                          defaultValue={traveler.last_name ?? ""}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid grid-2">
-                      <label className="stack-sm">
-                        <span className="label">Passport Full Name</span>
-                        <input
-                          className="input"
-                          name="passport_full_name"
-                          defaultValue={traveler.passport_full_name ?? ""}
-                          placeholder="Full name exactly as shown on passport"
-                        />
-                      </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Date of Birth</span>
-                        <input
-                          className="input"
-                          type="date"
-                          name="date_of_birth"
-                          defaultValue={traveler.date_of_birth ?? ""}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid grid-3">
-                      <label className="stack-sm">
-                        <span className="label">Known Traveler Number / KTN</span>
-                        <input
-                          className="input"
-                          name="known_traveler_number"
-                          defaultValue={traveler.known_traveler_number ?? ""}
-                        />
-                      </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Redress Number</span>
-                        <input
-                          className="input"
-                          name="redress_number"
-                          defaultValue={traveler.redress_number ?? ""}
-                        />
-                      </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Global Entry PASSID</span>
-                        <input
-                          className="input"
-                          name="global_entry_passid"
-                          defaultValue={traveler.global_entry_passid ?? ""}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid grid-3">
-                      <label className="stack-sm">
-                        <span className="label">Passport Number</span>
-                        <input
-                          className="input"
-                          name="passport_number"
-                          defaultValue={traveler.passport_number ?? ""}
-                        />
-                      </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Passport Country</span>
-                        <input
-                          className="input"
-                          name="passport_country"
-                          defaultValue={traveler.passport_country ?? ""}
-                        />
-                      </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Passport Expiration Date</span>
-                        <input
-                          className="input"
-                          type="date"
-                          name="passport_expiration_date"
-                          defaultValue={traveler.passport_expiration_date ?? ""}
-                        />
-                      </label>
-                    </div>
+            {loyaltyError ? (
+              <div>
+                <p>
+                  <strong>Error loading loyalty numbers:</strong>
+                </p>
+                <pre>{JSON.stringify(loyaltyError, null, 2)}</pre>
+              </div>
+            ) : (
+              <>
+                <form action={addLoyaltyNumber} className="stack">
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">Traveler</span>
+                      <select
+                        className="select"
+                        name="traveler_profile_id"
+                        defaultValue={primaryTraveler.id}
+                        required
+                      >
+                        {travelerRows.map((traveler) => (
+                          <option key={traveler.id} value={traveler.id}>
+                            {getTravelerName(traveler)}
+                            {traveler.is_primary_traveler ? " — Primary" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
                     <label className="stack-sm">
-                      <span className="label">Other Traveler Numbers / IDs</span>
+                      <span className="label">Rewards Type</span>
+                      <select className="select" name="loyalty_type" defaultValue="airline">
+                        <option value="airline">Airline</option>
+                        <option value="hotel">Hotel</option>
+                        <option value="cruise">Cruise Line</option>
+                        <option value="rental_car">Rental Car</option>
+                        <option value="rail">Rail</option>
+                        <option value="theme_park">Theme Park</option>
+                        <option value="credit_card">Credit Card Travel Program</option>
+                        <option value="tour">Tour / Activity</option>
+                        <option value="vacation_package">
+                          Vacation Package / Supplier
+                        </option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Company Name</span>
                       <input
                         className="input"
-                        name="other_traveler_numbers"
-                        placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
+                        name="company_name"
+                        placeholder="American Airlines, Hilton, Disney, Royal Caribbean"
+                        required
                       />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">Program Name</span>
+                      <input
+                        className="input"
+                        name="program_name"
+                        placeholder="AAdvantage, Hilton Honors, Castaway Club"
+                      />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Rewards / Membership Number</span>
+                      <input className="input" name="loyalty_number" required />
                     </label>
 
                     <label className="stack-sm">
                       <span className="label">Notes</span>
-                      <textarea
-                        className="textarea"
-                        name="notes"
-                        defaultValue={traveler.notes ?? ""}
-                        rows={3}
-                      />
+                      <input className="input" name="notes" placeholder="Optional notes" />
                     </label>
+                  </div>
 
-                    <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                      <button type="submit" className="btn btn-primary">
-                        Save Traveler
-                      </button>
-                    </div>
-                  </form>
+                  <button type="submit" className="btn btn-primary">
+                    Add Rewards Membership
+                  </button>
+                </form>
 
-                  <form action={deleteTravelerProfile}>
-                    <input type="hidden" name="traveler_id" value={traveler.id} />
-                    <button type="submit" className="btn btn-primary">
-                      Delete Traveler
-                    </button>
-                  </form>
+                <div className="card stack" style={{ background: "#ffffff" }}>
+                  <h3 style={{ margin: 0 }}>Existing Rewards Memberships</h3>
 
-                  <div className="card stack" style={{ background: "#ffffff" }}>
-                    <h4 style={{ margin: 0 }}>
-                      Existing Rewards Memberships for This Traveler
-                    </h4>
-
-                    {travelerLoyaltyRows.length === 0 ? (
-                      <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                        No rewards memberships added for this traveler yet.
-                      </p>
-                    ) : (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {travelerLoyaltyRows.map((loyalty) => (
-                          <div
-                            key={loyalty.id}
-                            className="card stack"
+                  {loyaltyRows.length === 0 ? (
+                    <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                      No rewards memberships have been added yet.
+                    </p>
+                  ) : (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {loyaltyRows.map((loyalty) => (
+                        <details
+                          key={loyalty.id}
+                          style={{
+                            border: "1px solid #e6f0f2",
+                            borderRadius: 16,
+                            background: "#fbfdfe",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <summary
                             style={{
-                              background: "#fbfdfe",
-                              border: "1px solid #e6f0f2",
+                              cursor: "pointer",
+                              padding: "12px 14px",
+                              background: "#ffffff",
+                              borderBottom: "1px solid #e6f0f2",
                             }}
                           >
                             <div
@@ -968,21 +1535,41 @@ export default async function TravelerNumbersPage() {
                             >
                               <div>
                                 <LoyaltyTypeBadge type={loyalty.loyalty_type} />
-                                <h5 style={{ margin: "8px 0 0", fontSize: 17 }}>
+
+                                <h4 style={{ margin: "8px 0 0", fontSize: 17 }}>
                                   {loyalty.company_name}
-                                </h5>
+                                </h4>
+
                                 <p style={{ margin: "4px 0 0", color: "#667085" }}>
-                                  Added {formatDateTime(loyalty.created_at)}
+                                  {loyalty.traveler_name_snapshot
+                                    ? `${loyalty.traveler_name_snapshot} • `
+                                    : ""}
+                                  {loyalty.program_name
+                                    ? `${loyalty.program_name} • ${loyalty.loyalty_number}`
+                                    : loyalty.loyalty_number}
                                 </p>
                               </div>
+
+                              <span
+                                style={{
+                                  color: "var(--accent-dark)",
+                                  fontWeight: 800,
+                                  fontSize: 14,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                Edit Details
+                              </span>
                             </div>
+                          </summary>
+
+                          <div className="card stack" style={{ border: "none", borderRadius: 0 }}>
+                            <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
+                              Added {formatDateTime(loyalty.created_at)}
+                            </p>
 
                             <form action={updateLoyaltyNumber} className="stack">
-                              <input
-                                type="hidden"
-                                name="loyalty_id"
-                                value={loyalty.id}
-                              />
+                              <input type="hidden" name="loyalty_id" value={loyalty.id} />
 
                               <div className="grid grid-3">
                                 <label className="stack-sm">
@@ -994,11 +1581,9 @@ export default async function TravelerNumbersPage() {
                                     required
                                   >
                                     {travelerRows.map((travelerOption) => (
-                                      <option
-                                        key={travelerOption.id}
-                                        value={travelerOption.id}
-                                      >
+                                      <option key={travelerOption.id} value={travelerOption.id}>
                                         {getTravelerName(travelerOption)}
+                                        {travelerOption.is_primary_traveler ? " — Primary" : ""}
                                       </option>
                                     ))}
                                   </select>
@@ -1050,9 +1635,7 @@ export default async function TravelerNumbersPage() {
                                 </label>
 
                                 <label className="stack-sm">
-                                  <span className="label">
-                                    Rewards / Membership Number
-                                  </span>
+                                  <span className="label">Rewards / Membership Number</span>
                                   <input
                                     className="input"
                                     name="loyalty_number"
@@ -1080,26 +1663,208 @@ export default async function TravelerNumbersPage() {
                             </form>
 
                             <form action={deleteLoyaltyNumber}>
-                              <input
-                                type="hidden"
-                                name="loyalty_id"
-                                value={loyalty.id}
-                              />
+                              <input type="hidden" name="loyalty_id" value={loyalty.id} />
                               <button type="submit" className="btn btn-primary">
                                 Remove Rewards Membership
                               </button>
                             </form>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        </details>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              );
-            })}
+              </>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Additional Travelers & Minor Children</h2>
+
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              Use this section for a spouse, child, minor traveler, grandparent, or
+              anyone else connected to your trip.
+            </p>
+
+            <details
+              style={{
+                border: "1px solid #e6f0f2",
+                borderRadius: 16,
+                background: "#fbfdfe",
+                overflow: "hidden",
+              }}
+            >
+              <summary
+                style={{
+                  cursor: "pointer",
+                  padding: "12px 14px",
+                  background: "#ffffff",
+                  borderBottom: "1px solid #e6f0f2",
+                  fontWeight: 800,
+                  color: "var(--accent-dark)",
+                }}
+              >
+                Add Additional Traveler
+              </summary>
+
+              <form action={addAdditionalTravelerProfile} className="stack" style={{ padding: 16 }}>
+                <section className="stack">
+                  <h3 style={{ margin: 0 }}>Traveler Details</h3>
+
+                  <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                    Enter the traveler&apos;s name exactly as it appears on their
+                    passport or travel document.
+                  </p>
+
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">First Name</span>
+                      <input className="input" name="first_name" required />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Middle Name</span>
+                      <input className="input" name="middle_name" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Last Name</span>
+                      <input className="input" name="last_name" required />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">Relationship to Client</span>
+                      <select className="select" name="relationship_to_client">
+                        <option value="">Select relationship</option>
+                        <option value="Spouse">Spouse</option>
+                        <option value="Child">Child</option>
+                        <option value="Parent">Parent</option>
+                        <option value="Grandparent">Grandparent</option>
+                        <option value="Grandchild">Grandchild</option>
+                        <option value="Friend">Friend</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Date of Birth</span>
+                      <input className="input" type="date" name="date_of_birth" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Minor Traveler</span>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          minHeight: 46,
+                        }}
+                      >
+                        <input type="checkbox" name="is_minor" />
+                        This traveler is a minor child
+                      </label>
+                    </label>
+                  </div>
+                </section>
+
+                <section className="stack">
+                  <h3 style={{ margin: 0 }}>Traveler Numbers</h3>
+
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">Known Traveler Number / KTN</span>
+                      <input className="input" name="known_traveler_number" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Redress Number</span>
+                      <input className="input" name="redress_number" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Global Entry PASSID</span>
+                      <input className="input" name="global_entry_passid" />
+                    </label>
+                  </div>
+
+                  <label className="stack-sm">
+                    <span className="label">Other Traveler Numbers / IDs</span>
+                    <input
+                      className="input"
+                      name="other_traveler_numbers"
+                      placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
+                    />
+                  </label>
+                </section>
+
+                <section
+                  className="stack"
+                  style={{
+                    padding: 14,
+                    borderRadius: 14,
+                    border: "1px solid #e6f0f2",
+                    background: "#ffffff",
+                  }}
+                >
+                  <h3 style={{ margin: 0 }}>Additional Traveler Passport Information</h3>
+
+                  <div className="grid grid-3">
+                    <label className="stack-sm">
+                      <span className="label">Passport Number</span>
+                      <input className="input" name="passport_number" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Passport Country</span>
+                      <input className="input" name="passport_country" placeholder="US" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Passport Expiration Date</span>
+                      <input className="input" type="date" name="passport_expiration_date" />
+                    </label>
+                  </div>
+                </section>
+
+                <label className="stack-sm">
+                  <span className="label">Notes</span>
+                  <textarea
+                    className="textarea"
+                    name="notes"
+                    placeholder="Optional traveler notes"
+                    rows={3}
+                  />
+                </label>
+
+                <button type="submit" className="btn btn-primary">
+                  Add Additional Traveler
+                </button>
+              </form>
+            </details>
+
+            {additionalTravelers.length === 0 ? (
+              <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                No additional travelers have been added yet.
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {additionalTravelers.map((traveler) => (
+                  <AdditionalTravelerForm
+                    key={traveler.id}
+                    traveler={traveler}
+                    passportDocuments={passportDocumentsWithUrls.filter(
+                      (document) => document.traveler_profile_id === traveler.id,
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </PageShell>
   );
 }
