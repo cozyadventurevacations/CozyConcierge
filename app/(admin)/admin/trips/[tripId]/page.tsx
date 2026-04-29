@@ -1,0 +1,3192 @@
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { revalidatePath } from "next/cache";
+import { PageShell } from "@/components/layout/page-shell";
+import { AirportPicker } from "@/components/forms/airport-picker";
+import { AirlinePicker } from "@/components/forms/airline-picker";
+import { requireAdmin } from "@/lib/auth/require-admin";
+
+const allowedTripStatuses = [
+  "draft",
+  "quoted",
+  "reserved",
+  "confirmed",
+  "pending_final_payment",
+  "paid_in_full",
+  "travel_complete",
+  "cancelled",
+];
+
+const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
+
+type SupplierOption = {
+  id: string;
+  supplier_name: string;
+  supplier_type: string | null;
+};
+
+type ClientInfo = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
+type CommissionRow = {
+  id: string;
+  commission_name: string;
+  booking_number: string | null;
+  supplier_name_snapshot: string | null;
+  full_commission_amount: number | null;
+  agency_commission_percent: number | null;
+  expected_commission_amount: number | null;
+  received_commission_amount: number | null;
+  commission_status: string | null;
+  expected_payment_date: string | null;
+  received_payment_date: string | null;
+};
+
+function formatMoney(value: number | null | undefined, fallback = "$0.00") {
+  if (typeof value !== "number") return fallback;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+
+function getClientDisplayName(client: ClientInfo | null) {
+  if (!client) return "Client not linked";
+
+  return (
+    `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
+    "Unnamed Client"
+  );
+}
+
+function formatDate(value: string | null | undefined, fallback = "") {
+  if (!value) return fallback;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+
+    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function calculateExpectedCommission(
+  fullCommissionAmount: number | null | undefined,
+  agencyCommissionPercent: number | null | undefined,
+) {
+  const fullCommission = Number(fullCommissionAmount ?? 0);
+  const percentage = Number(agencyCommissionPercent ?? 90);
+
+  return Math.round(fullCommission * (percentage / 100) * 100) / 100;
+}
+
+function getExpectedCommission(row: CommissionRow) {
+  return (
+    Number(row.expected_commission_amount ?? 0) ||
+    calculateExpectedCommission(
+      row.full_commission_amount,
+      row.agency_commission_percent,
+    )
+  );
+}
+
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function requireAllowedValue(
+  value: string,
+  allowedValues: string[],
+  fallback: string,
+) {
+  if (!value) return fallback;
+
+  if (!allowedValues.includes(value)) {
+    throw new Error(`Invalid value submitted: ${value}`);
+  }
+
+  return value;
+}
+
+function cleanText(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+  return value || null;
+}
+
+function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) return fallback;
+
+  const numberValue = Number(rawValue);
+
+  if (Number.isNaN(numberValue)) {
+    throw new Error("Invalid number submitted.");
+  }
+
+  return numberValue;
+}
+
+function toOptionalNumber(value: FormDataEntryValue | null) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) return null;
+
+  const numberValue = Number(rawValue);
+
+  if (Number.isNaN(numberValue)) {
+    throw new Error("Invalid number submitted.");
+  }
+
+  return numberValue;
+}
+
+function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 14,
+        background: "#ffffff",
+        overflow: "visible",
+        position: "relative",
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          padding: "14px 16px",
+          fontWeight: 800,
+          background: "#f8fafc",
+          color: "var(--accent-dark)",
+          borderBottom: "1px solid #e2e8f0",
+          borderTopLeftRadius: 14,
+          borderTopRightRadius: 14,
+        }}
+      >
+        {title}
+      </summary>
+
+      <div
+        className="card stack"
+        style={{
+          border: "none",
+          borderRadius: 0,
+          overflow: "visible",
+          position: "relative",
+        }}
+      >
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function SupplierSelect({
+  name,
+  label = "Saved Supplier",
+  suppliers,
+  defaultValue,
+}: {
+  name: string;
+  label?: string;
+  suppliers: SupplierOption[];
+  defaultValue?: string | null;
+}) {
+  return (
+    <label>
+      <span className="label">{label}</span>
+      <select className="select" name={name} defaultValue={defaultValue ?? ""}>
+        <option value="">No supplier selected</option>
+        {suppliers.map((supplier) => (
+          <option key={supplier.id} value={supplier.id}>
+            {supplier.supplier_name}
+            {supplier.supplier_type ? ` — ${supplier.supplier_type}` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function buildCommissionHref({
+  tripId,
+  supplierId,
+  bookingNumber,
+  commissionName,
+  grossBookingAmount,
+  fullCommissionAmount,
+}: {
+  tripId: string;
+  supplierId?: string | null;
+  bookingNumber?: string | null;
+  commissionName?: string | null;
+  grossBookingAmount?: string | number | null;
+  fullCommissionAmount?: string | number | null;
+}) {
+  const params = new URLSearchParams();
+
+  params.set("tripId", tripId);
+
+  if (supplierId) params.set("supplierId", supplierId);
+  if (bookingNumber) params.set("bookingNumber", bookingNumber);
+  if (commissionName) params.set("commissionName", commissionName);
+
+  if (
+    grossBookingAmount !== null &&
+    grossBookingAmount !== undefined &&
+    grossBookingAmount !== ""
+  ) {
+    params.set("grossBookingAmount", String(grossBookingAmount));
+  }
+
+  if (
+    fullCommissionAmount !== null &&
+    fullCommissionAmount !== undefined &&
+    fullCommissionAmount !== ""
+  ) {
+    params.set("fullCommissionAmount", String(fullCommissionAmount));
+  }
+
+  return `/admin/commissions/new?${params.toString()}`;
+}
+
+function ComponentCommissionLink({
+  tripId,
+  supplierId,
+  bookingNumber,
+  commissionName,
+  grossBookingAmount,
+  fullCommissionAmount,
+}: {
+  tripId: string;
+  supplierId?: string | null;
+  bookingNumber?: string | null;
+  commissionName: string;
+  grossBookingAmount?: string | number | null;
+  fullCommissionAmount?: string | number | null;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+        alignItems: "center",
+        padding: "12px",
+        borderRadius: 12,
+        background: "#f7fbfc",
+        border: "1px solid #e6f0f2",
+      }}
+    >
+      <div>
+        <p style={{ margin: 0, fontWeight: 800 }}>Commission Tracking</p>
+        <p style={{ margin: "4px 0 0", color: "#64748b", lineHeight: 1.5 }}>
+          Create a commission record from this component. Save the trip first if
+          you just changed supplier, confirmation, or pricing details.
+        </p>
+      </div>
+
+      <Link
+        href={buildCommissionHref({
+          tripId,
+          supplierId,
+          bookingNumber,
+          commissionName,
+          grossBookingAmount,
+          fullCommissionAmount,
+        })}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "var(--accent-dark)",
+          color: "white",
+          fontWeight: 700,
+          textDecoration: "none",
+        }}
+      >
+        Create Commission
+      </Link>
+    </div>
+  );
+}
+
+async function updateTrip(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { supabase } = await requireAdmin();
+
+  const { data: existingTrip, error: existingTripError } = await supabase
+    .from("trips")
+    .select("id")
+    .eq("id", tripId)
+    .single();
+
+  if (existingTripError || !existingTrip) {
+    throw new Error("Trip not found or access denied.");
+  }
+
+  async function getSupplierName(supplierId: string | null) {
+    if (!supplierId) return null;
+
+    const { data } = await supabase
+      .from("suppliers")
+      .select("supplier_name")
+      .eq("id", supplierId)
+      .maybeSingle();
+
+    return data?.supplier_name ?? null;
+  }
+
+  const tripStatus = requireAllowedValue(
+    String(formData.get("trip_status") ?? "draft").trim(),
+    allowedTripStatuses,
+    "draft",
+  );
+
+  const tripUpdates = {
+    trip_name: String(formData.get("trip_name") ?? "").trim(),
+    departure_date: String(formData.get("departure_date") ?? "").trim(),
+    return_date: String(formData.get("return_date") ?? "").trim(),
+    destinations: String(formData.get("destinations") ?? "").trim(),
+    occasion: String(formData.get("occasion") ?? "").trim() || null,
+    trip_status: tripStatus,
+    total_paid: toMoneyNumber(formData.get("total_paid")),
+    balance_due: toMoneyNumber(formData.get("balance_due")),
+    final_payment_due_date:
+      String(formData.get("final_payment_due_date") ?? "").trim() || null,
+  };
+
+  if (!tripUpdates.trip_name) throw new Error("Trip name is required.");
+  if (!tripUpdates.departure_date) throw new Error("Departure date is required.");
+  if (!tripUpdates.return_date) throw new Error("Return date is required.");
+  if (!tripUpdates.destinations) throw new Error("Destinations are required.");
+
+  const { error: tripError } = await supabase
+    .from("trips")
+    .update(tripUpdates)
+    .eq("id", tripId);
+
+  if (tripError) throw new Error(tripError.message);
+
+  const proposalUpdates = {
+    planning_fee: toMoneyNumber(formData.get("planning_fee")),
+    total_price: toMoneyNumber(formData.get("total_price")),
+    proposal_title: String(formData.get("proposal_title") ?? "").trim() || null,
+    proposal_welcome_text:
+      String(formData.get("proposal_welcome_text") ?? "").trim() || null,
+    proposal_closing_text:
+      String(formData.get("proposal_closing_text") ?? "").trim() || null,
+  };
+
+  const { data: existingProposal, error: existingProposalError } = await supabase
+    .from("trip_proposals")
+    .select("id")
+    .eq("trip_id", tripId)
+    .maybeSingle();
+
+  if (existingProposalError) throw new Error(existingProposalError.message);
+
+  if (existingProposal) {
+    const { error: proposalError } = await supabase
+      .from("trip_proposals")
+      .update(proposalUpdates)
+      .eq("trip_id", tripId);
+
+    if (proposalError) throw new Error(proposalError.message);
+  } else {
+    const { error: insertProposalError } = await supabase
+      .from("trip_proposals")
+      .insert({
+        trip_id: tripId,
+        commission_admin_only: 0,
+        proposal_highlights: [],
+        ...proposalUpdates,
+      });
+
+    if (insertProposalError) throw new Error(insertProposalError.message);
+  }
+
+  async function upsertTripComponent(
+    componentType: string,
+    hasAnyValue: unknown,
+    componentPayload: Record<string, unknown>,
+    detailTable: string,
+    detailPayload: Record<string, unknown>,
+  ) {
+    if (!hasAnyValue) return;
+
+    const { data: existingComponent, error: existingComponentError } =
+      await supabase
+        .from("trip_components")
+        .select("id")
+        .eq("trip_id", tripId)
+        .eq("component_type", componentType)
+        .maybeSingle();
+
+    if (existingComponentError) throw new Error(existingComponentError.message);
+
+    let componentId: string;
+
+    if (existingComponent) {
+      componentId = existingComponent.id;
+
+      const { error: componentUpdateError } = await supabase
+        .from("trip_components")
+        .update(componentPayload)
+        .eq("id", componentId);
+
+      if (componentUpdateError) throw new Error(componentUpdateError.message);
+    } else {
+      const { data: insertedComponent, error: componentInsertError } =
+        await supabase
+          .from("trip_components")
+          .insert({
+            trip_id: tripId,
+            component_type: componentType,
+            ...componentPayload,
+          })
+          .select("id")
+          .single();
+
+      if (componentInsertError || !insertedComponent) {
+        throw new Error(
+          componentInsertError?.message ??
+            `Failed to create ${componentType} component.`,
+        );
+      }
+
+      componentId = insertedComponent.id;
+    }
+
+    const { data: existingDetail, error: existingDetailError } = await supabase
+      .from(detailTable)
+      .select("component_id")
+      .eq("component_id", componentId)
+      .maybeSingle();
+
+    if (existingDetailError) throw new Error(existingDetailError.message);
+
+    if (existingDetail) {
+      const { error: detailUpdateError } = await supabase
+        .from(detailTable)
+        .update(detailPayload)
+        .eq("component_id", componentId);
+
+      if (detailUpdateError) throw new Error(detailUpdateError.message);
+    } else {
+      const { error: detailInsertError } = await supabase
+        .from(detailTable)
+        .insert({
+          component_id: componentId,
+          ...detailPayload,
+        });
+
+      if (detailInsertError) throw new Error(detailInsertError.message);
+    }
+  }
+
+  // HOTEL
+  const hotelSupplierId = cleanText(formData, "hotel_supplier_id");
+  const hotelSupplierName = await getSupplierName(hotelSupplierId);
+  const hotelName = String(formData.get("hotel_name") ?? "").trim();
+  const hotelBookingStatus = requireAllowedValue(
+    String(formData.get("hotel_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const hotelTotalPrice = toMoneyNumber(formData.get("hotel_total_price"));
+  const hotelDepositDueDate =
+    String(formData.get("hotel_deposit_due_date") ?? "").trim() || null;
+  const hotelFinalPaymentDueDate =
+    String(formData.get("hotel_final_payment_due_date") ?? "").trim() || null;
+  const hotelConfirmationNumber =
+    String(formData.get("hotel_confirmation_number") ?? "").trim() || null;
+  const hotelTerms =
+    String(formData.get("hotel_terms_and_conditions") ?? "").trim() || null;
+  const hotelCancellation =
+    String(formData.get("hotel_cancellation_policy") ?? "").trim() || null;
+
+  const hotelDetailPayload = {
+    hotel_name: hotelName || null,
+    hotel_address: String(formData.get("hotel_address") ?? "").trim() || null,
+    hotel_star_rating: toOptionalNumber(formData.get("hotel_star_rating")),
+    check_in_date: String(formData.get("hotel_check_in_date") ?? "").trim() || null,
+    check_out_date: String(formData.get("hotel_check_out_date") ?? "").trim() || null,
+    room_category: String(formData.get("hotel_room_category") ?? "").trim() || null,
+    nightly_rate: toOptionalNumber(formData.get("hotel_nightly_rate")),
+    room_description:
+      String(formData.get("hotel_room_description") ?? "").trim() || null,
+    hotel_description:
+      String(formData.get("hotel_description") ?? "").trim() || null,
+  };
+
+  const hasAnyHotelValue =
+    hotelSupplierId ||
+    hotelName ||
+    hotelDetailPayload.hotel_address ||
+    hotelDetailPayload.check_in_date ||
+    hotelDetailPayload.check_out_date ||
+    hotelDetailPayload.room_category ||
+    hotelConfirmationNumber;
+
+  await upsertTripComponent(
+    "hotel",
+    hasAnyHotelValue,
+    {
+      supplier_id: hotelSupplierId,
+      display_name: hotelName || hotelSupplierName || "Hotel",
+      supplier_name: hotelSupplierName || hotelName || null,
+      booking_status: hotelBookingStatus,
+      total_price: hotelTotalPrice,
+      commission_admin_only: 0,
+      deposit_due_date: hotelDepositDueDate,
+      final_payment_due_date: hotelFinalPaymentDueDate,
+      confirmation_number: hotelConfirmationNumber,
+      terms_and_conditions: hotelTerms,
+      cancellation_policy: hotelCancellation,
+    },
+    "hotel_components",
+    hotelDetailPayload,
+  );
+
+  // AIR
+  const airSupplierId = cleanText(formData, "air_supplier_id");
+  const airSupplierName = await getSupplierName(airSupplierId);
+  const airFlightType =
+    String(formData.get("air_flight_type") ?? "").trim() || "round_trip";
+  const airTravelerCount = toMoneyNumber(formData.get("air_traveler_count"), 1);
+  const airRateClass = String(formData.get("air_rate_class") ?? "").trim() || null;
+  const airAirlineLocator =
+    String(formData.get("air_airline_locator") ?? "").trim() || null;
+  const airBookingStatus = requireAllowedValue(
+    String(formData.get("air_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const airTotalPrice = toMoneyNumber(formData.get("air_total_price"));
+  const airDepositDueDate =
+    String(formData.get("air_deposit_due_date") ?? "").trim() || null;
+  const airFinalPaymentDueDate =
+    String(formData.get("air_final_payment_due_date") ?? "").trim() || null;
+  const airConfirmationNumber =
+    String(formData.get("air_confirmation_number") ?? "").trim() || null;
+  const airTerms =
+    String(formData.get("air_terms_and_conditions") ?? "").trim() || null;
+  const airCancellation =
+    String(formData.get("air_cancellation_policy") ?? "").trim() || null;
+
+  const outboundDepartureAirport =
+    String(formData.get("outbound_departure_airport_code") ?? "").trim() || null;
+  const outboundDestinationAirport =
+    String(formData.get("outbound_destination_airport_code") ?? "").trim() || null;
+  const outboundDepartureDatetime =
+    String(formData.get("outbound_departure_datetime") ?? "").trim() || null;
+  const outboundArrivalDatetime =
+    String(formData.get("outbound_arrival_datetime") ?? "").trim() || null;
+  const outboundFlightNumber =
+    String(formData.get("outbound_flight_number") ?? "").trim() || null;
+  const outboundCarrier =
+    String(formData.get("outbound_carrier") ?? "").trim() || null;
+  const outboundCabinClass =
+    String(formData.get("outbound_cabin_class") ?? "").trim() || null;
+  const outboundSeatAssignment =
+    String(formData.get("outbound_seat_assignment") ?? "").trim() || null;
+
+  const returnDepartureAirport =
+    String(formData.get("return_departure_airport_code") ?? "").trim() || null;
+  const returnDestinationAirport =
+    String(formData.get("return_destination_airport_code") ?? "").trim() || null;
+  const returnDepartureDatetime =
+    String(formData.get("return_departure_datetime") ?? "").trim() || null;
+  const returnArrivalDatetime =
+    String(formData.get("return_arrival_datetime") ?? "").trim() || null;
+  const returnFlightNumber =
+    String(formData.get("return_flight_number") ?? "").trim() || null;
+  const returnCarrier =
+    String(formData.get("return_carrier") ?? "").trim() || null;
+  const returnCabinClass =
+    String(formData.get("return_cabin_class") ?? "").trim() || null;
+  const returnSeatAssignment =
+    String(formData.get("return_seat_assignment") ?? "").trim() || null;
+
+  const hasAnyAirValue =
+    airSupplierId ||
+    outboundDepartureAirport ||
+    outboundDestinationAirport ||
+    outboundDepartureDatetime ||
+    outboundArrivalDatetime ||
+    outboundFlightNumber ||
+    returnDepartureAirport ||
+    returnDestinationAirport ||
+    returnDepartureDatetime ||
+    returnArrivalDatetime ||
+    returnFlightNumber ||
+    airAirlineLocator ||
+    airConfirmationNumber;
+
+  if (hasAnyAirValue) {
+    const { data: existingAirComponent, error: existingAirComponentError } =
+      await supabase
+        .from("trip_components")
+        .select("id")
+        .eq("trip_id", tripId)
+        .eq("component_type", "air")
+        .maybeSingle();
+
+    if (existingAirComponentError) throw new Error(existingAirComponentError.message);
+
+    let componentId: string;
+
+    const componentPayload = {
+      supplier_id: airSupplierId,
+      display_name: airSupplierName || "Air",
+      supplier_name: airSupplierName || outboundCarrier || returnCarrier || null,
+      booking_status: airBookingStatus,
+      total_price: airTotalPrice,
+      commission_admin_only: 0,
+      deposit_due_date: airDepositDueDate,
+      final_payment_due_date: airFinalPaymentDueDate,
+      confirmation_number: airConfirmationNumber,
+      terms_and_conditions: airTerms,
+      cancellation_policy: airCancellation,
+    };
+
+    if (existingAirComponent) {
+      componentId = existingAirComponent.id;
+
+      const { error } = await supabase
+        .from("trip_components")
+        .update(componentPayload)
+        .eq("id", componentId);
+
+      if (error) throw new Error(error.message);
+    } else {
+      const { data, error } = await supabase
+        .from("trip_components")
+        .insert({
+          trip_id: tripId,
+          component_type: "air",
+          ...componentPayload,
+        })
+        .select("id")
+        .single();
+
+      if (error || !data) {
+        throw new Error(error?.message ?? "Failed to create air component.");
+      }
+
+      componentId = data.id;
+    }
+
+    const airDetailPayload = {
+      flight_type: airFlightType,
+      traveler_count: airTravelerCount,
+      rate_class: airRateClass,
+      airline_locator: airAirlineLocator,
+      flight_terms_and_conditions: airTerms,
+      flight_cancellation_policy: airCancellation,
+    };
+
+    const { data: existingAirDetail, error: existingAirDetailError } =
+      await supabase
+        .from("air_components")
+        .select("component_id")
+        .eq("component_id", componentId)
+        .maybeSingle();
+
+    if (existingAirDetailError) throw new Error(existingAirDetailError.message);
+
+    if (existingAirDetail) {
+      const { error } = await supabase
+        .from("air_components")
+        .update(airDetailPayload)
+        .eq("component_id", componentId);
+
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase
+        .from("air_components")
+        .insert({ component_id: componentId, ...airDetailPayload });
+
+      if (error) throw new Error(error.message);
+    }
+
+    const upsertSegment = async (
+      direction: "outbound" | "return",
+      values: {
+        departure_airport_code: string | null;
+        destination_airport_code: string | null;
+        departure_datetime: string | null;
+        arrival_datetime: string | null;
+        flight_number: string | null;
+        carrier: string | null;
+        cabin_class: string | null;
+        seat_assignment: string | null;
+      },
+    ) => {
+      const hasSegment =
+        values.departure_airport_code &&
+        values.destination_airport_code &&
+        values.departure_datetime &&
+        values.arrival_datetime;
+
+      if (!hasSegment) return;
+
+      const { data: existingSegment, error: existingSegmentError } = await supabase
+        .from("flight_segments")
+        .select("id")
+        .eq("air_component_id", componentId)
+        .eq("direction", direction)
+        .eq("segment_order", 1)
+        .maybeSingle();
+
+      if (existingSegmentError) throw new Error(existingSegmentError.message);
+
+      const segmentPayload = {
+        air_component_id: componentId,
+        direction,
+        segment_order: 1,
+        departure_airport_code: values.departure_airport_code,
+        destination_airport_code: values.destination_airport_code,
+        departure_datetime: values.departure_datetime,
+        arrival_datetime: values.arrival_datetime,
+        flight_number: values.flight_number,
+        carrier: values.carrier,
+        airline_locator: airAirlineLocator,
+        cabin_class: values.cabin_class,
+        seat_assignment: values.seat_assignment,
+      };
+
+      if (existingSegment) {
+        const { error } = await supabase
+          .from("flight_segments")
+          .update(segmentPayload)
+          .eq("id", existingSegment.id);
+
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from("flight_segments").insert(segmentPayload);
+        if (error) throw new Error(error.message);
+      }
+    };
+
+    await upsertSegment("outbound", {
+      departure_airport_code: outboundDepartureAirport,
+      destination_airport_code: outboundDestinationAirport,
+      departure_datetime: outboundDepartureDatetime,
+      arrival_datetime: outboundArrivalDatetime,
+      flight_number: outboundFlightNumber,
+      carrier: outboundCarrier,
+      cabin_class: outboundCabinClass,
+      seat_assignment: outboundSeatAssignment,
+    });
+
+    if (airFlightType === "round_trip") {
+      await upsertSegment("return", {
+        departure_airport_code: returnDepartureAirport,
+        destination_airport_code: returnDestinationAirport,
+        departure_datetime: returnDepartureDatetime,
+        arrival_datetime: returnArrivalDatetime,
+        flight_number: returnFlightNumber,
+        carrier: returnCarrier,
+        cabin_class: returnCabinClass,
+        seat_assignment: returnSeatAssignment,
+      });
+    }
+  }
+
+  // CRUISE
+  const cruiseSupplierId = cleanText(formData, "cruise_supplier_id");
+  const cruiseSupplierName = await getSupplierName(cruiseSupplierId);
+  const cruiseLine = String(formData.get("cruise_line") ?? "").trim();
+  const shipName = String(formData.get("ship_name") ?? "").trim();
+  const cruiseBookingStatus = requireAllowedValue(
+    String(formData.get("cruise_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const cruiseTotalPrice = toMoneyNumber(formData.get("cruise_total_price"));
+  const cruiseDepositDueDate =
+    String(formData.get("cruise_deposit_due_date") ?? "").trim() || null;
+  const cruiseFinalPaymentDueDate =
+    String(formData.get("cruise_final_payment_due_date") ?? "").trim() || null;
+  const cruiseConfirmationNumber =
+    String(formData.get("cruise_confirmation_number") ?? "").trim() || null;
+  const cruiseTerms =
+    String(formData.get("cruise_terms_and_conditions") ?? "").trim() || null;
+  const cruiseCancellation =
+    String(formData.get("cruise_cancellation_policy") ?? "").trim() || null;
+
+  const cruiseDetailPayload = {
+    cruise_line: cruiseLine || null,
+    ship_name: shipName || null,
+    sailing_date: String(formData.get("cruise_sailing_date") ?? "").trim() || null,
+    return_date: String(formData.get("cruise_return_date") ?? "").trim() || null,
+    departure_port: String(formData.get("cruise_departure_port") ?? "").trim() || null,
+    arrival_port: String(formData.get("cruise_arrival_port") ?? "").trim() || null,
+    cabin_category: String(formData.get("cruise_cabin_category") ?? "").trim() || null,
+    cabin_number: String(formData.get("cruise_cabin_number") ?? "").trim() || null,
+    dining_seating: String(formData.get("cruise_dining_seating") ?? "").trim() || null,
+    cruise_description:
+      String(formData.get("cruise_description") ?? "").trim() || null,
+  };
+
+  const hasAnyCruiseValue =
+    cruiseSupplierId ||
+    cruiseLine ||
+    shipName ||
+    cruiseDetailPayload.sailing_date ||
+    cruiseDetailPayload.return_date ||
+    cruiseDetailPayload.departure_port ||
+    cruiseConfirmationNumber;
+
+  await upsertTripComponent(
+    "cruise",
+    hasAnyCruiseValue,
+    {
+      supplier_id: cruiseSupplierId,
+      display_name: shipName || cruiseLine || cruiseSupplierName || "Cruise",
+      supplier_name: cruiseSupplierName || cruiseLine || null,
+      booking_status: cruiseBookingStatus,
+      total_price: cruiseTotalPrice,
+      commission_admin_only: 0,
+      deposit_due_date: cruiseDepositDueDate,
+      final_payment_due_date: cruiseFinalPaymentDueDate,
+      confirmation_number: cruiseConfirmationNumber,
+      terms_and_conditions: cruiseTerms,
+      cancellation_policy: cruiseCancellation,
+    },
+    "cruise_components",
+    cruiseDetailPayload,
+  );
+
+  // TRANSFER
+  const transferSupplierId = cleanText(formData, "transfer_supplier_id");
+  const savedTransferSupplierName = await getSupplierName(transferSupplierId);
+  const transferSupplierName = String(
+    formData.get("transfer_supplier_name") ?? "",
+  ).trim();
+  const transferPickupDatetime =
+    String(formData.get("transfer_pickup_datetime") ?? "").trim() || null;
+  const transferPickupLocation =
+    String(formData.get("transfer_pickup_location") ?? "").trim() || null;
+  const transferDropoffLocation =
+    String(formData.get("transfer_dropoff_location") ?? "").trim() || null;
+  const transferPassengerCountRaw = String(
+    formData.get("transfer_passenger_count") ?? "",
+  ).trim();
+  const transferVehicleType =
+    String(formData.get("transfer_vehicle_type") ?? "").trim() || null;
+  const transferBookingStatus = requireAllowedValue(
+    String(formData.get("transfer_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const transferTotalPrice = toMoneyNumber(formData.get("transfer_total_price"));
+  const transferDepositDueDate =
+    String(formData.get("transfer_deposit_due_date") ?? "").trim() || null;
+  const transferFinalPaymentDueDate =
+    String(formData.get("transfer_final_payment_due_date") ?? "").trim() || null;
+  const transferConfirmationNumber =
+    String(formData.get("transfer_confirmation_number") ?? "").trim() || null;
+  const transferNotes =
+    String(formData.get("transfer_notes") ?? "").trim() || null;
+  const transferTerms =
+    String(formData.get("transfer_terms_and_conditions") ?? "").trim() || null;
+  const transferCancellation =
+    String(formData.get("transfer_cancellation_policy") ?? "").trim() || null;
+  const transferCommissionAmountRaw = String(
+    formData.get("transfer_commission_amount") ?? "",
+  ).trim();
+  const transferCommissionStatus =
+    String(formData.get("transfer_commission_status") ?? "").trim() || null;
+  const transferCommissionNotes =
+    String(formData.get("transfer_commission_notes") ?? "").trim() || null;
+
+  const transferCommissionAmount = transferCommissionAmountRaw
+    ? toMoneyNumber(formData.get("transfer_commission_amount"))
+    : null;
+
+  const transferDetailPayload = {
+    supplier_name: transferSupplierName || savedTransferSupplierName || null,
+    pickup_datetime: transferPickupDatetime || null,
+    pickup_location: transferPickupLocation,
+    dropoff_location: transferDropoffLocation,
+    passenger_count: transferPassengerCountRaw
+      ? Number(transferPassengerCountRaw)
+      : null,
+    vehicle_type: transferVehicleType,
+    transfer_notes: transferNotes,
+    commission_amount: transferCommissionAmount,
+    commission_status: transferCommissionStatus,
+    commission_notes: transferCommissionNotes,
+  };
+
+  const hasAnyTransferValue =
+    transferSupplierId ||
+    transferSupplierName ||
+    transferPickupDatetime ||
+    transferPickupLocation ||
+    transferDropoffLocation ||
+    transferConfirmationNumber;
+
+  await upsertTripComponent(
+    "transfer",
+    hasAnyTransferValue,
+    {
+      supplier_id: transferSupplierId,
+      display_name: transferSupplierName || savedTransferSupplierName || "Transfer",
+      supplier_name: savedTransferSupplierName || transferSupplierName || null,
+      booking_status: transferBookingStatus,
+      total_price: transferTotalPrice,
+      commission_admin_only: transferCommissionAmount ?? 0,
+      deposit_due_date: transferDepositDueDate,
+      final_payment_due_date: transferFinalPaymentDueDate,
+      confirmation_number: transferConfirmationNumber,
+      terms_and_conditions: transferTerms,
+      cancellation_policy: transferCancellation,
+    },
+    "transfer_components",
+    transferDetailPayload,
+  );
+
+  // ACTIVITY
+  const activitySupplierId = cleanText(formData, "activity_supplier_id");
+  const savedActivitySupplierName = await getSupplierName(activitySupplierId);
+  const activityName = String(formData.get("activity_name") ?? "").trim();
+  const activitySupplierName = String(
+    formData.get("activity_supplier_name") ?? "",
+  ).trim();
+  const activityDatetime =
+    String(formData.get("activity_datetime") ?? "").trim() || null;
+  const activityLocation =
+    String(formData.get("activity_location") ?? "").trim() || null;
+  const activityParticipantCountRaw = String(
+    formData.get("activity_participant_count") ?? "",
+  ).trim();
+  const activityBookingStatus = requireAllowedValue(
+    String(formData.get("activity_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const activityTotalPrice = toMoneyNumber(formData.get("activity_total_price"));
+  const activityDepositDueDate =
+    String(formData.get("activity_deposit_due_date") ?? "").trim() || null;
+  const activityFinalPaymentDueDate =
+    String(formData.get("activity_final_payment_due_date") ?? "").trim() || null;
+  const activityConfirmationNumber =
+    String(formData.get("activity_confirmation_number") ?? "").trim() || null;
+  const activityNotes =
+    String(formData.get("activity_notes") ?? "").trim() || null;
+  const activityTerms =
+    String(formData.get("activity_terms_and_conditions") ?? "").trim() || null;
+  const activityCancellation =
+    String(formData.get("activity_cancellation_policy") ?? "").trim() || null;
+  const activityCommissionAmountRaw = String(
+    formData.get("activity_commission_amount") ?? "",
+  ).trim();
+  const activityCommissionStatus =
+    String(formData.get("activity_commission_status") ?? "").trim() || null;
+  const activityCommissionNotes =
+    String(formData.get("activity_commission_notes") ?? "").trim() || null;
+
+  const activityCommissionAmount = activityCommissionAmountRaw
+    ? toMoneyNumber(formData.get("activity_commission_amount"))
+    : null;
+
+  const activityDetailPayload = {
+    activity_name: activityName || null,
+    supplier_name: activitySupplierName || savedActivitySupplierName || null,
+    activity_datetime: activityDatetime || null,
+    location: activityLocation,
+    participant_count: activityParticipantCountRaw
+      ? Number(activityParticipantCountRaw)
+      : null,
+    activity_notes: activityNotes,
+    commission_amount: activityCommissionAmount,
+    commission_status: activityCommissionStatus,
+    commission_notes: activityCommissionNotes,
+  };
+
+  const hasAnyActivityValue =
+    activitySupplierId ||
+    activityName ||
+    activitySupplierName ||
+    activityDatetime ||
+    activityLocation ||
+    activityConfirmationNumber;
+
+  await upsertTripComponent(
+    "activity",
+    hasAnyActivityValue,
+    {
+      supplier_id: activitySupplierId,
+      display_name: activityName || "Activity",
+      supplier_name: savedActivitySupplierName || activitySupplierName || null,
+      booking_status: activityBookingStatus,
+      total_price: activityTotalPrice,
+      commission_admin_only: activityCommissionAmount ?? 0,
+      deposit_due_date: activityDepositDueDate,
+      final_payment_due_date: activityFinalPaymentDueDate,
+      confirmation_number: activityConfirmationNumber,
+      terms_and_conditions: activityTerms,
+      cancellation_policy: activityCancellation,
+    },
+    "activity_components",
+    activityDetailPayload,
+  );
+
+  // INSURANCE
+  const insuranceSupplierId = cleanText(formData, "insurance_supplier_id");
+  const savedInsuranceSupplierName = await getSupplierName(insuranceSupplierId);
+  const insuranceProviderName = String(
+    formData.get("insurance_provider_name") ?? "",
+  ).trim();
+  const insurancePlanName = String(formData.get("insurance_plan_name") ?? "").trim();
+  const insurancePolicyNumber =
+    String(formData.get("insurance_policy_number") ?? "").trim() || null;
+  const insuranceCoverageStartDate =
+    String(formData.get("insurance_coverage_start_date") ?? "").trim() || null;
+  const insuranceCoverageEndDate =
+    String(formData.get("insurance_coverage_end_date") ?? "").trim() || null;
+  const insuranceInsuredTravelerCountRaw = String(
+    formData.get("insurance_insured_traveler_count") ?? "",
+  ).trim();
+  const insurancePremiumAmountRaw = String(
+    formData.get("insurance_premium_amount") ?? "",
+  ).trim();
+  const insuranceClaimPhone =
+    String(formData.get("insurance_claim_phone") ?? "").trim() || null;
+  const insuranceBookingStatus = requireAllowedValue(
+    String(formData.get("insurance_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const insuranceTerms =
+    String(formData.get("insurance_terms_and_conditions") ?? "").trim() || null;
+  const insuranceCancellation =
+    String(formData.get("insurance_cancellation_policy") ?? "").trim() || null;
+  const insuranceNotes =
+    String(formData.get("insurance_notes") ?? "").trim() || null;
+  const insuranceCommissionAmountRaw = String(
+    formData.get("insurance_commission_amount") ?? "",
+  ).trim();
+  const insuranceCommissionStatus =
+    String(formData.get("insurance_commission_status") ?? "").trim() || null;
+  const insuranceCommissionNotes =
+    String(formData.get("insurance_commission_notes") ?? "").trim() || null;
+
+  const insurancePremiumAmount = insurancePremiumAmountRaw
+    ? toMoneyNumber(formData.get("insurance_premium_amount"))
+    : null;
+
+  const insuranceCommissionAmount = insuranceCommissionAmountRaw
+    ? toMoneyNumber(formData.get("insurance_commission_amount"))
+    : null;
+
+  const insuranceDetailPayload = {
+    provider_name: insuranceProviderName || savedInsuranceSupplierName || null,
+    plan_name: insurancePlanName || null,
+    policy_number: insurancePolicyNumber,
+    coverage_start_date: insuranceCoverageStartDate,
+    coverage_end_date: insuranceCoverageEndDate,
+    insured_traveler_count: insuranceInsuredTravelerCountRaw
+      ? Number(insuranceInsuredTravelerCountRaw)
+      : null,
+    premium_amount: insurancePremiumAmount,
+    claim_phone: insuranceClaimPhone,
+    insurance_notes: insuranceNotes,
+    commission_amount: insuranceCommissionAmount,
+    commission_status: insuranceCommissionStatus,
+    commission_notes: insuranceCommissionNotes,
+  };
+
+  const hasAnyInsuranceValue =
+    insuranceSupplierId ||
+    insuranceProviderName ||
+    insurancePlanName ||
+    insurancePolicyNumber ||
+    insuranceCoverageStartDate ||
+    insuranceCoverageEndDate;
+
+  await upsertTripComponent(
+    "insurance",
+    hasAnyInsuranceValue,
+    {
+      supplier_id: insuranceSupplierId,
+      display_name:
+        insurancePlanName ||
+        insuranceProviderName ||
+        savedInsuranceSupplierName ||
+        "Insurance",
+      supplier_name: savedInsuranceSupplierName || insuranceProviderName || null,
+      booking_status: insuranceBookingStatus,
+      total_price: insurancePremiumAmount ?? 0,
+      commission_admin_only: insuranceCommissionAmount ?? 0,
+      deposit_due_date: null,
+      final_payment_due_date: null,
+      confirmation_number: insurancePolicyNumber,
+      terms_and_conditions: insuranceTerms,
+      cancellation_policy: insuranceCancellation,
+    },
+    "insurance_components",
+    insuranceDetailPayload,
+  );
+
+  // NOTES
+  const internalNoteTitle =
+    String(formData.get("internal_note_title") ?? "").trim() || null;
+  const internalNoteContent =
+    String(formData.get("internal_note_content") ?? "").trim() || null;
+  const clientNoteTitle =
+    String(formData.get("client_note_title") ?? "").trim() || null;
+  const clientNoteContent =
+    String(formData.get("client_note_content") ?? "").trim() || null;
+  const clientReminderTitle =
+    String(formData.get("client_reminder_title") ?? "").trim() || null;
+  const clientReminderContent =
+    String(formData.get("client_reminder_content") ?? "").trim() || null;
+
+  async function upsertTripNote(
+    noteType: "internal" | "client" | "client_reminder",
+    title: string | null,
+    content: string | null,
+  ) {
+    const { data: existingNote, error: existingNoteError } = await supabase
+      .from("trip_notes")
+      .select("id")
+      .eq("trip_id", tripId)
+      .eq("note_type", noteType)
+      .maybeSingle();
+
+    if (existingNoteError) throw new Error(existingNoteError.message);
+
+    const hasContent = title || content;
+    if (!hasContent) return;
+
+    if (existingNote) {
+      const { error } = await supabase
+        .from("trip_notes")
+        .update({ title, content })
+        .eq("id", existingNote.id);
+
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase.from("trip_notes").insert({
+        trip_id: tripId,
+        note_type: noteType,
+        title,
+        content,
+      });
+
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  await upsertTripNote("internal", internalNoteTitle, internalNoteContent);
+  await upsertTripNote("client", clientNoteTitle, clientNoteContent);
+  await upsertTripNote("client_reminder", clientReminderTitle, clientReminderContent);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+}
+
+async function markTripCommissionReceived(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const commissionId = String(formData.get("commission_id") ?? "").trim();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+
+  if (!commissionId) throw new Error("Missing commission ID.");
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { data: commission, error: loadError } = await supabase
+    .from("commissions")
+    .select(
+      "id, trip_id, full_commission_amount, agency_commission_percent, expected_commission_amount",
+    )
+    .eq("id", commissionId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (loadError || !commission) {
+    throw new Error(loadError?.message ?? "Commission not found for this trip.");
+  }
+
+  const calculatedExpectedAmount = calculateExpectedCommission(
+    commission.full_commission_amount,
+    commission.agency_commission_percent,
+  );
+
+  const receivedAmount =
+    Number(commission.expected_commission_amount ?? 0) || calculatedExpectedAmount;
+
+  const { error } = await supabase
+    .from("commissions")
+    .update({
+      commission_status: "received",
+      expected_commission_amount: receivedAmount,
+      received_commission_amount: receivedAmount,
+      received_payment_date: todayDateString(),
+    })
+    .eq("id", commissionId)
+    .eq("trip_id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/commissions/${commissionId}`);
+  revalidatePath("/admin/commissions");
+}
+
+export default async function AdminTripEditorPage({
+  params,
+}: {
+  params: Promise<{ tripId: string }>;
+}) {
+  const { tripId } = await params;
+  const { supabase } = await requireAdmin();
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("*")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) {
+    return (
+      <PageShell title="Trip Editor" subtitle="We could not load this trip.">
+        <div className="card">
+          <p>
+            <strong>Error:</strong>
+          </p>
+          <pre>{JSON.stringify(tripError, null, 2)}</pre>
+        </div>
+      </PageShell>
+    );
+  }
+
+  const { data: clientAccount, error: clientAccountError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .eq("id", trip.client_account_id)
+    .maybeSingle();
+
+  if (clientAccountError) {
+    return (
+      <PageShell title="Trip Editor" subtitle="There was a problem loading the client.">
+        <div className="card">
+          <p>
+            <strong>Error loading client:</strong>
+          </p>
+          <pre>{JSON.stringify(clientAccountError, null, 2)}</pre>
+        </div>
+      </PageShell>
+    );
+  }
+
+  const clientInfo = clientAccount as ClientInfo | null;
+
+  const { data: proposal } = await supabase
+    .from("trip_proposals")
+    .select("*")
+    .eq("trip_id", tripId)
+    .maybeSingle();
+
+  const { data: suppliers } = await supabase
+    .from("suppliers")
+    .select("id, supplier_name, supplier_type")
+    .order("supplier_name", { ascending: true });
+
+  const supplierRows = (suppliers ?? []) as SupplierOption[];
+
+  const loadComponent = async (type: string, detailTable: string) => {
+    const { data: component } = await supabase
+      .from("trip_components")
+      .select("*")
+      .eq("trip_id", tripId)
+      .eq("component_type", type)
+      .maybeSingle();
+
+    let details: any = null;
+
+    if (component) {
+      const { data } = await supabase
+        .from(detailTable)
+        .select("*")
+        .eq("component_id", component.id)
+        .maybeSingle();
+
+      details = data;
+    }
+
+    return { component, details };
+  };
+
+  const hotel = await loadComponent("hotel", "hotel_components");
+  const air = await loadComponent("air", "air_components");
+  const cruise = await loadComponent("cruise", "cruise_components");
+  const transfer = await loadComponent("transfer", "transfer_components");
+  const activity = await loadComponent("activity", "activity_components");
+  const insurance = await loadComponent("insurance", "insurance_components");
+
+  let outboundSegment: any = null;
+  let returnSegment: any = null;
+
+  if (air.component) {
+    const { data: loadedSegments } = await supabase
+      .from("flight_segments")
+      .select("*")
+      .eq("air_component_id", air.component.id)
+      .order("segment_order", { ascending: true });
+
+    outboundSegment =
+      loadedSegments?.find((segment) => segment.direction === "outbound") ?? null;
+    returnSegment =
+      loadedSegments?.find((segment) => segment.direction === "return") ?? null;
+  }
+
+  const { data: tripNotes } = await supabase
+    .from("trip_notes")
+    .select("*")
+    .eq("trip_id", tripId);
+
+  const internalNote =
+    tripNotes?.find((note) => note.note_type === "internal") ?? null;
+  const clientNote = tripNotes?.find((note) => note.note_type === "client") ?? null;
+  const clientReminder =
+    tripNotes?.find((note) => note.note_type === "client_reminder") ?? null;
+
+  const { data: tripCommissions, error: tripCommissionsError } = await supabase
+    .from("commissions")
+    .select(
+      "id, commission_name, booking_number, supplier_name_snapshot, full_commission_amount, agency_commission_percent, expected_commission_amount, received_commission_amount, commission_status, expected_payment_date, received_payment_date",
+    )
+    .eq("trip_id", tripId)
+    .order("created_at", { ascending: false });
+
+  const commissionRows = (tripCommissions ?? []) as CommissionRow[];
+
+  const commissionFullTotal = commissionRows.reduce(
+    (sum, commission) => sum + Number(commission.full_commission_amount ?? 0),
+    0,
+  );
+
+  const commissionExpectedTotal = commissionRows.reduce(
+    (sum, commission) => sum + getExpectedCommission(commission),
+    0,
+  );
+
+  const commissionReceivedTotal = commissionRows.reduce(
+    (sum, commission) => sum + Number(commission.received_commission_amount ?? 0),
+    0,
+  );
+
+  const commissionOutstandingTotal =
+    commissionExpectedTotal - commissionReceivedTotal;
+
+  return (
+    <PageShell
+      title="Trip Editor"
+      subtitle="Update trip overview, proposal details, components, commissions, and notes."
+    >
+      <form
+        id="mark-trip-commission-received-form"
+        action={markTripCommissionReceived}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form action={updateTrip} className="stack">
+        <input type="hidden" name="trip_id" value={trip.id} />
+
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Client Information
+              </p>
+
+              <h2 style={{ margin: "6px 0 0" }}>
+                {getClientDisplayName(clientInfo)}
+              </h2>
+
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+                {clientInfo?.email ?? "No email on file"}
+              </p>
+            </div>
+
+            {clientInfo?.id ? (
+              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                <Link
+                  href={`/admin/clients/${clientInfo.id}`}
+                  className="btn btn-outline"
+                >
+                  Open Client
+                </Link>
+
+                <Link
+                  href={`/admin/clients/${clientInfo.id}/documents`}
+                  className="btn btn-outline"
+                >
+                  Client Documents
+                </Link>
+
+                <Link
+                  href={`/admin/trips/${trip.id}/client-documents`}
+                  className="btn btn-primary"
+                >
+                  Attach Docs to Trip
+                </Link>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid grid-3">
+            <div>
+              <span className="label">Client ID</span>
+              <p style={{ margin: "6px 0 0", overflowWrap: "anywhere" }}>
+                {clientInfo?.id ?? "Not linked"}
+              </p>
+            </div>
+
+            <div>
+              <span className="label">Email</span>
+              <p style={{ margin: "6px 0 0", overflowWrap: "anywhere" }}>
+                {clientInfo?.email ?? "Not provided"}
+              </p>
+            </div>
+
+            <div>
+              <span className="label">Trip</span>
+              <p style={{ margin: "6px 0 0" }}>
+                {trip.trip_name ?? "Not provided"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <CollapsibleSection title="Trip Overview" defaultOpen>
+          <div className="grid grid-2">
+            <label>
+              <span className="label">Trip Name</span>
+              <input
+                className="input"
+                name="trip_name"
+                defaultValue={trip.trip_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Destinations</span>
+              <input
+                className="input"
+                name="destinations"
+                defaultValue={trip.destinations ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Departure Date</span>
+              <input
+                className="input"
+                type="date"
+                name="departure_date"
+                defaultValue={trip.departure_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Return Date</span>
+              <input
+                className="input"
+                type="date"
+                name="return_date"
+                defaultValue={trip.return_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Occasion</span>
+              <input
+                className="input"
+                name="occasion"
+                defaultValue={trip.occasion ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Trip Status</span>
+              <select
+                className="select"
+                name="trip_status"
+                defaultValue={trip.trip_status ?? "draft"}
+              >
+                <option value="draft">draft</option>
+                <option value="quoted">quoted</option>
+                <option value="reserved">reserved</option>
+                <option value="confirmed">confirmed</option>
+                <option value="pending_final_payment">pending_final_payment</option>
+                <option value="paid_in_full">paid_in_full</option>
+                <option value="travel_complete">travel_complete</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Total Paid</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="total_paid"
+                defaultValue={trip.total_paid ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Balance Due</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="balance_due"
+                defaultValue={trip.balance_due ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="final_payment_due_date"
+                defaultValue={trip.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Proposal" defaultOpen>
+          <div className="grid grid-2">
+            <label>
+              <span className="label">Planning Fee</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="planning_fee"
+                defaultValue={proposal?.planning_fee ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="total_price"
+                defaultValue={proposal?.total_price ?? 0}
+              />
+            </label>
+
+            <label style={{ gridColumn: "1 / -1" }}>
+              <span className="label">Proposal Title</span>
+              <input
+                className="input"
+                name="proposal_title"
+                defaultValue={proposal?.proposal_title ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Proposal Welcome Text</span>
+            <textarea
+              className="textarea"
+              name="proposal_welcome_text"
+              defaultValue={proposal?.proposal_welcome_text ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Proposal Closing Text</span>
+            <textarea
+              className="textarea"
+              name="proposal_closing_text"
+              defaultValue={proposal?.proposal_closing_text ?? ""}
+            />
+          </label>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Commissions for This Trip">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0 }}>Trip Commission Tracker</h3>
+              <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
+                View commission records connected to this trip.
+              </p>
+            </div>
+
+            <Link
+              href={`/admin/commissions/new?tripId=${trip.id}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "10px 14px",
+                borderRadius: 10,
+                background: "var(--accent-dark)",
+                color: "white",
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              Add Commission
+            </Link>
+          </div>
+
+          {tripCommissionsError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading commissions:</strong>
+              </p>
+              <pre>{JSON.stringify(tripCommissionsError, null, 2)}</pre>
+            </div>
+          ) : commissionRows.length === 0 ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                No commission records are linked to this trip yet.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-3">
+                <div className="card">
+                  <span className="label">Full Commission</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionFullTotal)}
+                  </p>
+                </div>
+
+                <div className="card">
+                  <span className="label">Your Expected Commission</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionExpectedTotal)}
+                  </p>
+                </div>
+
+                <div className="card">
+                  <span className="label">Received</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionReceivedTotal)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="card">
+                <span className="label">Outstanding</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {formatMoney(commissionOutstandingTotal)}
+                </p>
+              </div>
+
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 1120 }}>
+                  <thead>
+                    <tr>
+                      <th>Commission</th>
+                      <th>Supplier</th>
+                      <th>Booking #</th>
+                      <th>Status</th>
+                      <th>Full</th>
+                      <th>Your %</th>
+                      <th>Your Expected</th>
+                      <th>Received</th>
+                      <th>Expected Date</th>
+                      <th>Received Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {commissionRows.map((commission) => {
+                      const expectedCommission = getExpectedCommission(commission);
+
+                      return (
+                        <tr key={commission.id}>
+                          <td>{commission.commission_name}</td>
+                          <td>{commission.supplier_name_snapshot ?? "Not provided"}</td>
+                          <td>{commission.booking_number ?? "Not provided"}</td>
+                          <td>{commission.commission_status ?? "expected"}</td>
+                          <td>{formatMoney(commission.full_commission_amount)}</td>
+                          <td>{commission.agency_commission_percent ?? 90}%</td>
+                          <td>{formatMoney(expectedCommission)}</td>
+                          <td>{formatMoney(commission.received_commission_amount)}</td>
+                          <td>{formatDate(commission.expected_payment_date)}</td>
+                          <td>{formatDate(commission.received_payment_date)}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <Link
+                                href={`/admin/commissions/${commission.id}`}
+                                style={{
+                                  color: "var(--accent-dark)",
+                                  fontWeight: 700,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                Open
+                              </Link>
+
+                              {commission.commission_status !== "received" ? (
+                                <button
+                                  type="submit"
+                                  form="mark-trip-commission-received-form"
+                                  name="commission_id"
+                                  value={commission.id}
+                                  className="btn btn-outline"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: 12,
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  Mark Received
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Hotel Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={hotel.component?.supplier_id ?? ""}
+            bookingNumber={hotel.component?.confirmation_number ?? ""}
+            commissionName={`${
+              hotel.details?.hotel_name ??
+              hotel.component?.supplier_name ??
+              "Hotel"
+            } Commission`}
+            grossBookingAmount={hotel.component?.total_price ?? 0}
+            fullCommissionAmount={hotel.component?.commission_admin_only ?? 0}
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="hotel_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={hotel.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Hotel Name</span>
+              <input
+                className="input"
+                name="hotel_name"
+                defaultValue={hotel.details?.hotel_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="hotel_booking_status"
+                defaultValue={hotel.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Hotel Address</span>
+              <input
+                className="input"
+                name="hotel_address"
+                defaultValue={hotel.details?.hotel_address ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Stars</span>
+              <input
+                className="input"
+                type="number"
+                step="0.1"
+                name="hotel_star_rating"
+                defaultValue={hotel.details?.hotel_star_rating ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Check-in</span>
+              <input
+                className="input"
+                type="date"
+                name="hotel_check_in_date"
+                defaultValue={hotel.details?.check_in_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Check-out</span>
+              <input
+                className="input"
+                type="date"
+                name="hotel_check_out_date"
+                defaultValue={hotel.details?.check_out_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Room Category</span>
+              <input
+                className="input"
+                name="hotel_room_category"
+                defaultValue={hotel.details?.room_category ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Nightly Rate</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="hotel_nightly_rate"
+                defaultValue={hotel.details?.nightly_rate ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="hotel_total_price"
+                defaultValue={hotel.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="hotel_confirmation_number"
+                defaultValue={hotel.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="hotel_deposit_due_date"
+                defaultValue={hotel.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="hotel_final_payment_due_date"
+                defaultValue={hotel.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Room Description</span>
+            <textarea
+              className="textarea"
+              name="hotel_room_description"
+              defaultValue={hotel.details?.room_description ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Hotel Description</span>
+            <textarea
+              className="textarea"
+              name="hotel_description"
+              defaultValue={hotel.details?.hotel_description ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="hotel_terms_and_conditions"
+              defaultValue={hotel.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="hotel_cancellation_policy"
+              defaultValue={hotel.component?.cancellation_policy ?? ""}
+            />
+          </label>
+        </CollapsibleSection>
+
+               <CollapsibleSection title="Air Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={air.component?.supplier_id ?? ""}
+            bookingNumber={air.component?.confirmation_number ?? ""}
+            commissionName={`${air.component?.supplier_name ?? "Air"} Commission`}
+            grossBookingAmount={air.component?.total_price ?? 0}
+            fullCommissionAmount={air.component?.commission_admin_only ?? 0}
+          />
+
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="air_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={air.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Flight Type</span>
+              <select
+                className="select"
+                name="air_flight_type"
+                defaultValue={air.details?.flight_type ?? "round_trip"}
+              >
+                <option value="round_trip">round_trip</option>
+                <option value="one_way">one_way</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="air_booking_status"
+                defaultValue={air.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Traveler Count</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                name="air_traveler_count"
+                defaultValue={air.details?.traveler_count ?? 1}
+              />
+            </label>
+
+            <label>
+              <span className="label">Rate Class</span>
+              <input
+                className="input"
+                name="air_rate_class"
+                defaultValue={air.details?.rate_class ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Airline Locator</span>
+              <input
+                className="input"
+                name="air_airline_locator"
+                defaultValue={air.details?.airline_locator ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="air_confirmation_number"
+                defaultValue={air.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="air_total_price"
+                defaultValue={air.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="air_deposit_due_date"
+                defaultValue={air.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="air_final_payment_due_date"
+                defaultValue={air.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="air_terms_and_conditions"
+              defaultValue={air.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="air_cancellation_policy"
+              defaultValue={air.component?.cancellation_policy ?? ""}
+            />
+          </label>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Outbound Flight</h3>
+
+            <div className="grid grid-2">
+              <AirportPicker
+                label="Departure Airport"
+                name="outbound_departure_airport_code"
+                defaultValue={outboundSegment?.departure_airport_code ?? ""}
+                helper="Search by airport code, city, or airport name."
+              />
+
+              <AirportPicker
+                label="Destination Airport"
+                name="outbound_destination_airport_code"
+                defaultValue={outboundSegment?.destination_airport_code ?? ""}
+                helper="Search by airport code, city, or airport name."
+              />
+
+              <label>
+                <span className="label">Departure Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="outbound_departure_datetime"
+                  defaultValue={
+                    outboundSegment?.departure_datetime
+                      ? new Date(outboundSegment.departure_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Arrival Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="outbound_arrival_datetime"
+                  defaultValue={
+                    outboundSegment?.arrival_datetime
+                      ? new Date(outboundSegment.arrival_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Flight Number</span>
+                <input
+                  className="input"
+                  name="outbound_flight_number"
+                  defaultValue={outboundSegment?.flight_number ?? ""}
+                />
+              </label>
+
+              <AirlinePicker
+                label="Carrier"
+                name="outbound_carrier"
+                defaultValue={outboundSegment?.carrier ?? ""}
+                helper="Search by airline code or airline name."
+              />
+
+              <label>
+                <span className="label">Cabin Class</span>
+                <input
+                  className="input"
+                  name="outbound_cabin_class"
+                  defaultValue={outboundSegment?.cabin_class ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Seat Assignment</span>
+                <input
+                  className="input"
+                  name="outbound_seat_assignment"
+                  defaultValue={outboundSegment?.seat_assignment ?? ""}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Return Flight</h3>
+
+            <div className="grid grid-2">
+              <AirportPicker
+                label="Departure Airport"
+                name="return_departure_airport_code"
+                defaultValue={returnSegment?.departure_airport_code ?? ""}
+                helper="Search by airport code, city, or airport name."
+              />
+
+              <AirportPicker
+                label="Destination Airport"
+                name="return_destination_airport_code"
+                defaultValue={returnSegment?.destination_airport_code ?? ""}
+                helper="Search by airport code, city, or airport name."
+              />
+
+              <label>
+                <span className="label">Departure Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="return_departure_datetime"
+                  defaultValue={
+                    returnSegment?.departure_datetime
+                      ? new Date(returnSegment.departure_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Arrival Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="return_arrival_datetime"
+                  defaultValue={
+                    returnSegment?.arrival_datetime
+                      ? new Date(returnSegment.arrival_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Flight Number</span>
+                <input
+                  className="input"
+                  name="return_flight_number"
+                  defaultValue={returnSegment?.flight_number ?? ""}
+                />
+              </label>
+
+              <AirlinePicker
+                label="Carrier"
+                name="return_carrier"
+                defaultValue={returnSegment?.carrier ?? ""}
+                helper="Search by airline code or airline name."
+              />
+
+              <label>
+                <span className="label">Cabin Class</span>
+                <input
+                  className="input"
+                  name="return_cabin_class"
+                  defaultValue={returnSegment?.cabin_class ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Seat Assignment</span>
+                <input
+                  className="input"
+                  name="return_seat_assignment"
+                  defaultValue={returnSegment?.seat_assignment ?? ""}
+                />
+              </label>
+            </div>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Cruise Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={cruise.component?.supplier_id ?? ""}
+            bookingNumber={cruise.component?.confirmation_number ?? ""}
+            commissionName={`${
+              cruise.details?.ship_name ??
+              cruise.details?.cruise_line ??
+              cruise.component?.supplier_name ??
+              "Cruise"
+            } Commission`}
+            grossBookingAmount={cruise.component?.total_price ?? 0}
+            fullCommissionAmount={cruise.component?.commission_admin_only ?? 0}
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="cruise_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={cruise.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Cruise Line</span>
+              <input
+                className="input"
+                name="cruise_line"
+                defaultValue={cruise.details?.cruise_line ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Ship Name</span>
+              <input
+                className="input"
+                name="ship_name"
+                defaultValue={cruise.details?.ship_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="cruise_booking_status"
+                defaultValue={cruise.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="cruise_confirmation_number"
+                defaultValue={cruise.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Sailing Date</span>
+              <input
+                className="input"
+                type="date"
+                name="cruise_sailing_date"
+                defaultValue={cruise.details?.sailing_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Return Date</span>
+              <input
+                className="input"
+                type="date"
+                name="cruise_return_date"
+                defaultValue={cruise.details?.return_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Departure Port</span>
+              <input
+                className="input"
+                name="cruise_departure_port"
+                defaultValue={cruise.details?.departure_port ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Arrival Port</span>
+              <input
+                className="input"
+                name="cruise_arrival_port"
+                defaultValue={cruise.details?.arrival_port ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Cabin Category</span>
+              <input
+                className="input"
+                name="cruise_cabin_category"
+                defaultValue={cruise.details?.cabin_category ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Cabin Number</span>
+              <input
+                className="input"
+                name="cruise_cabin_number"
+                defaultValue={cruise.details?.cabin_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Dining Seating</span>
+              <input
+                className="input"
+                name="cruise_dining_seating"
+                defaultValue={cruise.details?.dining_seating ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="cruise_total_price"
+                defaultValue={cruise.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="cruise_deposit_due_date"
+                defaultValue={cruise.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="cruise_final_payment_due_date"
+                defaultValue={cruise.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Cruise Description</span>
+            <textarea
+              className="textarea"
+              name="cruise_description"
+              defaultValue={cruise.details?.cruise_description ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="cruise_terms_and_conditions"
+              defaultValue={cruise.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="cruise_cancellation_policy"
+              defaultValue={cruise.component?.cancellation_policy ?? ""}
+            />
+          </label>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Transfer Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={transfer.component?.supplier_id ?? ""}
+            bookingNumber={transfer.component?.confirmation_number ?? ""}
+            commissionName={`${
+              transfer.details?.supplier_name ??
+              transfer.component?.supplier_name ??
+              "Transfer"
+            } Commission`}
+            grossBookingAmount={transfer.component?.total_price ?? 0}
+            fullCommissionAmount={
+              transfer.details?.commission_amount ??
+              transfer.component?.commission_admin_only ??
+              0
+            }
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="transfer_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={transfer.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Supplier / Manual Name</span>
+              <input
+                className="input"
+                name="transfer_supplier_name"
+                defaultValue={transfer.details?.supplier_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="transfer_booking_status"
+                defaultValue={transfer.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Pickup Date & Time</span>
+              <input
+                className="input"
+                type="datetime-local"
+                name="transfer_pickup_datetime"
+                defaultValue={
+                  transfer.details?.pickup_datetime
+                    ? new Date(transfer.details.pickup_datetime)
+                        .toISOString()
+                        .slice(0, 16)
+                    : ""
+                }
+              />
+            </label>
+
+            <label>
+              <span className="label">Passenger Count</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                name="transfer_passenger_count"
+                defaultValue={transfer.details?.passenger_count ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Pickup Location</span>
+              <input
+                className="input"
+                name="transfer_pickup_location"
+                defaultValue={transfer.details?.pickup_location ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Dropoff Location</span>
+              <input
+                className="input"
+                name="transfer_dropoff_location"
+                defaultValue={transfer.details?.dropoff_location ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Vehicle Type</span>
+              <input
+                className="input"
+                name="transfer_vehicle_type"
+                defaultValue={transfer.details?.vehicle_type ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="transfer_confirmation_number"
+                defaultValue={transfer.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="transfer_total_price"
+                defaultValue={transfer.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="transfer_deposit_due_date"
+                defaultValue={transfer.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="transfer_final_payment_due_date"
+                defaultValue={transfer.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Transfer Notes</span>
+            <textarea
+              className="textarea"
+              name="transfer_notes"
+              defaultValue={transfer.details?.transfer_notes ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="transfer_terms_and_conditions"
+              defaultValue={transfer.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="transfer_cancellation_policy"
+              defaultValue={transfer.component?.cancellation_policy ?? ""}
+            />
+          </label>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Commissions</h3>
+
+            <div className="grid grid-2">
+              <label>
+                <span className="label">Commission Amount</span>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  name="transfer_commission_amount"
+                  defaultValue={transfer.details?.commission_amount ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Commission Status</span>
+                <input
+                  className="input"
+                  name="transfer_commission_status"
+                  defaultValue={transfer.details?.commission_status ?? ""}
+                />
+              </label>
+            </div>
+
+            <label>
+              <span className="label">Commission Notes</span>
+              <textarea
+                className="textarea"
+                name="transfer_commission_notes"
+                defaultValue={transfer.details?.commission_notes ?? ""}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Activity Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={activity.component?.supplier_id ?? ""}
+            bookingNumber={activity.component?.confirmation_number ?? ""}
+            commissionName={`${
+              activity.details?.activity_name ??
+              activity.component?.supplier_name ??
+              "Activity"
+            } Commission`}
+            grossBookingAmount={activity.component?.total_price ?? 0}
+            fullCommissionAmount={
+              activity.details?.commission_amount ??
+              activity.component?.commission_admin_only ??
+              0
+            }
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="activity_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={activity.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Activity Name</span>
+              <input
+                className="input"
+                name="activity_name"
+                defaultValue={activity.details?.activity_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Supplier / Manual Name</span>
+              <input
+                className="input"
+                name="activity_supplier_name"
+                defaultValue={activity.details?.supplier_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="activity_booking_status"
+                defaultValue={activity.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="activity_confirmation_number"
+                defaultValue={activity.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Activity Date & Time</span>
+              <input
+                className="input"
+                type="datetime-local"
+                name="activity_datetime"
+                defaultValue={
+                  activity.details?.activity_datetime
+                    ? new Date(activity.details.activity_datetime)
+                        .toISOString()
+                        .slice(0, 16)
+                    : ""
+                }
+              />
+            </label>
+
+            <label>
+              <span className="label">Location</span>
+              <input
+                className="input"
+                name="activity_location"
+                defaultValue={activity.details?.location ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Participant Count</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                name="activity_participant_count"
+                defaultValue={activity.details?.participant_count ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="activity_total_price"
+                defaultValue={activity.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="activity_deposit_due_date"
+                defaultValue={activity.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="activity_final_payment_due_date"
+                defaultValue={activity.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Activity Notes</span>
+            <textarea
+              className="textarea"
+              name="activity_notes"
+              defaultValue={activity.details?.activity_notes ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="activity_terms_and_conditions"
+              defaultValue={activity.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="activity_cancellation_policy"
+              defaultValue={activity.component?.cancellation_policy ?? ""}
+            />
+          </label>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Commissions</h3>
+
+            <div className="grid grid-2">
+              <label>
+                <span className="label">Commission Amount</span>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  name="activity_commission_amount"
+                  defaultValue={activity.details?.commission_amount ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Commission Status</span>
+                <input
+                  className="input"
+                  name="activity_commission_status"
+                  defaultValue={activity.details?.commission_status ?? ""}
+                />
+              </label>
+            </div>
+
+            <label>
+              <span className="label">Commission Notes</span>
+              <textarea
+                className="textarea"
+                name="activity_commission_notes"
+                defaultValue={activity.details?.commission_notes ?? ""}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Insurance Component">
+          <ComponentCommissionLink
+            tripId={trip.id}
+            supplierId={insurance.component?.supplier_id ?? ""}
+            bookingNumber={
+              insurance.component?.confirmation_number ??
+              insurance.details?.policy_number ??
+              ""
+            }
+            commissionName={`${
+              insurance.details?.plan_name ??
+              insurance.details?.provider_name ??
+              insurance.component?.supplier_name ??
+              "Insurance"
+            } Commission`}
+            grossBookingAmount={insurance.component?.total_price ?? 0}
+            fullCommissionAmount={
+              insurance.details?.commission_amount ??
+              insurance.component?.commission_admin_only ??
+              0
+            }
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="insurance_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={insurance.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Provider Name</span>
+              <input
+                className="input"
+                name="insurance_provider_name"
+                defaultValue={insurance.details?.provider_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Plan Name</span>
+              <input
+                className="input"
+                name="insurance_plan_name"
+                defaultValue={insurance.details?.plan_name ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="insurance_booking_status"
+                defaultValue={insurance.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Policy Number</span>
+              <input
+                className="input"
+                name="insurance_policy_number"
+                defaultValue={insurance.details?.policy_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Coverage Start Date</span>
+              <input
+                className="input"
+                type="date"
+                name="insurance_coverage_start_date"
+                defaultValue={insurance.details?.coverage_start_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Coverage End Date</span>
+              <input
+                className="input"
+                type="date"
+                name="insurance_coverage_end_date"
+                defaultValue={insurance.details?.coverage_end_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Insured Traveler Count</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                name="insurance_insured_traveler_count"
+                defaultValue={insurance.details?.insured_traveler_count ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Premium Amount</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="insurance_premium_amount"
+                defaultValue={insurance.details?.premium_amount ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Claim Phone</span>
+              <input
+                className="input"
+                name="insurance_claim_phone"
+                defaultValue={insurance.details?.claim_phone ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Insurance Notes</span>
+            <textarea
+              className="textarea"
+              name="insurance_notes"
+              defaultValue={insurance.details?.insurance_notes ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="insurance_terms_and_conditions"
+              defaultValue={insurance.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="insurance_cancellation_policy"
+              defaultValue={insurance.component?.cancellation_policy ?? ""}
+            />
+          </label>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Commissions</h3>
+
+            <div className="grid grid-2">
+              <label>
+                <span className="label">Commission Amount</span>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  name="insurance_commission_amount"
+                  defaultValue={insurance.details?.commission_amount ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Commission Status</span>
+                <input
+                  className="input"
+                  name="insurance_commission_status"
+                  defaultValue={insurance.details?.commission_status ?? ""}
+                />
+              </label>
+            </div>
+
+            <label>
+              <span className="label">Commission Notes</span>
+              <textarea
+                className="textarea"
+                name="insurance_commission_notes"
+                defaultValue={insurance.details?.commission_notes ?? ""}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Notes">
+          <div className="card stack" style={{ background: "#fffaf0" }}>
+            <h3 style={{ margin: 0 }}>Internal Notes</h3>
+
+            <label>
+              <span className="label">Title</span>
+              <input
+                className="input"
+                name="internal_note_title"
+                defaultValue={internalNote?.title ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Content</span>
+              <textarea
+                className="textarea"
+                name="internal_note_content"
+                defaultValue={internalNote?.content ?? ""}
+              />
+            </label>
+          </div>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Client Notes</h3>
+
+            <label>
+              <span className="label">Title</span>
+              <input
+                className="input"
+                name="client_note_title"
+                defaultValue={clientNote?.title ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Content</span>
+              <textarea
+                className="textarea"
+                name="client_note_content"
+                defaultValue={clientNote?.content ?? ""}
+              />
+            </label>
+          </div>
+
+          <div className="card stack" style={{ background: "#f0f7f8" }}>
+            <h3 style={{ margin: 0 }}>Important Client Reminders</h3>
+
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
+              These reminders will appear near the top of the client-facing trip page.
+              Use this for trip-specific reminders like passport validity, printed
+              vouchers, cruise documents, resort requirements, or minor travel consent
+              notes.
+            </p>
+
+            <label>
+              <span className="label">Reminder Title</span>
+              <input
+                className="input"
+                name="client_reminder_title"
+                defaultValue={clientReminder?.title ?? ""}
+                placeholder="Example: Important Reminders Before You Travel"
+              />
+            </label>
+
+            <label>
+              <span className="label">Reminder Content</span>
+              <textarea
+                className="textarea"
+                name="client_reminder_content"
+                defaultValue={clientReminder?.content ?? ""}
+                placeholder="Example: Please confirm passport validity, bring your cruise boarding documents, and keep your transfer voucher handy."
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        <div className="row">
+          <button type="submit" className="btn btn-primary">
+            Save Trip
+          </button>
+
+          <a href={`/admin/trips/${trip.id}/documents`} className="btn btn-outline">
+            Manage Documents
+          </a>
+
+          <a href="/admin/trips" className="btn btn-outline">
+            Back to Trips
+          </a>
+        </div>
+      </form>
+    </PageShell>
+  );
+}

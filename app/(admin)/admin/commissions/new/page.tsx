@@ -1,0 +1,481 @@
+import { redirect } from "next/navigation";
+import { PageShell } from "@/components/layout/page-shell";
+import { requireAdmin } from "@/lib/auth/require-admin";
+
+type ClientOption = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
+type TripOption = {
+  id: string;
+  client_account_id: string | null;
+  trip_name: string | null;
+  destinations: string | null;
+};
+
+type SupplierOption = {
+  id: string;
+  supplier_name: string;
+  supplier_type: string | null;
+};
+
+function cleanText(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+  return value || null;
+}
+
+function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) return fallback;
+
+  const numberValue = Number(rawValue);
+
+  if (Number.isNaN(numberValue)) {
+    throw new Error("Invalid number submitted.");
+  }
+
+  return numberValue;
+}
+
+function calculateExpectedCommission(
+  fullCommissionAmount: number,
+  agencyCommissionPercent: number,
+) {
+  return Math.round(fullCommissionAmount * (agencyCommissionPercent / 100) * 100) / 100;
+}
+
+function getClientDisplayName(client: ClientOption) {
+  const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
+
+  return name || client.email || "Unnamed Client";
+}
+
+async function createCommission(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const commission_name = String(formData.get("commission_name") ?? "").trim();
+
+  if (!commission_name) {
+    throw new Error("Commission name is required.");
+  }
+
+  const client_account_id = cleanText(formData, "client_account_id");
+  const trip_id = cleanText(formData, "trip_id");
+  const supplier_id = cleanText(formData, "supplier_id");
+
+  let client_name_snapshot: string | null = null;
+  let trip_name_snapshot: string | null = null;
+  let supplier_name_snapshot = cleanText(formData, "supplier_name_snapshot");
+
+  if (client_account_id) {
+    const { data: client } = await supabase
+      .from("client_accounts")
+      .select("first_name, last_name, email")
+      .eq("id", client_account_id)
+      .maybeSingle();
+
+    if (client) {
+      client_name_snapshot =
+        `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
+        client.email ||
+        null;
+    }
+  }
+
+  if (trip_id) {
+    const { data: trip } = await supabase
+      .from("trips")
+      .select("trip_name, destinations, client_account_id")
+      .eq("id", trip_id)
+      .maybeSingle();
+
+    if (trip) {
+      trip_name_snapshot = trip.trip_name || trip.destinations || null;
+    }
+  }
+
+  if (supplier_id) {
+    const { data: supplier } = await supabase
+      .from("suppliers")
+      .select("supplier_name")
+      .eq("id", supplier_id)
+      .maybeSingle();
+
+    if (supplier) {
+      supplier_name_snapshot = supplier.supplier_name;
+    }
+  }
+
+  const gross_booking_amount = toMoneyNumber(
+    formData.get("gross_booking_amount"),
+  );
+
+  const full_commission_amount = toMoneyNumber(
+    formData.get("full_commission_amount"),
+  );
+
+  const agency_commission_percent = toMoneyNumber(
+    formData.get("agency_commission_percent"),
+    90,
+  );
+
+  const expected_commission_amount = calculateExpectedCommission(
+    full_commission_amount,
+    agency_commission_percent,
+  );
+
+  const received_commission_amount = toMoneyNumber(
+    formData.get("received_commission_amount"),
+  );
+
+  const { data, error } = await supabase
+    .from("commissions")
+    .insert({
+      client_account_id,
+      trip_id,
+      supplier_id,
+      commission_name,
+      booking_number: cleanText(formData, "booking_number"),
+      supplier_name_snapshot,
+      client_name_snapshot,
+      trip_name_snapshot,
+      gross_booking_amount,
+      full_commission_amount,
+      agency_commission_percent,
+      expected_commission_amount,
+      received_commission_amount,
+      commission_status: cleanText(formData, "commission_status") ?? "expected",
+      expected_payment_date: cleanText(formData, "expected_payment_date"),
+      received_payment_date: cleanText(formData, "received_payment_date"),
+      notes: cleanText(formData, "notes"),
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const returnToTripId = cleanText(formData, "return_to_trip_id");
+
+  if (returnToTripId) {
+    redirect(`/admin/trips/${returnToTripId}`);
+  }
+
+  redirect(`/admin/commissions/${data.id}`);
+}
+
+export default async function NewCommissionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    tripId?: string;
+    supplierId?: string;
+    bookingNumber?: string;
+    commissionName?: string;
+    grossBookingAmount?: string;
+    fullCommissionAmount?: string;
+  }>;
+}) {
+  const {
+    tripId,
+    supplierId,
+    bookingNumber,
+    commissionName,
+    grossBookingAmount,
+    fullCommissionAmount,
+  } = await searchParams;
+
+  const selectedTripId = String(tripId ?? "").trim();
+  const selectedSupplierId = String(supplierId ?? "").trim();
+
+  const defaultBookingNumber = String(bookingNumber ?? "").trim();
+  const defaultCommissionName = String(commissionName ?? "").trim();
+  const defaultGrossBookingAmount = String(grossBookingAmount ?? "").trim();
+  const defaultFullCommissionAmount = String(fullCommissionAmount ?? "").trim();
+
+  const { supabase } = await requireAdmin();
+
+  const { data: clients } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .order("last_name", { ascending: true });
+
+  const { data: trips } = await supabase
+    .from("trips")
+    .select("id, client_account_id, trip_name, destinations")
+    .order("departure_date", { ascending: false });
+
+  const { data: suppliers } = await supabase
+    .from("suppliers")
+    .select("id, supplier_name, supplier_type")
+    .order("supplier_name", { ascending: true });
+
+  const clientRows = (clients ?? []) as ClientOption[];
+  const tripRows = (trips ?? []) as TripOption[];
+  const supplierRows = (suppliers ?? []) as SupplierOption[];
+
+  const selectedTrip = tripRows.find((trip) => trip.id === selectedTripId);
+  const selectedClientId = selectedTrip?.client_account_id ?? "";
+
+  const selectedSupplier = supplierRows.find(
+    (supplier) => supplier.id === selectedSupplierId,
+  );
+
+  const generatedCommissionName =
+    defaultCommissionName ||
+    [
+      selectedSupplier?.supplier_name,
+      selectedTrip?.trip_name ?? selectedTrip?.destinations,
+      "Commission",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+  return (
+    <PageShell
+      title="Add New Commission"
+      subtitle="Create a commission tracking record."
+    >
+      <form action={createCommission} className="card stack" style={{ maxWidth: 900 }}>
+        <input type="hidden" name="return_to_trip_id" value={selectedTripId} />
+
+        <section className="stack">
+          <h2 style={{ margin: 0 }}>Commission Basics</h2>
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span>Commission Name</span>
+              <input
+                name="commission_name"
+                type="text"
+                placeholder="Example: Disney Package Commission"
+                defaultValue={generatedCommissionName}
+                required
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span>Booking Number</span>
+              <input
+                name="booking_number"
+                type="text"
+                defaultValue={defaultBookingNumber}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span>Status</span>
+              <select name="commission_status" defaultValue="expected">
+                <option value="expected">expected</option>
+                <option value="pending">pending</option>
+                <option value="received">received</option>
+                <option value="partial">partial</option>
+                <option value="overdue">overdue</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section className="stack">
+          <h2 style={{ margin: 0 }}>Connections</h2>
+
+          {selectedTrip ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                color: "#64748b",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Trip pre-selected:</strong>{" "}
+              {selectedTrip.trip_name ?? selectedTrip.destinations ?? "Selected Trip"}
+            </div>
+          ) : null}
+
+          {selectedSupplier ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                color: "#64748b",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Supplier pre-selected:</strong>{" "}
+              {selectedSupplier.supplier_name}
+              {selectedSupplier.supplier_type
+                ? ` — ${selectedSupplier.supplier_type}`
+                : ""}
+            </div>
+          ) : null}
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span>Client</span>
+              <select name="client_account_id" defaultValue={selectedClientId}>
+                <option value="">No client selected</option>
+                {clientRows.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {getClientDisplayName(client)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span>Trip</span>
+              <select name="trip_id" defaultValue={selectedTripId}>
+                <option value="">No trip selected</option>
+                {tripRows.map((trip) => (
+                  <option key={trip.id} value={trip.id}>
+                    {trip.trip_name ?? trip.destinations ?? "Unnamed Trip"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span>Supplier</span>
+              <select name="supplier_id" defaultValue={selectedSupplierId}>
+                <option value="">No supplier selected</option>
+                {supplierRows.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.supplier_name}
+                    {supplier.supplier_type ? ` — ${supplier.supplier_type}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span>Supplier Name Snapshot / Manual Supplier</span>
+              <input
+                name="supplier_name_snapshot"
+                type="text"
+                defaultValue={selectedSupplier?.supplier_name ?? ""}
+                placeholder="Use if supplier is not in supplier list yet"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="stack">
+          <h2 style={{ margin: 0 }}>Amounts</h2>
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span>Gross Booking Amount</span>
+              <input
+                name="gross_booking_amount"
+                type="number"
+                step="0.01"
+                defaultValue={defaultGrossBookingAmount || "0"}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span>Full Commission</span>
+              <input
+                name="full_commission_amount"
+                type="number"
+                step="0.01"
+                defaultValue={defaultFullCommissionAmount || "0"}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span>Your Commission Percentage</span>
+              <input
+                name="agency_commission_percent"
+                type="number"
+                step="0.01"
+                defaultValue="90"
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span>Received Commission Amount</span>
+              <input
+                name="received_commission_amount"
+                type="number"
+                step="0.01"
+                defaultValue="0"
+              />
+            </label>
+
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                color: "#64748b",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Expected Commission:</strong> This will calculate automatically
+              when saved. Example: $1,000 full commission × 90% = $900 expected
+              commission.
+            </div>
+          </div>
+        </section>
+
+        <section className="stack">
+          <h2 style={{ margin: 0 }}>Payment Timing</h2>
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span>Expected Payment Date</span>
+              <input name="expected_payment_date" type="date" />
+            </label>
+
+            <label className="stack-sm">
+              <span>Received Payment Date</span>
+              <input name="received_payment_date" type="date" />
+            </label>
+          </div>
+        </section>
+
+        <section className="stack">
+          <h2 style={{ margin: 0 }}>Notes</h2>
+
+          <label className="stack-sm">
+            <span>Notes</span>
+            <textarea
+              name="notes"
+              rows={5}
+              placeholder="Supplier follow-up notes, payment notes, manual tracking details, etc."
+            />
+          </label>
+        </section>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <button type="submit" className="button">
+            Create Commission
+          </button>
+
+          <a
+            href={selectedTripId ? `/admin/trips/${selectedTripId}` : "/admin/commissions"}
+            className="button-secondary"
+          >
+            Cancel
+          </a>
+        </div>
+      </form>
+    </PageShell>
+  );
+}
