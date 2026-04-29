@@ -128,30 +128,15 @@ function InfoItem({
   );
 }
 
-function ActionButton({
-  href,
-  children,
-  variant = "primary",
-}: {
-  href: string;
-  children: React.ReactNode;
-  variant?: "primary" | "secondary";
-}) {
-  const isPrimary = variant === "primary";
-
+function ActionButton({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
+      className="btn btn-primary"
       style={{
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "10px 14px",
-        borderRadius: 10,
-        background: isPrimary ? "var(--accent-dark)" : "white",
-        color: isPrimary ? "white" : "var(--accent-dark)",
-        border: isPrimary ? "none" : "1px solid var(--accent-dark)",
-        fontWeight: 700,
         textDecoration: "none",
       }}
     >
@@ -179,6 +164,26 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
     >
       {label}
     </span>
+  );
+}
+
+function StatusButton({
+  commissionId,
+  status,
+  label,
+}: {
+  commissionId: string;
+  status: string;
+  label: string;
+}) {
+  return (
+    <form action={updateCommissionStatus}>
+      <input type="hidden" name="commission_id" value={commissionId} />
+      <input type="hidden" name="commission_status" value={status} />
+      <button type="submit" className="btn btn-primary">
+        {label}
+      </button>
+    </form>
   );
 }
 
@@ -321,31 +326,25 @@ export default async function CommissionDetailPage({
           marginBottom: 16,
         }}
       >
-        <ActionButton href="/admin/commissions" variant="secondary">
+        <ActionButton href="/admin/commissions">
           Back to Commissions
         </ActionButton>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {row.client_account_id ? (
-            <ActionButton
-              href={`/admin/clients/${row.client_account_id}`}
-              variant="secondary"
-            >
+            <ActionButton href={`/admin/clients/${row.client_account_id}`}>
               Open Client
             </ActionButton>
           ) : null}
 
           {row.trip_id ? (
-            <ActionButton href={`/admin/trips/${row.trip_id}`} variant="secondary">
+            <ActionButton href={`/admin/trips/${row.trip_id}`}>
               Open Trip
             </ActionButton>
           ) : null}
 
           {row.supplier_id ? (
-            <ActionButton
-              href={`/admin/suppliers/${row.supplier_id}`}
-              variant="secondary"
-            >
+            <ActionButton href={`/admin/suppliers/${row.supplier_id}`}>
               Open Supplier
             </ActionButton>
           ) : null}
@@ -353,6 +352,42 @@ export default async function CommissionDetailPage({
           <ActionButton href={`/admin/commissions/${row.id}/edit`}>
             Edit Commission
           </ActionButton>
+        </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--accent-dark)",
+                fontWeight: 800,
+              }}
+            >
+              Commission Detail
+            </p>
+
+            <h1 style={{ margin: "4px 0 0", fontSize: 28 }}>
+              {row.commission_name}
+            </h1>
+
+            <p style={{ margin: "6px 0 0", color: "#667085" }}>
+              {row.client_name_snapshot ?? "Client not provided"} •{" "}
+              {row.trip_name_snapshot ?? "Trip not provided"}
+            </p>
+          </div>
+
+          <StatusBadge status={row.commission_status} />
         </div>
       </div>
 
@@ -397,51 +432,12 @@ export default async function CommissionDetailPage({
             </button>
           </form>
 
-          <form action={updateCommissionStatus}>
-            <input type="hidden" name="commission_id" value={row.id} />
-            <input type="hidden" name="commission_status" value="expected" />
-            <button type="submit" className="btn btn-outline">
-              Mark Expected
-            </button>
-          </form>
-
-          <form action={updateCommissionStatus}>
-            <input type="hidden" name="commission_id" value={row.id} />
-            <input type="hidden" name="commission_status" value="pending" />
-            <button type="submit" className="btn btn-outline">
-              Mark Pending
-            </button>
-          </form>
-
-          <form action={updateCommissionStatus}>
-            <input type="hidden" name="commission_id" value={row.id} />
-            <input type="hidden" name="commission_status" value="partial" />
-            <button type="submit" className="btn btn-outline">
-              Mark Partial
-            </button>
-          </form>
-
-          <form action={updateCommissionStatus}>
-            <input type="hidden" name="commission_id" value={row.id} />
-            <input type="hidden" name="commission_status" value="overdue" />
-            <button type="submit" className="btn btn-outline">
-              Mark Overdue
-            </button>
-          </form>
-
-          <form action={updateCommissionStatus}>
-            <input type="hidden" name="commission_id" value={row.id} />
-            <input type="hidden" name="commission_status" value="cancelled" />
-            <button type="submit" className="btn btn-outline">
-              Mark Cancelled
-            </button>
-          </form>
+          <StatusButton commissionId={row.id} status="expected" label="Mark Expected" />
+          <StatusButton commissionId={row.id} status="pending" label="Mark Pending" />
+          <StatusButton commissionId={row.id} status="partial" label="Mark Partial" />
+          <StatusButton commissionId={row.id} status="overdue" label="Mark Overdue" />
+          <StatusButton commissionId={row.id} status="cancelled" label="Mark Cancelled" />
         </div>
-
-        <p style={{ margin: 0, color: "#64748b", lineHeight: 1.5 }}>
-          Mark Received will set the received amount to your expected commission
-          amount and set today as the received payment date.
-        </p>
       </div>
 
       <div className="card stack">
@@ -452,13 +448,6 @@ export default async function CommissionDetailPage({
           <InfoItem label="Booking Number" value={row.booking_number} />
           <InfoItem label="Status" value={row.commission_status ?? "expected"} />
           <InfoItem label="Created" value={formatDateTime(row.created_at)} />
-        </div>
-
-        <div>
-          <span className="label">Current Status</span>
-          <p style={{ marginTop: 8 }}>
-            <StatusBadge status={row.commission_status} />
-          </p>
         </div>
       </div>
 

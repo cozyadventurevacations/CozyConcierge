@@ -1,10 +1,106 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
+const supplierTypes = [
+  "Hotel / Resort",
+  "Cruise Line",
+  "Tour Operator",
+  "Transfer Company",
+  "Rental Car",
+  "Airline",
+  "Insurance",
+  "Theme Park",
+  "Activity / Excursion",
+  "Wholesaler",
+  "Destination Management Company",
+  "Rail",
+  "River Cruise",
+  "All-Inclusive Resort",
+  "Villa / Vacation Rental",
+  "Travel Technology",
+  "Other",
+];
+
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function Field({
+  label,
+  name,
+  type = "text",
+  required = false,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <input
+        className="input"
+        name={name}
+        type={type}
+        required={required}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  rows = 4,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  rows?: number;
+  placeholder?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <textarea
+        className="textarea"
+        name={name}
+        rows={rows}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  options,
+}: {
+  label: string;
+  name: string;
+  options: string[];
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <select className="select" name={name} defaultValue="">
+        <option value="">Select supplier type</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 async function createSupplier(formData: FormData) {
@@ -50,38 +146,44 @@ export default async function NewSupplierPage() {
   return (
     <PageShell
       title="Add New Supplier"
-      subtitle="Create a supplier or vendor record."
+      subtitle="Create a supplier, vendor, partner, or booking contact record."
     >
-      <form action={createSupplier} className="card stack" style={{ maxWidth: 900 }}>
-        <section className="stack">
+      <form action={createSupplier} className="stack" style={{ maxWidth: 1100 }}>
+        <div
+          className="card stack"
+          style={{
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+            }}
+          >
+            Supplier Setup
+          </p>
+
           <h2 style={{ margin: 0 }}>Supplier Information</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Supplier Name</span>
-              <input name="supplier_name" type="text" required />
-            </label>
+            <Field
+              label="Supplier Name"
+              name="supplier_name"
+              required
+              placeholder="e.g. Royal Caribbean, Apple Vacations, Delta Air Lines"
+            />
 
-            <label className="stack-sm">
-              <span>Supplier Type</span>
-              <select name="supplier_type" defaultValue="">
-                <option value="">Select supplier type</option>
-                <option value="Hotel / Resort">Hotel / Resort</option>
-                <option value="Cruise Line">Cruise Line</option>
-                <option value="Tour Operator">Tour Operator</option>
-                <option value="Transfer Company">Transfer Company</option>
-                <option value="Rental Car">Rental Car</option>
-                <option value="Airline">Airline</option>
-                <option value="Insurance">Insurance</option>
-                <option value="Theme Park">Theme Park</option>
-                <option value="Activity / Excursion">Activity / Excursion</option>
-                <option value="Wholesaler">Wholesaler</option>
-                <option value="Destination Management Company">
-                  Destination Management Company
-                </option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
+            <SelectField
+              label="Supplier Type"
+              name="supplier_type"
+              options={supplierTypes}
+            />
           </div>
 
           <label
@@ -89,75 +191,111 @@ export default async function NewSupplierPage() {
               display: "flex",
               gap: 10,
               alignItems: "center",
-              marginTop: 4,
+              padding: "12px",
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+              cursor: "pointer",
             }}
           >
             <input name="preferred_supplier" type="checkbox" />
-            <span>Preferred supplier</span>
+            <span style={{ lineHeight: 1.45 }}>
+              <strong>Preferred supplier</strong>
+            </span>
           </label>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Contact Details</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Contact Name</span>
-              <input name="contact_name" type="text" />
-            </label>
+            <Field
+              label="Contact Name"
+              name="contact_name"
+              placeholder="e.g. Sales manager, BDM, group contact"
+            />
 
-            <label className="stack-sm">
-              <span>Contact Email</span>
-              <input name="contact_email" type="email" />
-            </label>
+            <Field
+              label="Contact Email"
+              name="contact_email"
+              type="email"
+              placeholder="name@example.com"
+            />
 
-            <label className="stack-sm">
-              <span>Contact Phone</span>
-              <input name="contact_phone" type="tel" />
-            </label>
+            <Field
+              label="Contact Phone"
+              name="contact_phone"
+              type="tel"
+              placeholder="Phone number or direct line"
+            />
 
-            <label className="stack-sm">
-              <span>Website URL</span>
-              <input name="website_url" type="url" />
-            </label>
+            <Field
+              label="Website URL"
+              name="website_url"
+              type="url"
+              placeholder="https://example.com"
+            />
 
-            <label className="stack-sm">
-              <span>Booking Portal URL</span>
-              <input name="booking_portal_url" type="url" />
-            </label>
+            <Field
+              label="Booking Portal URL"
+              name="booking_portal_url"
+              type="url"
+              placeholder="https://supplier-booking-portal.com"
+            />
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
-          <h2 style={{ margin: 0 }}>Internal Notes</h2>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Commission & Internal Notes</h2>
 
-          <label className="stack-sm">
-            <span>Commission Notes</span>
-            <textarea
-              name="commission_notes"
-              rows={4}
-              placeholder="Commission percentage, payment timing, tracking notes, supplier-specific reminders, etc."
-            />
-          </label>
+          <TextAreaField
+            label="Commission Notes"
+            name="commission_notes"
+            rows={4}
+            placeholder="e.g. 10% commission, paid 30–60 days after travel, track by booking number."
+          />
 
-          <label className="stack-sm">
-            <span>General Internal Notes</span>
-            <textarea
-              name="internal_notes"
-              rows={5}
-              placeholder="Preferred contacts, support experience, booking tips, portal notes, or internal reminders."
-            />
-          </label>
-        </section>
+          <TextAreaField
+            label="General Internal Notes"
+            name="internal_notes"
+            rows={5}
+            placeholder="e.g. Preferred contacts, support experience, booking tips, portal notes, or internal reminders."
+          />
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button type="submit" className="button">
-            Create Supplier
-          </button>
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Internal use reminder:</strong> Do not store supplier portal passwords,
+            full credit card numbers, or sensitive client payment information in supplier
+            notes.
+          </div>
+        </div>
 
-          <a href="/admin/suppliers" className="button-secondary">
-            Cancel
-          </a>
+        <div
+          className="card stack"
+          style={{
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Save Supplier</h2>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button type="submit" className="btn btn-primary">
+              Create Supplier
+            </button>
+
+            <Link href="/admin/suppliers" className="btn btn-primary">
+              Cancel
+            </Link>
+          </div>
         </div>
       </form>
     </PageShell>

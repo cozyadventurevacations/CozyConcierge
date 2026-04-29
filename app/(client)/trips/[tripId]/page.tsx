@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
@@ -516,20 +517,30 @@ function ActionLink({
   target?: string;
   rel?: string;
 }) {
+  const sharedStyle = {
+    flex: "1 1 190px",
+    minWidth: 180,
+    textAlign: "center" as const,
+    justifyContent: "center",
+    whiteSpace: "normal" as const,
+    lineHeight: 1.25,
+  };
+
+  if (href.startsWith("/")) {
+    return (
+      <Link href={href} className={className} style={sharedStyle}>
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <a
       href={href}
       className={className}
       target={target}
       rel={rel}
-      style={{
-        flex: "1 1 190px",
-        minWidth: 180,
-        textAlign: "center",
-        justifyContent: "center",
-        whiteSpace: "normal",
-        lineHeight: 1.25,
-      }}
+      style={sharedStyle}
     >
       {children}
     </a>
@@ -1068,16 +1079,16 @@ export default async function TripDetailPage({
 
           <ActionLink
             href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`}
-            className="btn btn-outline"
+            className="btn btn-primary"
           >
             Email Advisor
           </ActionLink>
 
-          <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-outline">
+          <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-primary">
             Request Payment Link
           </ActionLink>
 
-          <ActionLink href="/trips" className="btn btn-outline">
+          <ActionLink href="/trips" className="btn btn-primary">
             Back to My Trips
           </ActionLink>
         </div>
@@ -1846,15 +1857,15 @@ export default async function TripDetailPage({
             Email Your Advisor
           </ActionLink>
 
-          <ActionLink href={`/trips/${tripRow.id}/documents`} className="btn btn-outline">
+          <ActionLink href={`/trips/${tripRow.id}/documents`} className="btn btn-primary">
             View Documents
           </ActionLink>
 
-          <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-outline">
+          <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-primary">
             Request Payment Link
           </ActionLink>
 
-          <ActionLink href="/trips" className="btn btn-outline">
+          <ActionLink href="/trips" className="btn btn-primary">
             Back to My Trips
           </ActionLink>
         </div>

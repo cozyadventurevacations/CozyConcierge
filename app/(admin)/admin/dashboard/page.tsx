@@ -64,6 +64,17 @@ type ClientFollowUpRow = {
     | null;
 };
 
+type RecentClientDocRow = {
+  id: string;
+  document_title: string | null;
+  document_type: string | null;
+  created_at: string | null;
+  client_accounts:
+    | { id: string; first_name: string | null; last_name: string | null; preferred_name: string | null }
+    | { id: string; first_name: string | null; last_name: string | null; preferred_name: string | null }[]
+    | null;
+};
+
 function startOfToday() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -263,7 +274,7 @@ function SectionTitle({
       }}
     >
       <h2 style={{ margin: 0 }}>{title}</h2>
-      <Link href={href} className="btn btn-outline">
+      <Link href={href} className="btn btn-primary">
         {linkLabel}
       </Link>
     </div>
@@ -291,12 +302,9 @@ export default async function AdminDashboardPage() {
     finalPaymentsDueResult,
     departuresResult,
     recentClientDocsResult,
-    recentlyUpdatedTripsResult,
     upcomingDeparturesResult,
     recentQuoteRequestsResult,
     upcomingFinalPaymentsResult,
-    outstandingCommissionsResult,
-    overdueCommissionsResult,
     upcomingCommissionsResult,
     overdueClientFollowUpsResult,
     upcomingClientFollowUpsResult,
@@ -325,15 +333,11 @@ export default async function AdminDashboardPage() {
       .lte("departure_date", in14DaysStr),
 
     supabase
-      .from("trip_documents")
-      .select("id", { count: "exact", head: true })
-      .eq("visibility", "client")
-      .gte("created_at", sevenDaysAgoIso),
-
-    supabase
-      .from("trips")
-      .select("id", { count: "exact", head: true })
-      .gte("updated_at", sevenDaysAgoIso),
+      .from("client_documents")
+      .select("id, document_title, document_type, created_at, client_accounts(id, first_name, last_name, preferred_name)")
+      .gte("created_at", sevenDaysAgoIso)
+      .order("created_at", { ascending: false })
+      .limit(10),
 
     supabase
       .from("trips")
@@ -356,27 +360,6 @@ export default async function AdminDashboardPage() {
       .gte("final_payment_due_date", todayStr)
       .lte("final_payment_due_date", in30DaysStr)
       .order("final_payment_due_date", { ascending: true })
-      .limit(10),
-
-    supabase
-      .from("commissions")
-      .select(
-        "id, commission_name, booking_number, supplier_name_snapshot, client_name_snapshot, trip_name_snapshot, full_commission_amount, agency_commission_percent, expected_commission_amount, received_commission_amount, commission_status, expected_payment_date, received_payment_date",
-      )
-      .neq("commission_status", "received")
-      .neq("commission_status", "cancelled")
-      .order("expected_payment_date", { ascending: true })
-      .limit(25),
-
-    supabase
-      .from("commissions")
-      .select(
-        "id, commission_name, booking_number, supplier_name_snapshot, client_name_snapshot, trip_name_snapshot, full_commission_amount, agency_commission_percent, expected_commission_amount, received_commission_amount, commission_status, expected_payment_date, received_payment_date",
-      )
-      .neq("commission_status", "received")
-      .neq("commission_status", "cancelled")
-      .lt("expected_payment_date", todayStr)
-      .order("expected_payment_date", { ascending: true })
       .limit(10),
 
     supabase
@@ -418,12 +401,6 @@ export default async function AdminDashboardPage() {
       .eq("is_completed", false),
   ]);
 
-  const outstandingCommissions =
-    (outstandingCommissionsResult.data ?? []) as CommissionRow[];
-
-  const overdueCommissions =
-    (overdueCommissionsResult.data ?? []) as CommissionRow[];
-
   const upcomingCommissions =
     (upcomingCommissionsResult.data ?? []) as CommissionRow[];
 
@@ -442,15 +419,8 @@ export default async function AdminDashboardPage() {
   const upcomingClientFollowUps =
     (upcomingClientFollowUpsResult.data ?? []) as ClientFollowUpRow[];
 
-  const outstandingCommissionTotal = outstandingCommissions.reduce(
-    (sum, commission) => sum + getOutstandingCommission(commission),
-    0,
-  );
-
-  const overdueCommissionTotal = overdueCommissions.reduce(
-    (sum, commission) => sum + getOutstandingCommission(commission),
-    0,
-  );
+  const recentClientDocs =
+    (recentClientDocsResult.data ?? []) as RecentClientDocRow[];
 
   const upcomingCommissionTotal = upcomingCommissions.reduce(
     (sum, commission) => sum + getOutstandingCommission(commission),
@@ -518,52 +488,16 @@ export default async function AdminDashboardPage() {
         />
 
         <SummaryCard
-          title="Outstanding Commissions"
-          value={formatMoney(outstandingCommissionTotal)}
-          subtitle={`${outstandingCommissions.length} open commission record${
-            outstandingCommissions.length === 1 ? "" : "s"
-          }`}
-          href="/admin/commissions"
-        />
-
-        <SummaryCard
-          title="Overdue Commissions"
-          value={formatMoney(overdueCommissionTotal)}
-          subtitle={`${overdueCommissions.length} overdue record${
-            overdueCommissions.length === 1 ? "" : "s"
-          }`}
-          href="/admin/commissions"
-        />
-
-        <SummaryCard
-          title="Expected in 30 Days"
+          title="Expected Commissions in 30 Days"
           value={formatMoney(upcomingCommissionTotal)}
-          subtitle={`${upcomingCommissions.length} expected commission${
-            upcomingCommissions.length === 1 ? "" : "s"
-          }`}
+          subtitle={`${upcomingCommissions.length} expected commission${upcomingCommissions.length === 1 ? "" : "s"}`}
           href="/admin/commissions"
         />
 
         <SummaryCard
           title="Final Payments in 30 Days"
           value={formatMoney(upcomingFinalPaymentTotal)}
-          subtitle={`${upcomingFinalPayments.length} trip balance${
-            upcomingFinalPayments.length === 1 ? "" : "s"
-          } due soon`}
-          href="/admin/trips"
-        />
-
-        <SummaryCard
-          title="Client Docs Uploaded in 7 Days"
-          value={recentClientDocsResult.count ?? 0}
-          subtitle="Recently shared documents"
-          href="/admin/trips"
-        />
-
-        <SummaryCard
-          title="Recently Updated Trips"
-          value={recentlyUpdatedTripsResult.count ?? 0}
-          subtitle="Trips updated in the last week"
+          subtitle={`${upcomingFinalPayments.length} trip balance${upcomingFinalPayments.length === 1 ? "" : "s"} due soon`}
           href="/admin/trips"
         />
       </div>
@@ -649,16 +583,71 @@ export default async function AdminDashboardPage() {
 
       <div className="card stack">
         <SectionTitle
-          title="Commissions Needing Attention"
+          title="New Client Documents — Last 7 Days"
+          href="/admin/client-documents"
+          linkLabel="View All Documents"
+        />
+
+        {recentClientDocs.length === 0 ? (
+          <p style={{ margin: 0, color: "#64748b" }}>
+            No new client documents uploaded in the last 7 days.
+          </p>
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {recentClientDocs.map((doc) => {
+              const client = Array.isArray(doc.client_accounts)
+                ? doc.client_accounts[0]
+                : doc.client_accounts;
+              const clientName = client
+                ? `${client.preferred_name ?? client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Unknown Client"
+                : "Unknown Client";
+              return (
+                <div
+                  key={doc.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    border: "1px solid #e6f0f2",
+                    borderRadius: 12,
+                    background: "#f7fbfc",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
+                      {clientName} has uploaded new documentation
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748b" }}>
+                      {doc.document_title ?? doc.document_type ?? "Document"} — {formatDateTime(doc.created_at)}
+                    </p>
+                  </div>
+                  {client?.id ? (
+                    <Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 14px" }}>
+                      Open Client
+                    </Link>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card stack">
+        <SectionTitle
+          title="Commissions Expected in 30 Days"
           href="/admin/commissions"
           linkLabel="View All Commissions"
         />
 
-        {outstandingCommissionsResult.error ? (
-          <pre>{JSON.stringify(outstandingCommissionsResult.error, null, 2)}</pre>
-        ) : outstandingCommissions.length === 0 ? (
+        {upcomingCommissionsResult.error ? (
+          <pre>{JSON.stringify(upcomingCommissionsResult.error, null, 2)}</pre>
+        ) : upcomingCommissions.length === 0 ? (
           <p style={{ margin: 0, color: "#64748b" }}>
-            No outstanding commissions found. That is a beautiful little admin miracle.
+            No commissions expected in the next 30 days.
           </p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
@@ -679,7 +668,7 @@ export default async function AdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {outstandingCommissions.slice(0, 10).map((commission) => {
+                {upcomingCommissions.map((commission) => {
                   const expected = getExpectedCommission(commission);
                   const outstanding = getOutstandingCommission(commission);
 

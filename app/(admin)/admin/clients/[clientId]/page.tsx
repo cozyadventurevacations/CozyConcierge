@@ -7,6 +7,7 @@ type ClientDetail = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  preferred_name: string | null;
   email: string | null;
   phone_primary: string | null;
   phone_secondary: string | null;
@@ -16,6 +17,7 @@ type ClientDetail = {
   state: string | null;
   postal_code: string | null;
   date_of_birth: string | null;
+  anniversary_date: string | null;
   preferred_airport: string | null;
   travel_style: string | null;
   airline_seating_preference: string | null;
@@ -27,6 +29,7 @@ type ClientDetail = {
   passport_number: string | null;
   passport_expiration_date: string | null;
   emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
   emergency_contact_phone: string | null;
   notes: string | null;
   created_at: string | null;
@@ -53,21 +56,6 @@ type QuoteRequestRow = {
   status: string | null;
   submitted_at: string | null;
   converted_trip_id: string | null;
-};
-
-type CommissionRow = {
-  id: string;
-  commission_name: string;
-  booking_number: string | null;
-  supplier_name_snapshot: string | null;
-  trip_name_snapshot: string | null;
-  full_commission_amount: number | null;
-  agency_commission_percent: number | null;
-  expected_commission_amount: number | null;
-  received_commission_amount: number | null;
-  commission_status: string | null;
-  expected_payment_date: string | null;
-  received_payment_date: string | null;
 };
 
 type ClientNoteRow = {
@@ -172,30 +160,6 @@ function formatDateTime(value: string | null | undefined, fallback = "Not provid
   });
 }
 
-function calculateExpectedCommission(
-  fullCommissionAmount: number | null | undefined,
-  agencyCommissionPercent: number | null | undefined,
-) {
-  const fullCommission = Number(fullCommissionAmount ?? 0);
-  const percentage = Number(agencyCommissionPercent ?? 90);
-
-  return Math.round(fullCommission * (percentage / 100) * 100) / 100;
-}
-
-function getExpectedCommission(row: CommissionRow) {
-  return (
-    Number(row.expected_commission_amount ?? 0) ||
-    calculateExpectedCommission(
-      row.full_commission_amount,
-      row.agency_commission_percent,
-    )
-  );
-}
-
-function getOutstandingCommission(row: CommissionRow) {
-  return getExpectedCommission(row) - Number(row.received_commission_amount ?? 0);
-}
-
 function getDocumentTypeLabel(type: string | null | undefined) {
   switch (type) {
     case "passport":
@@ -280,30 +244,15 @@ function InfoItem({
   );
 }
 
-function ActionButton({
-  href,
-  children,
-  variant = "primary",
-}: {
-  href: string;
-  children: React.ReactNode;
-  variant?: "primary" | "secondary";
-}) {
-  const isPrimary = variant === "primary";
-
+function ActionButton({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
+      className="btn btn-primary"
       style={{
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "10px 14px",
-        borderRadius: 10,
-        background: isPrimary ? "var(--accent-dark)" : "white",
-        color: isPrimary ? "white" : "var(--accent-dark)",
-        border: isPrimary ? "none" : "1px solid var(--accent-dark)",
-        fontWeight: 700,
         textDecoration: "none",
       }}
     >
@@ -441,6 +390,7 @@ export default async function AdminClientDetailPage({
       id,
       first_name,
       last_name,
+      preferred_name,
       email,
       phone_primary,
       phone_secondary,
@@ -450,6 +400,7 @@ export default async function AdminClientDetailPage({
       state,
       postal_code,
       date_of_birth,
+      anniversary_date,
       preferred_airport,
       travel_style,
       airline_seating_preference,
@@ -461,6 +412,7 @@ export default async function AdminClientDetailPage({
       passport_number,
       passport_expiration_date,
       emergency_contact_name,
+      emergency_contact_relationship,
       emergency_contact_phone,
       notes,
       created_at
@@ -485,7 +437,6 @@ export default async function AdminClientDetailPage({
   const [
     tripsResult,
     quoteRequestsResult,
-    commissionsResult,
     clientNotesResult,
     clientDocumentsResult,
     travelerProfilesResult,
@@ -506,14 +457,6 @@ export default async function AdminClientDetailPage({
       )
       .eq("client_account_id", clientId)
       .order("submitted_at", { ascending: false }),
-
-    supabase
-      .from("commissions")
-      .select(
-        "id, commission_name, booking_number, supplier_name_snapshot, trip_name_snapshot, full_commission_amount, agency_commission_percent, expected_commission_amount, received_commission_amount, commission_status, expected_payment_date, received_payment_date",
-      )
-      .eq("client_account_id", clientId)
-      .order("expected_payment_date", { ascending: true }),
 
     supabase
       .from("client_notes")
@@ -552,7 +495,6 @@ export default async function AdminClientDetailPage({
   const clientRow = client as ClientDetail;
   const tripRows = (tripsResult.data ?? []) as TripRow[];
   const quoteRequestRows = (quoteRequestsResult.data ?? []) as QuoteRequestRow[];
-  const commissionRows = (commissionsResult.data ?? []) as CommissionRow[];
   const clientNoteRows = (clientNotesResult.data ?? []) as ClientNoteRow[];
   const clientDocumentRows = (clientDocumentsResult.data ?? []) as ClientDocumentRow[];
   const travelerProfileRows = (travelerProfilesResult.data ?? []) as TravelerProfileRow[];
@@ -563,6 +505,8 @@ export default async function AdminClientDetailPage({
   const clientName =
     `${clientRow.first_name ?? ""} ${clientRow.last_name ?? ""}`.trim() ||
     "Unnamed Client";
+
+  const displayName = clientRow.preferred_name || clientName;
 
   const fullAddress = [
     clientRow.address_line_1,
@@ -585,21 +529,6 @@ export default async function AdminClientDetailPage({
       trip.trip_status !== "travel_complete",
   );
 
-  const outstandingCommissionTotal = commissionRows.reduce(
-    (sum, commission) => sum + getOutstandingCommission(commission),
-    0,
-  );
-
-  const expectedCommissionTotal = commissionRows.reduce(
-    (sum, commission) => sum + getExpectedCommission(commission),
-    0,
-  );
-
-  const receivedCommissionTotal = commissionRows.reduce(
-    (sum, commission) => sum + Number(commission.received_commission_amount ?? 0),
-    0,
-  );
-
   const openClientNotes = clientNoteRows.filter((note) => !note.is_completed);
   const completedClientNotes = clientNoteRows.filter((note) => note.is_completed);
 
@@ -615,8 +544,8 @@ export default async function AdminClientDetailPage({
 
   return (
     <PageShell
-      title={clientName}
-      subtitle="Client dashboard with contact details, travel history, requests, notes, documents, traveler numbers, preferences, and commission activity."
+      title={displayName}
+      subtitle="Client dashboard with contact details, travel history, requests, notes, documents, traveler numbers, and preferences."
     >
       <div
         style={{
@@ -628,28 +557,22 @@ export default async function AdminClientDetailPage({
           marginBottom: 16,
         }}
       >
-        <ActionButton href="/admin/clients" variant="secondary">
-          Back to Clients
-        </ActionButton>
+        <ActionButton href="/admin/clients">Back to Clients</ActionButton>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <ActionButton href={`/admin/clients/${clientRow.id}/documents`}>
             View Client Documents
           </ActionButton>
 
-          <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`} variant="secondary">
+          <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>
             Add Client Note
           </ActionButton>
 
-          <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`} variant="secondary">
+          <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>
             Add New Trip
           </ActionButton>
 
-          <ActionButton href={`/admin/commissions/new?clientId=${clientRow.id}`} variant="secondary">
-            Add Commission
-          </ActionButton>
-
-          <ActionButton href={`/admin/clients/${clientRow.id}/edit`} variant="secondary">
+          <ActionButton href={`/admin/clients/${clientRow.id}/edit`}>
             Edit Client
           </ActionButton>
         </div>
@@ -687,22 +610,6 @@ export default async function AdminClientDetailPage({
         </div>
 
         <div className="card">
-          <span className="label">Expected Commission</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(expectedCommissionTotal)}
-          </p>
-        </div>
-
-        <div className="card">
-          <span className="label">Outstanding Commission</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(outstandingCommissionTotal)}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-3">
-        <div className="card">
           <span className="label">Uploaded Documents</span>
           <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
             {clientDocumentRows.length}
@@ -715,7 +622,9 @@ export default async function AdminClientDetailPage({
             {passportDocuments.length}
           </p>
         </div>
+      </div>
 
+      <div className="grid grid-3">
         <div className="card">
           <span className="label">Minor Travel Documents</span>
           <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
@@ -725,16 +634,27 @@ export default async function AdminClientDetailPage({
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Client Information</h2>
+        <h2 style={{ margin: 0 }}>Client Information & Emergency Contact</h2>
 
         <div className="grid grid-2">
           <InfoItem label="First Name" value={clientRow.first_name} />
           <InfoItem label="Last Name" value={clientRow.last_name} />
+          <InfoItem label="Preferred Name" value={clientRow.preferred_name} />
           <InfoItem label="Email" value={clientRow.email} />
           <InfoItem label="Date of Birth" value={formatDate(clientRow.date_of_birth)} />
+          <InfoItem
+            label="Anniversary Date"
+            value={formatDate(clientRow.anniversary_date)}
+          />
           <InfoItem label="Primary Phone" value={clientRow.phone_primary} />
           <InfoItem label="Secondary Phone" value={clientRow.phone_secondary} />
           <InfoItem label="Address" value={fullAddress || null} />
+          <InfoItem label="Emergency Contact Name" value={clientRow.emergency_contact_name} />
+          <InfoItem
+            label="Emergency Contact Relationship"
+            value={clientRow.emergency_contact_relationship}
+          />
+          <InfoItem label="Emergency Contact Phone" value={clientRow.emergency_contact_phone} />
           <InfoItem label="Created" value={formatDateTime(clientRow.created_at)} />
         </div>
       </div>
@@ -768,6 +688,135 @@ export default async function AdminClientDetailPage({
           <InfoItem label="Food Allergies" value={clientRow.food_allergies} />
           <InfoItem label="Internal Notes" value={clientRow.notes} />
         </div>
+      </div>
+
+      <div className="card stack">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Client Notes & Follow-Ups</h2>
+
+          <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>
+            Add Client Note
+          </ActionButton>
+        </div>
+
+        {clientNotesResult.error ? (
+          <div>
+            <p>
+              <strong>Error loading client notes:</strong>
+            </p>
+            <pre>{JSON.stringify(clientNotesResult.error, null, 2)}</pre>
+          </div>
+        ) : clientNoteRows.length === 0 ? (
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              No client notes yet. Use the Add Client Note button to log follow-ups,
+              preferences, document reminders, payment notes, or anything important.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-3">
+              <div className="card">
+                <span className="label">Open Notes</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {openClientNotes.length}
+                </p>
+              </div>
+
+              <div className="card">
+                <span className="label">Completed Notes</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {completedClientNotes.length}
+                </p>
+              </div>
+
+              <div className="card">
+                <span className="label">Total Notes</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {clientNoteRows.length}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 1100 }}>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th>Note</th>
+                    <th>Follow-Up Date</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {clientNoteRows.map((note) => (
+                    <tr key={note.id}>
+                      <td>
+                        <NoteStatusBadge isCompleted={note.is_completed} />
+                      </td>
+                      <td>{note.note_type}</td>
+                      <td>{note.title ?? "Not provided"}</td>
+                      <td style={{ maxWidth: 360 }}>
+                        <span
+                          style={{
+                            display: "block",
+                            whiteSpace: "pre-wrap",
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {note.content ?? "Not provided"}
+                        </span>
+                      </td>
+                      <td>{formatDate(note.follow_up_date, "")}</td>
+                      <td>{formatDateTime(note.created_at, "")}</td>
+                      <td>
+                        <form action={updateClientNoteStatus}>
+                          <input type="hidden" name="client_id" value={clientRow.id} />
+                          <input type="hidden" name="note_id" value={note.id} />
+                          <input
+                            type="hidden"
+                            name="is_completed"
+                            value={note.is_completed ? "false" : "true"}
+                          />
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            style={{
+                              padding: "6px 10px",
+                              fontSize: 13,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {note.is_completed ? "Reopen" : "Mark Complete"}
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card stack">
@@ -937,7 +986,7 @@ export default async function AdminClientDetailPage({
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Passport & Emergency Contact</h2>
+        <h2 style={{ margin: 0 }}>Passport Details</h2>
 
         <div
           style={{
@@ -959,14 +1008,6 @@ export default async function AdminClientDetailPage({
           <InfoItem
             label="Passport Expiration"
             value={formatDate(clientRow.passport_expiration_date)}
-          />
-          <InfoItem
-            label="Emergency Contact Name"
-            value={clientRow.emergency_contact_name}
-          />
-          <InfoItem
-            label="Emergency Contact Phone"
-            value={clientRow.emergency_contact_phone}
           />
         </div>
       </div>
@@ -1047,135 +1088,6 @@ export default async function AdminClientDetailPage({
             alignItems: "center",
           }}
         >
-          <h2 style={{ margin: 0 }}>Client Notes & Follow-Ups</h2>
-
-          <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>
-            Add Client Note
-          </ActionButton>
-        </div>
-
-        {clientNotesResult.error ? (
-          <div>
-            <p>
-              <strong>Error loading client notes:</strong>
-            </p>
-            <pre>{JSON.stringify(clientNotesResult.error, null, 2)}</pre>
-          </div>
-        ) : clientNoteRows.length === 0 ? (
-          <div
-            style={{
-              padding: "12px",
-              borderRadius: 12,
-              background: "#f7fbfc",
-              border: "1px solid #e6f0f2",
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              No client notes yet. Use the Add Client Note button to log follow-ups,
-              preferences, document reminders, payment notes, or anything important.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-3">
-              <div className="card">
-                <span className="label">Open Notes</span>
-                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                  {openClientNotes.length}
-                </p>
-              </div>
-
-              <div className="card">
-                <span className="label">Completed Notes</span>
-                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                  {completedClientNotes.length}
-                </p>
-              </div>
-
-              <div className="card">
-                <span className="label">Total Notes</span>
-                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                  {clientNoteRows.length}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <table className="table" style={{ minWidth: 1100 }}>
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Type</th>
-                    <th>Title</th>
-                    <th>Note</th>
-                    <th>Follow-Up Date</th>
-                    <th>Created</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {clientNoteRows.map((note) => (
-                    <tr key={note.id}>
-                      <td>
-                        <NoteStatusBadge isCompleted={note.is_completed} />
-                      </td>
-                      <td>{note.note_type}</td>
-                      <td>{note.title ?? "Not provided"}</td>
-                      <td style={{ maxWidth: 360 }}>
-                        <span
-                          style={{
-                            display: "block",
-                            whiteSpace: "pre-wrap",
-                            lineHeight: 1.45,
-                          }}
-                        >
-                          {note.content ?? "Not provided"}
-                        </span>
-                      </td>
-                      <td>{formatDate(note.follow_up_date, "")}</td>
-                      <td>{formatDateTime(note.created_at, "")}</td>
-                      <td>
-                        <form action={updateClientNoteStatus}>
-                          <input type="hidden" name="client_id" value={clientRow.id} />
-                          <input type="hidden" name="note_id" value={note.id} />
-                          <input
-                            type="hidden"
-                            name="is_completed"
-                            value={note.is_completed ? "false" : "true"}
-                          />
-                          <button
-                            type="submit"
-                            className="btn btn-outline"
-                            style={{
-                              padding: "6px 10px",
-                              fontSize: 13,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {note.is_completed ? "Reopen" : "Mark Complete"}
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="card stack">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
           <h2 style={{ margin: 0 }}>Linked Trips</h2>
 
           <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>
@@ -1226,14 +1138,7 @@ export default async function AdminClientDetailPage({
                     <td>{formatMoney(trip.balance_due)}</td>
                     <td>{formatDate(trip.final_payment_due_date, "")}</td>
                     <td>
-                      <Link
-                        href={`/admin/trips/${trip.id}`}
-                        style={{
-                          color: "var(--accent-dark)",
-                          fontWeight: 700,
-                          textDecoration: "none",
-                        }}
-                      >
+                      <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary">
                         Open Trip
                       </Link>
                     </td>
@@ -1257,7 +1162,7 @@ export default async function AdminClientDetailPage({
         >
           <h2 style={{ margin: 0 }}>Travel Requests</h2>
 
-          <ActionButton href="/admin/quote-requests" variant="secondary">
+          <ActionButton href="/admin/quote-requests">
             View All Requests
           </ActionButton>
         </div>
@@ -1306,126 +1211,13 @@ export default async function AdminClientDetailPage({
                     <td>
                       <Link
                         href={`/admin/quote-requests/${request.id}`}
-                        style={{
-                          color: "var(--accent-dark)",
-                          fontWeight: 700,
-                          textDecoration: "none",
-                        }}
+                        className="btn btn-primary"
                       >
                         Open
                       </Link>
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card stack">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Client Commission Records</h2>
-
-          <ActionButton href={`/admin/commissions/new?clientId=${clientRow.id}`}>
-            Add Commission
-          </ActionButton>
-        </div>
-
-        <div className="grid grid-3">
-          <div className="card">
-            <span className="label">Expected</span>
-            <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-              {formatMoney(expectedCommissionTotal)}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Received</span>
-            <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-              {formatMoney(receivedCommissionTotal)}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Outstanding</span>
-            <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-              {formatMoney(outstandingCommissionTotal)}
-            </p>
-          </div>
-        </div>
-
-        {commissionsResult.error ? (
-          <div>
-            <p>
-              <strong>Error loading commissions:</strong>
-            </p>
-            <pre>{JSON.stringify(commissionsResult.error, null, 2)}</pre>
-          </div>
-        ) : commissionRows.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>
-            No commissions are linked to this client yet.
-          </p>
-        ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 1040 }}>
-              <thead>
-                <tr>
-                  <th>Commission</th>
-                  <th>Trip</th>
-                  <th>Supplier</th>
-                  <th>Booking #</th>
-                  <th>Status</th>
-                  <th>Full</th>
-                  <th>Expected</th>
-                  <th>Received</th>
-                  <th>Expected Date</th>
-                  <th>Received Date</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {commissionRows.map((commission) => {
-                  const expected = getExpectedCommission(commission);
-
-                  return (
-                    <tr key={commission.id}>
-                      <td>{commission.commission_name}</td>
-                      <td>{commission.trip_name_snapshot ?? "Not provided"}</td>
-                      <td>{commission.supplier_name_snapshot ?? "Not provided"}</td>
-                      <td>{commission.booking_number ?? "Not provided"}</td>
-                      <td>
-                        <StatusBadge status={commission.commission_status ?? "expected"} />
-                      </td>
-                      <td>{formatMoney(commission.full_commission_amount)}</td>
-                      <td>{formatMoney(expected)}</td>
-                      <td>{formatMoney(commission.received_commission_amount)}</td>
-                      <td>{formatDate(commission.expected_payment_date, "")}</td>
-                      <td>{formatDate(commission.received_payment_date, "")}</td>
-                      <td>
-                        <Link
-                          href={`/admin/commissions/${commission.id}`}
-                          style={{
-                            color: "var(--accent-dark)",
-                            fontWeight: 700,
-                            textDecoration: "none",
-                          }}
-                        >
-                          Open
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
               </tbody>
             </table>
           </div>

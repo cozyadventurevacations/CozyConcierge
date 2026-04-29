@@ -1,3 +1,6 @@
+import Image from "next/image";
+import Link from "next/link";
+
 type AppHeaderProps = {
   title?: string;
   subtitle?: string;
@@ -22,7 +25,7 @@ export function AppHeader({
           flexWrap: "wrap",
         }}
       >
-        <a
+        <Link
           href={homeHref}
           style={{
             display: "flex",
@@ -33,14 +36,18 @@ export function AppHeader({
           }}
           aria-label="Cozy Concierge home"
         >
-          <img
+          <Image
             src="/cozy-logo.png"
             alt="Cozy Adventure Vacations"
+            width={160}
+            height={54}
             style={{
               height: 54,
               width: "auto",
               display: "block",
+              objectFit: "contain",
             }}
+            priority
           />
 
           <div>
@@ -49,7 +56,7 @@ export function AppHeader({
               {subtitle}
             </div>
           </div>
-        </a>
+        </Link>
 
         <nav
           className="row"
@@ -60,13 +67,13 @@ export function AppHeader({
           }}
         >
           {navItems.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               style={{ color: "var(--muted)", fontWeight: 600 }}
             >
               {item.label}
-            </a>
+            </Link>
           ))}
         </nav>
       </div>

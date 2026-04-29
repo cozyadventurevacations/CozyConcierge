@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -19,6 +20,11 @@ function getClientDisplayName(client: ClientOption) {
   return `${name} (${client.email ?? "no email"})`;
 }
 
+function cleanText(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+  return value || null;
+}
+
 async function createTrip(formData: FormData) {
   "use server";
 
@@ -28,7 +34,7 @@ async function createTrip(formData: FormData) {
   const destinations = String(formData.get("destinations") ?? "").trim();
   const departure_date = String(formData.get("departure_date") ?? "").trim();
   const return_date = String(formData.get("return_date") ?? "").trim();
-  const occasion = String(formData.get("occasion") ?? "").trim() || null;
+  const occasion = cleanText(formData, "occasion");
   const client_account_id = String(formData.get("client_account_id") ?? "").trim();
 
   if (!trip_name) throw new Error("Trip name is required.");
@@ -68,15 +74,13 @@ async function createTrip(formData: FormData) {
     throw new Error(tripError?.message ?? "Failed to create trip.");
   }
 
-  const { error: proposalError } = await supabase
-    .from("trip_proposals")
-    .insert({
-      trip_id: trip.id,
-      planning_fee: 0,
-      total_price: 0,
-      commission_admin_only: 0,
-      proposal_highlights: [],
-    });
+  const { error: proposalError } = await supabase.from("trip_proposals").insert({
+    trip_id: trip.id,
+    planning_fee: 0,
+    total_price: 0,
+    commission_admin_only: 0,
+    proposal_highlights: [],
+  });
 
   if (proposalError) {
     throw new Error(proposalError.message);
@@ -116,113 +120,150 @@ export default async function AdminCreateTripPage({
           <pre>{JSON.stringify(error, null, 2)}</pre>
         </div>
       ) : (
-        <form action={createTrip} className="card stack">
-          {selectedClient ? (
-            <div
+        <form action={createTrip} className="stack" style={{ maxWidth: 1100 }}>
+          <div
+            className="card stack"
+            style={{
+              background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+              border: "1px solid #e6f0f2",
+            }}
+          >
+            <p
               style={{
-                padding: 14,
-                borderRadius: 12,
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
+                margin: 0,
+                fontSize: 13,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--accent-dark)",
+                fontWeight: 800,
               }}
             >
-              <p style={{ margin: 0, fontWeight: 700 }}>Trip will be linked to:</p>
-              <p style={{ margin: "6px 0 0" }}>
-                {getClientDisplayName(selectedClient)}
-              </p>
-            </div>
-          ) : null}
+              Trip Setup
+            </p>
 
-          <label>
-            <span className="label">Client</span>
-            <select
-              className="select"
-              name="client_account_id"
-              defaultValue={selectedClientId}
-              required
-            >
-              <option value="">Select a client</option>
-              {clientRows.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {getClientDisplayName(client)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {selectedClientId && !selectedClient ? (
-            <div
-              style={{
-                padding: 14,
-                borderRadius: 12,
-                background: "#fff7ed",
-                border: "1px solid #fed7aa",
-              }}
-            >
-              <p style={{ margin: 0 }}>
-                The client from the link was not found. Please select a client manually.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="grid grid-2">
-            <label>
-              <span className="label">Trip Name</span>
-              <input
-                className="input"
-                name="trip_name"
-                placeholder="Example: Brown Family Disney Trip"
-                required
-              />
-            </label>
-
-            <label>
-              <span className="label">Destinations</span>
-              <input
-                className="input"
-                name="destinations"
-                placeholder="Example: Walt Disney World, Orlando"
-                required
-              />
-            </label>
-
-            <label>
-              <span className="label">Departure Date</span>
-              <input className="input" type="date" name="departure_date" required />
-            </label>
-
-            <label>
-              <span className="label">Return Date</span>
-              <input className="input" type="date" name="return_date" required />
-            </label>
-
-            <label>
-              <span className="label">Occasion</span>
-              <input
-                className="input"
-                name="occasion"
-                placeholder="Example: Birthday, anniversary, family vacation"
-              />
-            </label>
-          </div>
-
-          <div className="row">
-            <button type="submit" className="btn btn-primary">
-              Create Trip
-            </button>
+            <h2 style={{ margin: 0 }}>Client</h2>
 
             {selectedClient ? (
-              <a
-                href={`/admin/clients/${selectedClient.id}`}
-                className="btn btn-outline"
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                }}
               >
-                Back to Client
-              </a>
-            ) : (
-              <a href="/admin/trips" className="btn btn-outline">
-                Back to Trips
-              </a>
-            )}
+                <span className="label">Trip will be linked to</span>
+                <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                  {getClientDisplayName(selectedClient)}
+                </p>
+              </div>
+            ) : null}
+
+            <label className="stack-sm">
+              <span className="label">Client</span>
+              <select
+                className="select"
+                name="client_account_id"
+                defaultValue={selectedClientId}
+                required
+              >
+                <option value="">Select a client</option>
+                {clientRows.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {getClientDisplayName(client)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedClientId && !selectedClient ? (
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  color: "#9a3412",
+                  lineHeight: 1.6,
+                }}
+              >
+                The client from the link was not found. Please select a client manually.
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Trip Details</h2>
+
+            <div className="grid grid-2">
+              <label className="stack-sm">
+                <span className="label">Trip Name</span>
+                <input
+                  className="input"
+                  name="trip_name"
+                  placeholder="Brown Family Disney Trip"
+                  required
+                />
+              </label>
+
+              <label className="stack-sm">
+                <span className="label">Destinations</span>
+                <input
+                  className="input"
+                  name="destinations"
+                  placeholder="Walt Disney World, Orlando"
+                  required
+                />
+              </label>
+
+              <label className="stack-sm">
+                <span className="label">Departure Date</span>
+                <input className="input" type="date" name="departure_date" required />
+              </label>
+
+              <label className="stack-sm">
+                <span className="label">Return Date</span>
+                <input className="input" type="date" name="return_date" required />
+              </label>
+
+              <label className="stack-sm">
+                <span className="label">Occasion</span>
+                <input
+                  className="input"
+                  name="occasion"
+                  placeholder="Birthday, anniversary, family vacation"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div
+            className="card stack"
+            style={{
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+            }}
+          >
+            <h2 style={{ margin: 0 }}>Save Trip</h2>
+
+            <div className="row">
+              <button type="submit" className="btn btn-primary">
+                Create Trip
+              </button>
+
+              {selectedClient ? (
+                <Link
+                  href={`/admin/clients/${selectedClient.id}`}
+                  className="btn btn-primary"
+                >
+                  Back to Client
+                </Link>
+              ) : (
+                <Link href="/admin/trips" className="btn btn-primary">
+                  Back to Trips
+                </Link>
+              )}
+            </div>
           </div>
         </form>
       )}

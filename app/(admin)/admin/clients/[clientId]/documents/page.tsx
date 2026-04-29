@@ -87,35 +87,31 @@ function DocumentTypeBadge({ type }: { type: string | null | undefined }) {
   );
 }
 
-function ActionButton({
-  href,
-  children,
-  variant = "primary",
-}: {
-  href: string;
-  children: React.ReactNode;
-  variant?: "primary" | "secondary";
-}) {
-  const isPrimary = variant === "primary";
-
+function ActionButton({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
+      className="btn btn-primary"
       style={{
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "10px 14px",
-        borderRadius: 10,
-        background: isPrimary ? "var(--accent-dark)" : "white",
-        color: isPrimary ? "white" : "var(--accent-dark)",
-        border: isPrimary ? "none" : "1px solid var(--accent-dark)",
-        fontWeight: 700,
         textDecoration: "none",
       }}
     >
       {children}
     </Link>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="card">
+      <span className="label">{label}</span>
+      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -135,10 +131,7 @@ export default async function AdminClientDocumentsPage({
 
   if (clientError || !client) {
     return (
-      <PageShell
-        title="Client Documents"
-        subtitle="We could not load this client."
-      >
+      <PageShell title="Client Documents" subtitle="We could not load this client.">
         <div className="card">
           <p>
             <strong>Error:</strong>
@@ -183,10 +176,7 @@ export default async function AdminClientDocumentsPage({
   );
 
   return (
-    <PageShell
-      title="Client Documents"
-      subtitle={`Uploaded documents for ${clientName}.`}
-    >
+    <PageShell title="Client Documents" subtitle={`Uploaded documents for ${clientName}.`}>
       <div
         style={{
           display: "flex",
@@ -197,17 +187,14 @@ export default async function AdminClientDocumentsPage({
           marginBottom: 16,
         }}
       >
-        <ActionButton href={`/admin/clients/${clientRow.id}`} variant="secondary">
+        <ActionButton href={`/admin/clients/${clientRow.id}`}>
           Back to Client
         </ActionButton>
 
-        <ActionButton href="/admin/clients" variant="secondary">
-          Back to Clients
-        </ActionButton>
-
-        <ActionButton href="/admin/client-documents" variant="secondary">
-          All Client Documents
-        </ActionButton>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <ActionButton href="/admin/clients">Back to Clients</ActionButton>
+          <ActionButton href="/admin/client-documents">All Client Documents</ActionButton>
+        </div>
       </div>
 
       <div
@@ -227,55 +214,33 @@ export default async function AdminClientDocumentsPage({
             fontWeight: 800,
           }}
         >
-          Secure Client Document Review
+          Secure Client Documents
         </p>
 
         <h1 style={{ margin: "4px 0 0", fontSize: 30 }}>{clientName}</h1>
 
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          These are documents uploaded by the client through their profile. Open
-          links are generated through a secure admin route and expire after 5 minutes.
-        </p>
+        <div className="grid grid-3">
+          <StatCard label="Total Documents" value={documentRows.length} />
+          <StatCard label="Passport Documents" value={passportDocuments.length} />
+          <StatCard label="Minor Travel Documents" value={minorTravelDocuments.length} />
+        </div>
 
         <div className="grid grid-3">
-          <div className="card">
-            <span className="label">Total Documents</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {documentRows.length}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Passport Documents</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {passportDocuments.length}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Minor Travel Documents</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {minorTravelDocuments.length}
-            </p>
-          </div>
+          <StatCard label="Other Documents" value={otherDocuments.length} />
         </div>
       </div>
 
       <div
-        className="card stack"
+        className="card"
         style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
         }}
       >
-        <h2 style={{ margin: 0 }}>Sensitive Document Reminder</h2>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Some uploaded files may contain sensitive personal, identity, legal,
-          medical, passport, or minor travel information. Only open documents when
-          needed for legitimate trip support, supplier documentation, or travel
-          planning.
-        </p>
+        <strong>Sensitive document reminder:</strong> Only open client documents when needed
+        for legitimate trip support, supplier documentation, or travel planning.
       </div>
 
       <div className="card stack">
@@ -340,7 +305,7 @@ export default async function AdminClientDocumentsPage({
                         href={`/api/admin/client-documents/${document.id}/open`}
                         target="_blank"
                         rel="noreferrer"
-                        className="btn btn-outline"
+                        className="btn btn-primary"
                         style={{
                           padding: "6px 10px",
                           fontSize: 13,
@@ -357,60 +322,6 @@ export default async function AdminClientDocumentsPage({
           </div>
         )}
       </div>
-
-      {passportDocuments.length > 0 ? (
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #fed7aa",
-            background: "#fff7ed",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Passport Document Handling</h2>
-
-          <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-            Passport files are highly sensitive. Open only when needed, avoid
-            downloading unless required, and do not share temporary links outside of
-            proper trip support workflows.
-          </p>
-        </div>
-      ) : null}
-
-      {minorTravelDocuments.length > 0 ? (
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #e6f0f2",
-            background: "#f7fbfc",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Minor Travel Documents</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            This client has uploaded documents related to minor travel. Review these
-            carefully for trips involving minors traveling without both parents or
-            guardians, especially international travel.
-          </p>
-        </div>
-      ) : null}
-
-      {otherDocuments.length > 0 ? (
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #e6f0f2",
-            background: "#ffffff",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Other Supporting Documents</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            This client has uploaded other supporting travel documents such as
-            insurance, medical, accessibility, supplier-required, or general travel
-            files.
-          </p>
-        </div>
-      ) : null}
     </PageShell>
   );
 }

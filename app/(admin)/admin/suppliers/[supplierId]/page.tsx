@@ -173,33 +173,24 @@ function InfoItem({
 function ActionButton({
   href,
   children,
-  variant = "primary",
   target,
   rel,
 }: {
   href: string;
   children: React.ReactNode;
-  variant?: "primary" | "secondary";
   target?: string;
   rel?: string;
 }) {
-  const isPrimary = variant === "primary";
-
   return (
     <Link
       href={href}
       target={target}
       rel={rel}
+      className="btn btn-primary"
       style={{
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "10px 14px",
-        borderRadius: 10,
-        background: isPrimary ? "var(--accent-dark)" : "white",
-        color: isPrimary ? "white" : "var(--accent-dark)",
-        border: isPrimary ? "none" : "1px solid var(--accent-dark)",
-        fontWeight: 700,
         textDecoration: "none",
       }}
     >
@@ -316,9 +307,7 @@ export default async function SupplierDetailPage({
           marginBottom: 16,
         }}
       >
-        <ActionButton href="/admin/suppliers" variant="secondary">
-          Back to Suppliers
-        </ActionButton>
+        <ActionButton href="/admin/suppliers">Back to Suppliers</ActionButton>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {supplierRow.website_url ? (
@@ -326,7 +315,6 @@ export default async function SupplierDetailPage({
               href={supplierRow.website_url}
               target="_blank"
               rel="noreferrer"
-              variant="secondary"
             >
               Open Website
             </ActionButton>
@@ -346,32 +334,55 @@ export default async function SupplierDetailPage({
             Add Commission
           </ActionButton>
 
-          <ActionButton href={`/admin/suppliers/${supplierRow.id}/edit`} variant="secondary">
+          <ActionButton href={`/admin/suppliers/${supplierRow.id}/edit`}>
             Edit Supplier
           </ActionButton>
         </div>
       </div>
 
-      <div className="grid grid-3">
-        <div className="card">
-          <span className="label">Related Trip Components</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {componentRows.length}
-          </p>
-        </div>
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Supplier Detail
+        </p>
 
-        <div className="card">
-          <span className="label">Related Component Value</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(componentTotal)}
-          </p>
-        </div>
+        <h2 style={{ margin: 0 }}>{supplierRow.supplier_name}</h2>
 
-        <div className="card">
-          <span className="label">Preferred Supplier</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {supplierRow.preferred_supplier ? "Yes" : "No"}
-          </p>
+        <div className="grid grid-3">
+          <div className="card">
+            <span className="label">Related Trip Components</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {componentRows.length}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Related Component Value</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {formatMoney(componentTotal)}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Preferred Supplier</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {supplierRow.preferred_supplier ? "Yes" : "No"}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -472,13 +483,19 @@ export default async function SupplierDetailPage({
                         {trip?.trip_name ?? trip?.destinations ?? "Unnamed Trip"}
                       </td>
                       <td>{component.component_type}</td>
-                      <td>{component.display_name ?? component.supplier_name ?? "Not provided"}</td>
+                      <td>
+                        {component.display_name ??
+                          component.supplier_name ??
+                          "Not provided"}
+                      </td>
                       <td>{component.booking_status ?? "Not provided"}</td>
                       <td>{formatMoney(component.total_price)}</td>
                       <td>{component.confirmation_number ?? "Not provided"}</td>
                       <td>
                         {formatDate(trip?.departure_date, "")}
-                        {trip?.return_date ? ` → ${formatDate(trip.return_date, "")}` : ""}
+                        {trip?.return_date
+                          ? ` → ${formatDate(trip.return_date, "")}`
+                          : ""}
                       </td>
                       <td>
                         {component.deposit_due_date
@@ -494,10 +511,11 @@ export default async function SupplierDetailPage({
                       <td>
                         <Link
                           href={`/admin/trips/${component.trip_id}`}
+                          className="btn btn-primary"
                           style={{
-                            color: "var(--accent-dark)",
-                            fontWeight: 700,
-                            textDecoration: "none",
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
                           }}
                         >
                           Open Trip
@@ -568,10 +586,11 @@ export default async function SupplierDetailPage({
                       <td>
                         <Link
                           href={`/admin/commissions/${commission.id}`}
+                          className="btn btn-primary"
                           style={{
-                            color: "var(--accent-dark)",
-                            fontWeight: 700,
-                            textDecoration: "none",
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
                           }}
                         >
                           Open

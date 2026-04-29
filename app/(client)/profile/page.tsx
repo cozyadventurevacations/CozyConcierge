@@ -9,6 +9,7 @@ type ClientAccount = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  preferred_name: string | null;
   email: string | null;
   phone_primary: string | null;
   phone_secondary: string | null;
@@ -18,6 +19,7 @@ type ClientAccount = {
   state: string | null;
   postal_code: string | null;
   date_of_birth: string | null;
+  anniversary_date: string | null;
   preferred_airport: string | null;
   travel_style: string | null;
   airline_seating_preference: string | null;
@@ -393,7 +395,6 @@ function FoodAllergyCheckboxes({
         defaultValue={getOtherFoodAllergyNotes(savedAllergies)}
         rows={4}
         placeholder="Example: Strawberry allergy, red dye sensitivity, prefers nut-free meals, etc."
-        helper="Use this box for anything not listed above or for additional details suppliers may need."
       />
     </div>
   );
@@ -454,6 +455,7 @@ async function getCurrentClientAccount() {
     id,
     first_name,
     last_name,
+    preferred_name,
     email,
     phone_primary,
     phone_secondary,
@@ -463,6 +465,7 @@ async function getCurrentClientAccount() {
     state,
     postal_code,
     date_of_birth,
+    anniversary_date,
     preferred_airport,
     travel_style,
     airline_seating_preference,
@@ -540,6 +543,7 @@ async function updateClientProfile(formData: FormData) {
   const profileUpdates = {
     first_name: cleanText(formData, "first_name"),
     last_name: cleanText(formData, "last_name"),
+    preferred_name: cleanText(formData, "preferred_name"),
     phone_primary: cleanText(formData, "phone_primary"),
     phone_secondary: cleanText(formData, "phone_secondary"),
     address_line_1: cleanText(formData, "address_line_1"),
@@ -548,6 +552,7 @@ async function updateClientProfile(formData: FormData) {
     state: cleanText(formData, "state"),
     postal_code: cleanText(formData, "postal_code"),
     date_of_birth: cleanText(formData, "date_of_birth"),
+    anniversary_date: cleanText(formData, "anniversary_date"),
     preferred_airport: cleanText(formData, "preferred_airport"),
     travel_style: cleanText(formData, "travel_style"),
     airline_seating_preference: cleanText(formData, "airline_seating_preference"),
@@ -633,6 +638,12 @@ export default async function ClientProfilePage({
 
         <h1 style={{ margin: "4px 0 0", fontSize: 32 }}>{clientName}</h1>
 
+        {clientAccount.preferred_name ? (
+          <p style={{ margin: "4px 0 0", color: "#667085" }}>
+            Goes by: <strong>{clientAccount.preferred_name}</strong>
+          </p>
+        ) : null}
+
         <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
           This is your client profile. You can update your contact details,
           emergency contact, passport information, travel preferences, accessibility
@@ -649,13 +660,13 @@ export default async function ClientProfilePage({
             Manage Traveler Numbers & Rewards
           </Link>
 
-          <Link href="/profile/documents/upload" className="btn btn-outline">
+          <Link href="/profile/documents/upload" className="btn btn-primary">
             Upload Travel Document
           </Link>
 
           <a
             href="mailto:jeremyb@cozyadventurevacations.com?subject=Profile%20Question"
-            className="btn btn-outline"
+            className="btn btn-primary"
           >
             Email Advisor
           </a>
@@ -744,12 +755,6 @@ export default async function ClientProfilePage({
           <strong>Sensitive information note:</strong> Traveler numbers and rewards
           memberships may be sensitive. Do not store passwords here.
         </div>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/profile/traveler-numbers" className="btn btn-primary">
-            Manage Traveler Numbers & Rewards
-          </Link>
-        </div>
       </div>
 
       <form action={updateClientProfile} className="stack">
@@ -774,6 +779,13 @@ export default async function ClientProfilePage({
               defaultValue={clientAccount.last_name}
             />
 
+            <Field
+              label="Preferred Name"
+              name="preferred_name"
+              defaultValue={clientAccount.preferred_name}
+              placeholder="e.g. Jen, Mick, Skip"
+            />
+
             <div
               style={{
                 padding: "12px",
@@ -796,6 +808,14 @@ export default async function ClientProfilePage({
               name="date_of_birth"
               type="date"
               defaultValue={clientAccount.date_of_birth}
+            />
+
+            <Field
+              label="Anniversary Date"
+              name="anniversary_date"
+              type="date"
+              defaultValue={clientAccount.anniversary_date}
+              helper="Optional — for anniversary emails."
             />
 
             <Field
@@ -917,12 +937,8 @@ export default async function ClientProfilePage({
           </div>
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Link href="/profile/passport-upload" className="btn btn-outline">
+            <Link href="/profile/passport-upload" className="btn btn-primary">
               Upload Passport Image
-            </Link>
-
-            <Link href="/profile/traveler-numbers" className="btn btn-outline">
-              Manage Traveler Numbers & Rewards
             </Link>
           </div>
         </div>
@@ -941,14 +957,14 @@ export default async function ClientProfilePage({
               label="Preferred Airport"
               name="preferred_airport"
               defaultValue={clientAccount.preferred_airport}
-              helper="Search by airport code, city, or airport name. Example: ORD, Chicago, Orlando, London."
+              helper="Search by code, city, or name. e.g. ORD, Chicago, Orlando."
             />
 
             <Field
               label="Travel Style"
               name="travel_style"
               defaultValue={clientAccount.travel_style}
-              placeholder="Example: Relaxed, adventurous, luxury, family-friendly"
+              placeholder="e.g. Relaxed, adventurous, luxury, family-friendly"
             />
           </div>
 
@@ -958,7 +974,6 @@ export default async function ClientProfilePage({
               name="airline_seating_preference"
               defaultValue={clientAccount.airline_seating_preference}
               options={airlineSeatingPreferences}
-              helper="Choose the seat type you usually prefer when available."
             />
 
             <SelectField
@@ -966,7 +981,6 @@ export default async function ClientProfilePage({
               name="airline_class_preference"
               defaultValue={clientAccount.airline_class_preference}
               options={airlineClassPreferences}
-              helper="Choose your usual cabin class preference."
             />
 
             <SelectField
@@ -974,7 +988,6 @@ export default async function ClientProfilePage({
               name="cruise_cabin_preference"
               defaultValue={clientAccount.cruise_cabin_preference}
               options={cruiseCabinPreferences}
-              helper="Choose your usual cruise stateroom or cabin style."
             />
           </div>
 
@@ -982,16 +995,14 @@ export default async function ClientProfilePage({
             label="Additional Travel Preference Notes"
             name="travel_preference_notes"
             defaultValue={clientAccount.travel_preference_notes}
-            placeholder="Example: prefers not to sit near bathrooms, likes forward ship cabins, needs connecting rooms, avoids obstructed balconies, prefers refundable fares, etc."
-            helper="Use this for anything that does not fit neatly into the dropdowns."
+            placeholder="e.g. Prefers aisle seats, forward ship cabins, connecting rooms, refundable fares."
           />
 
           <TextAreaField
             label="Accessibility / Mobility Notes"
             name="accessibility_notes"
             defaultValue={clientAccount.accessibility_notes}
-            placeholder="Example: Mobility concerns, accessible room requests, limited walking distance, scooter use, etc."
-            helper="These notes help your advisor plan more comfortable and practical travel."
+            placeholder="e.g. Accessible room needed, limited walking, scooter use."
           />
 
           <div
@@ -1049,7 +1060,7 @@ export default async function ClientProfilePage({
               Save Profile
             </button>
 
-            <Link href="/trips" className="btn btn-outline">
+            <Link href="/trips" className="btn btn-primary">
               Back to My Trips
             </Link>
           </div>
@@ -1146,57 +1157,6 @@ export default async function ClientProfilePage({
         </div>
       </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Current Profile Snapshot</h2>
-
-        <div className="grid grid-2">
-          <InfoItem label="Full Name" value={clientName} />
-          <InfoItem label="Email" value={clientAccount.email} />
-          <InfoItem label="Primary Phone" value={clientAccount.phone_primary} />
-          <InfoItem label="Secondary Phone" value={clientAccount.phone_secondary} />
-          <InfoItem label="Address" value={fullAddress || null} />
-          <InfoItem label="Preferred Airport" value={clientAccount.preferred_airport} />
-          <InfoItem label="Travel Style" value={clientAccount.travel_style} />
-          <InfoItem
-            label="Airline Seating Preference"
-            value={clientAccount.airline_seating_preference}
-          />
-          <InfoItem
-            label="Airline Class Preference"
-            value={clientAccount.airline_class_preference}
-          />
-          <InfoItem
-            label="Cruise Cabin Preference"
-            value={clientAccount.cruise_cabin_preference}
-          />
-          <InfoItem
-            label="Additional Travel Preference Notes"
-            value={clientAccount.travel_preference_notes}
-          />
-          <InfoItem
-            label="Food Allergies"
-            value={clientAccount.food_allergies}
-            helper={
-              hasFoodAllergies
-                ? "Food allergy information is saved to this profile."
-                : "No food allergies are currently listed."
-            }
-          />
-          <InfoItem
-            label="Emergency Contact Name"
-            value={clientAccount.emergency_contact_name}
-          />
-          <InfoItem
-            label="Emergency Contact Phone"
-            value={clientAccount.emergency_contact_phone}
-          />
-          <InfoItem
-            label="Passport Expiration"
-            value={formatDate(clientAccount.passport_expiration_date)}
-          />
-          <InfoItem label="Profile Created" value={formatDateTime(clientAccount.created_at)} />
-        </div>
-      </div>
     </PageShell>
   );
 }

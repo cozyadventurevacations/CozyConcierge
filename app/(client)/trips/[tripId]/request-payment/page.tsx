@@ -375,7 +375,7 @@ export default async function RequestPaymentPage({
               Back to Trip
             </Link>
 
-            <Link href="/trips" className="btn btn-outline">
+            <Link href="/trips" className="btn btn-primary">
               Back to My Trips
             </Link>
           </div>
@@ -461,11 +461,11 @@ export default async function RequestPaymentPage({
               Submit Payment Link Request
             </button>
 
-            <Link href={`/trips/${tripId}`} className="btn btn-outline">
+            <Link href={`/trips/${tripId}`} className="btn btn-primary">
               Back to Trip
             </Link>
 
-            <Link href="/trips" className="btn btn-outline">
+            <Link href="/trips" className="btn btn-primary">
               Back to My Trips
             </Link>
           </div>

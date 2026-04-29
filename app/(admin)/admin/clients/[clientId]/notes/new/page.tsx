@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -120,11 +121,7 @@ export default async function NewClientNotePage({
 
             <label className="stack-sm">
               <span className="label">Follow-Up Date</span>
-              <input
-                name="follow_up_date"
-                type="date"
-                className="input"
-              />
+              <input name="follow_up_date" type="date" className="input" />
             </label>
 
             <label className="stack-sm" style={{ gridColumn: "1 / -1" }}>
@@ -133,7 +130,7 @@ export default async function NewClientNotePage({
                 name="title"
                 type="text"
                 className="input"
-                placeholder="Example: Follow up about passport expiration"
+                placeholder="Follow up about passport expiration"
               />
             </label>
           </div>
@@ -144,33 +141,19 @@ export default async function NewClientNotePage({
               name="content"
               rows={8}
               className="textarea"
-              placeholder="Example: Client prefers balcony cabins, needs accessible transfers, and wants Allianz quoted on all international trips."
+              placeholder="Client preferences, document reminders, payment notes, supplier updates, or follow-up details."
             />
           </label>
         </section>
-
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-            color: "#64748b",
-            lineHeight: 1.5,
-          }}
-        >
-          Use this for follow-ups, client preferences, document reminders, payment notes,
-          supplier updates, and anything you want attached to this client’s CRM record.
-        </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button type="submit" className="btn btn-primary">
             Save Client Note
           </button>
 
-          <a href={`/admin/clients/${clientId}`} className="btn btn-outline">
+          <Link href={`/admin/clients/${clientId}`} className="btn btn-primary">
             Cancel
-          </a>
+          </Link>
         </div>
       </form>
     </PageShell>

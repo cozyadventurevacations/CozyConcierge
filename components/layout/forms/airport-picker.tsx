@@ -32,6 +32,7 @@ export function AirportPicker({
   const [airports, setAirports] = useState<AirportOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const query = useMemo(() => searchValue.trim(), [searchValue]);
 
@@ -40,12 +41,15 @@ export function AirportPicker({
 
     async function loadAirports() {
       setIsLoading(true);
+      setErrorMessage(null);
 
       try {
-        const response = await fetch(`/api/airports?q=${encodeURIComponent(query)}`);
+        const response = await fetch(`/api/airports?q=${encodeURIComponent(query)}`, {
+          cache: "no-store",
+        });
 
         if (!response.ok) {
-          throw new Error("Unable to load airports.");
+          throw new Error(`Unable to load airports. Status: ${response.status}`);
         }
 
         const result = await response.json();
@@ -53,9 +57,12 @@ export function AirportPicker({
         if (isActive) {
           setAirports(result.airports ?? []);
         }
-      } catch {
+      } catch (error) {
         if (isActive) {
           setAirports([]);
+          setErrorMessage(
+            error instanceof Error ? error.message : "Unable to load airports.",
+          );
         }
       } finally {
         if (isActive) {
@@ -144,6 +151,10 @@ export function AirportPicker({
             {isLoading ? (
               <div style={{ padding: 12, color: "#667085" }}>
                 Searching airports...
+              </div>
+            ) : errorMessage ? (
+              <div style={{ padding: 12, color: "#b42318" }}>
+                {errorMessage}
               </div>
             ) : airports.length === 0 ? (
               <div style={{ padding: 12, color: "#667085" }}>

@@ -18,6 +18,7 @@ type TravelerProfile = {
   middle_name: string | null;
   last_name: string | null;
   date_of_birth: string | null;
+  passport_full_name: string | null;
   known_traveler_number: string | null;
   redress_number: string | null;
   global_entry_passid: string | null;
@@ -74,30 +75,6 @@ function buildTravelerNotes(formData: FormData) {
   }
 
   return parts.length > 0 ? parts.join("\n\n") : null;
-}
-
-function formatDate(value: string | null | undefined, fallback = "Not provided") {
-  if (!value) return fallback;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-").map(Number);
-
-    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
@@ -255,9 +232,10 @@ async function addTravelerProfile(formData: FormData) {
 
   const firstName = cleanText(formData, "first_name");
   const lastName = cleanText(formData, "last_name");
+  const passportFullName = cleanText(formData, "passport_full_name");
 
-  if (!firstName && !lastName) {
-    throw new Error("Please enter at least a first or last name.");
+  if (!firstName && !lastName && !passportFullName) {
+    throw new Error("Please enter at least a traveler name or passport full name.");
   }
 
   const payload = {
@@ -266,6 +244,7 @@ async function addTravelerProfile(formData: FormData) {
     middle_name: cleanText(formData, "middle_name"),
     last_name: lastName,
     date_of_birth: cleanText(formData, "date_of_birth"),
+    passport_full_name: passportFullName,
     known_traveler_number: cleanText(formData, "known_traveler_number"),
     redress_number: cleanText(formData, "redress_number"),
     global_entry_passid: cleanText(formData, "global_entry_passid"),
@@ -300,6 +279,7 @@ async function updateTravelerProfile(formData: FormData) {
     middle_name: cleanText(formData, "middle_name"),
     last_name: cleanText(formData, "last_name"),
     date_of_birth: cleanText(formData, "date_of_birth"),
+    passport_full_name: cleanText(formData, "passport_full_name"),
     known_traveler_number: cleanText(formData, "known_traveler_number"),
     redress_number: cleanText(formData, "redress_number"),
     global_entry_passid: cleanText(formData, "global_entry_passid"),
@@ -374,7 +354,7 @@ async function addLoyaltyNumber(formData: FormData) {
 
   const { data: traveler, error: travelerError } = await supabase
     .from("traveler_profiles")
-    .select("id, first_name, middle_name, last_name")
+    .select("id, first_name, middle_name, last_name, passport_full_name")
     .eq("id", travelerId)
     .eq("client_account_id", clientAccount.id)
     .single();
@@ -383,11 +363,13 @@ async function addLoyaltyNumber(formData: FormData) {
     throw new Error(travelerError?.message ?? "Traveler not found.");
   }
 
-  const travelerName = `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
-    traveler.last_name ?? ""
-  }`
-    .replace(/\s+/g, " ")
-    .trim();
+  const travelerName =
+    traveler.passport_full_name ||
+    `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
+      traveler.last_name ?? ""
+    }`
+      .replace(/\s+/g, " ")
+      .trim();
 
   const { error } = await supabase.from("traveler_loyalty_numbers").insert({
     traveler_profile_id: travelerId,
@@ -440,7 +422,7 @@ async function updateLoyaltyNumber(formData: FormData) {
 
   const { data: traveler, error: travelerError } = await supabase
     .from("traveler_profiles")
-    .select("id, first_name, middle_name, last_name")
+    .select("id, first_name, middle_name, last_name, passport_full_name")
     .eq("id", travelerId)
     .eq("client_account_id", clientAccount.id)
     .single();
@@ -449,11 +431,13 @@ async function updateLoyaltyNumber(formData: FormData) {
     throw new Error(travelerError?.message ?? "Traveler not found.");
   }
 
-  const travelerName = `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
-    traveler.last_name ?? ""
-  }`
-    .replace(/\s+/g, " ")
-    .trim();
+  const travelerName =
+    traveler.passport_full_name ||
+    `${traveler.first_name ?? ""} ${traveler.middle_name ?? ""} ${
+      traveler.last_name ?? ""
+    }`
+      .replace(/\s+/g, " ")
+      .trim();
 
   const { error } = await supabase
     .from("traveler_loyalty_numbers")
@@ -522,7 +506,7 @@ export default async function TravelerNumbersPage() {
   return (
     <PageShell
       title="Traveler Numbers"
-      subtitle="Store trusted traveler numbers, redress numbers, passport reference details, and rewards memberships for your travel profile."
+      subtitle="Store trusted traveler numbers, passport reference details, and rewards memberships."
     >
       <div
         className="card stack"
@@ -548,45 +532,34 @@ export default async function TravelerNumbersPage() {
           Traveler Numbers & Rewards Memberships
         </h1>
 
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Add Known Traveler Numbers, Redress Numbers, Global Entry PASSIDs,
-          passport reference details, frequent flyer numbers, hotel loyalty numbers,
-          cruise loyalty numbers, rental car numbers, theme park rewards, credit card
-          travel programs, rail memberships, tour memberships, and other travel-related
-          account numbers.
-        </p>
-
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Profile owner: <strong>{getClientName(clientAccount)}</strong>
           {clientAccount.email ? ` — ${clientAccount.email}` : ""}
         </p>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/profile" className="btn btn-outline">
+          <Link href="/profile" className="btn btn-primary">
             Back to Profile
           </Link>
 
-          <Link href="/dashboard" className="btn btn-outline">
+          <Link href="/dashboard" className="btn btn-primary">
             Dashboard
           </Link>
         </div>
       </div>
 
       <div
-        className="card stack"
+        className="card"
         style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
         }}
       >
-        <h2 style={{ margin: 0 }}>Sensitive Information Notice</h2>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Trusted traveler numbers, passport details, and rewards membership numbers
-          may be sensitive. Only add information you want stored in your secure Cozy
-          Concierge profile for travel planning and reservation support. Do not store
-          passwords here.
-        </p>
+        <strong>Sensitive information notice:</strong> Do not store passwords here.
+        Only add traveler numbers and rewards information needed for travel planning
+        or reservation support.
       </div>
 
       <div className="card stack">
@@ -610,12 +583,23 @@ export default async function TravelerNumbersPage() {
             </label>
           </div>
 
-          <div className="grid grid-3">
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Passport Full Name</span>
+              <input
+                className="input"
+                name="passport_full_name"
+                placeholder="Full name exactly as shown on passport"
+              />
+            </label>
+
             <label className="stack-sm">
               <span className="label">Date of Birth</span>
               <input className="input" type="date" name="date_of_birth" />
             </label>
+          </div>
 
+          <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">Known Traveler Number / KTN</span>
               <input className="input" name="known_traveler_number" />
@@ -625,14 +609,14 @@ export default async function TravelerNumbersPage() {
               <span className="label">Redress Number</span>
               <input className="input" name="redress_number" />
             </label>
-          </div>
 
-          <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">Global Entry PASSID</span>
               <input className="input" name="global_entry_passid" />
             </label>
+          </div>
 
+          <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">Passport Number</span>
               <input className="input" name="passport_number" />
@@ -640,30 +624,28 @@ export default async function TravelerNumbersPage() {
 
             <label className="stack-sm">
               <span className="label">Passport Country</span>
-              <input className="input" name="passport_country" placeholder="Example: US" />
+              <input className="input" name="passport_country" placeholder="US" />
             </label>
-          </div>
 
-          <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Passport Expiration Date</span>
               <input className="input" type="date" name="passport_expiration_date" />
             </label>
-
-            <label className="stack-sm">
-              <span className="label">Other Traveler Numbers / IDs</span>
-              <input
-                className="input"
-                name="other_traveler_numbers"
-                placeholder="Example: NEXUS, SENTRI, military ID, agency ID, etc."
-              />
-            </label>
           </div>
+
+          <label className="stack-sm">
+            <span className="label">Other Traveler Numbers / IDs</span>
+            <input
+              className="input"
+              name="other_traveler_numbers"
+              placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
+            />
+          </label>
 
           <label className="stack-sm">
             <span className="label">Notes</span>
             <textarea
-              className="input"
+              className="textarea"
               name="notes"
               placeholder="Optional traveler notes"
               rows={3}
@@ -678,11 +660,6 @@ export default async function TravelerNumbersPage() {
 
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Add New Rewards Membership</h2>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Add airline, hotel, cruise, rental car, theme park, rail, credit card travel
-          program, tour, vacation package, or other rewards membership numbers here.
-        </p>
 
         {travelerRows.length === 0 ? (
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
@@ -724,7 +701,7 @@ export default async function TravelerNumbersPage() {
                 <input
                   className="input"
                   name="company_name"
-                  placeholder="Example: American Airlines, Hilton, Disney, Royal Caribbean"
+                  placeholder="American Airlines, Hilton, Disney, Royal Caribbean"
                   required
                 />
               </label>
@@ -736,7 +713,7 @@ export default async function TravelerNumbersPage() {
                 <input
                   className="input"
                   name="program_name"
-                  placeholder="Example: AAdvantage, Hilton Honors, Castaway Club"
+                  placeholder="AAdvantage, Hilton Honors, Castaway Club"
                 />
               </label>
 
@@ -747,11 +724,7 @@ export default async function TravelerNumbersPage() {
 
               <label className="stack-sm">
                 <span className="label">Notes</span>
-                <input
-                  className="input"
-                  name="notes"
-                  placeholder="Optional notes. Do not store passwords."
-                />
+                <input className="input" name="notes" placeholder="Optional notes" />
               </label>
             </div>
 
@@ -850,7 +823,17 @@ export default async function TravelerNumbersPage() {
                       </label>
                     </div>
 
-                    <div className="grid grid-3">
+                    <div className="grid grid-2">
+                      <label className="stack-sm">
+                        <span className="label">Passport Full Name</span>
+                        <input
+                          className="input"
+                          name="passport_full_name"
+                          defaultValue={traveler.passport_full_name ?? ""}
+                          placeholder="Full name exactly as shown on passport"
+                        />
+                      </label>
+
                       <label className="stack-sm">
                         <span className="label">Date of Birth</span>
                         <input
@@ -860,7 +843,9 @@ export default async function TravelerNumbersPage() {
                           defaultValue={traveler.date_of_birth ?? ""}
                         />
                       </label>
+                    </div>
 
+                    <div className="grid grid-3">
                       <label className="stack-sm">
                         <span className="label">Known Traveler Number / KTN</span>
                         <input
@@ -878,9 +863,7 @@ export default async function TravelerNumbersPage() {
                           defaultValue={traveler.redress_number ?? ""}
                         />
                       </label>
-                    </div>
 
-                    <div className="grid grid-3">
                       <label className="stack-sm">
                         <span className="label">Global Entry PASSID</span>
                         <input
@@ -889,7 +872,9 @@ export default async function TravelerNumbersPage() {
                           defaultValue={traveler.global_entry_passid ?? ""}
                         />
                       </label>
+                    </div>
 
+                    <div className="grid grid-3">
                       <label className="stack-sm">
                         <span className="label">Passport Number</span>
                         <input
@@ -907,9 +892,7 @@ export default async function TravelerNumbersPage() {
                           defaultValue={traveler.passport_country ?? ""}
                         />
                       </label>
-                    </div>
 
-                    <div className="grid grid-2">
                       <label className="stack-sm">
                         <span className="label">Passport Expiration Date</span>
                         <input
@@ -919,21 +902,21 @@ export default async function TravelerNumbersPage() {
                           defaultValue={traveler.passport_expiration_date ?? ""}
                         />
                       </label>
-
-                      <label className="stack-sm">
-                        <span className="label">Other Traveler Numbers / IDs</span>
-                        <input
-                          className="input"
-                          name="other_traveler_numbers"
-                          placeholder="Example: NEXUS, SENTRI, military ID, agency ID, etc."
-                        />
-                      </label>
                     </div>
+
+                    <label className="stack-sm">
+                      <span className="label">Other Traveler Numbers / IDs</span>
+                      <input
+                        className="input"
+                        name="other_traveler_numbers"
+                        placeholder="NEXUS, SENTRI, military ID, agency ID, etc."
+                      />
+                    </label>
 
                     <label className="stack-sm">
                       <span className="label">Notes</span>
                       <textarea
-                        className="input"
+                        className="textarea"
                         name="notes"
                         defaultValue={traveler.notes ?? ""}
                         rows={3}
@@ -949,7 +932,7 @@ export default async function TravelerNumbersPage() {
 
                   <form action={deleteTravelerProfile}>
                     <input type="hidden" name="traveler_id" value={traveler.id} />
-                    <button type="submit" className="btn btn-outline">
+                    <button type="submit" className="btn btn-primary">
                       Delete Traveler
                     </button>
                   </form>
@@ -1084,7 +1067,7 @@ export default async function TravelerNumbersPage() {
                                     className="input"
                                     name="notes"
                                     defaultValue={loyalty.notes ?? ""}
-                                    placeholder="Optional notes. Do not store passwords."
+                                    placeholder="Optional notes"
                                   />
                                 </label>
                               </div>
@@ -1102,7 +1085,7 @@ export default async function TravelerNumbersPage() {
                                 name="loyalty_id"
                                 value={loyalty.id}
                               />
-                              <button type="submit" className="btn btn-outline">
+                              <button type="submit" className="btn btn-primary">
                                 Remove Rewards Membership
                               </button>
                             </form>

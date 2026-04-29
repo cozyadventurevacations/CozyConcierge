@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -16,7 +17,11 @@ type TripRow = {
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
-  return `$${value.toFixed(2)}`;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
 }
 
 function formatDate(value: string | null | undefined, fallback = "Not set") {
@@ -43,6 +48,43 @@ function formatDate(value: string | null | undefined, fallback = "Not set") {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: "#f0f7f8",
+        color: "var(--accent-dark)",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {status ?? "draft"}
+    </span>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="card">
+      <span className="label">{label}</span>
+      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+        {value}
+      </p>
+    </div>
+  );
 }
 
 async function getCurrentClientAccount() {
@@ -182,35 +224,46 @@ export default async function ClientDashboardPage() {
       title="Dashboard"
       subtitle={`Welcome back, ${clientName}. Here’s your travel snapshot.`}
     >
-      <div className="grid grid-4">
-        <div className="card">
-          <strong>Upcoming Trips</strong>
-          <p style={{ marginTop: 8, fontSize: 24, fontWeight: 800 }}>
-            {upcomingTrips.length}
-          </p>
-        </div>
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Cozy Concierge
+        </p>
 
-        <div className="card">
-          <strong>Next Trip</strong>
-          <p style={{ marginTop: 8 }}>
-            {nextTrip ? nextTrip.trip_name ?? "Upcoming Trip" : "No upcoming trips"}
-          </p>
-        </div>
+        <h2 style={{ margin: 0 }}>Travel Snapshot</h2>
 
-        <div className="card">
-          <strong>Next Final Payment</strong>
-          <p style={{ marginTop: 8 }}>
-            {nextPaymentTrip
-              ? formatDate(nextPaymentTrip.final_payment_due_date)
-              : "Not set"}
-          </p>
-        </div>
+        <div className="grid grid-4">
+          <SummaryCard label="Upcoming Trips" value={upcomingTrips.length} />
 
-        <div className="card">
-          <strong>Total Balance Due</strong>
-          <p style={{ marginTop: 8, fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(totalBalanceDue)}
-          </p>
+          <SummaryCard
+            label="Next Trip"
+            value={nextTrip ? nextTrip.trip_name ?? "Upcoming Trip" : "No upcoming trips"}
+          />
+
+          <SummaryCard
+            label="Next Final Payment"
+            value={
+              nextPaymentTrip
+                ? formatDate(nextPaymentTrip.final_payment_due_date)
+                : "Not set"
+            }
+          />
+
+          <SummaryCard label="Total Balance Due" value={formatMoney(totalBalanceDue)} />
         </div>
       </div>
 
@@ -218,18 +271,18 @@ export default async function ClientDashboardPage() {
         <h2 style={{ margin: 0 }}>Quick Actions</h2>
 
         <div className="row">
-          <a href="/trips" className="btn btn-primary">
+          <Link href="/trips" className="btn btn-primary">
             View My Trips
-          </a>
+          </Link>
 
-          <a href="/travel-request" className="btn btn-outline">
+          <Link href="/travel-request" className="btn btn-primary">
             Request New Travel Quote
-          </a>
+          </Link>
 
           {nextTrip ? (
-            <a href={`/trips/${nextTrip.trip_id}`} className="btn btn-outline">
+            <Link href={`/trips/${nextTrip.trip_id}`} className="btn btn-primary">
               Open Next Trip
-            </a>
+            </Link>
           ) : null}
         </div>
       </div>
@@ -238,7 +291,7 @@ export default async function ClientDashboardPage() {
         <h2 style={{ margin: 0 }}>Upcoming Trips</h2>
 
         {upcomingTrips.length === 0 ? (
-          <p>No upcoming trips found yet.</p>
+          <p style={{ margin: 0, color: "#667085" }}>No upcoming trips found yet.</p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 760 }}>
@@ -260,17 +313,21 @@ export default async function ClientDashboardPage() {
                     <td>{trip.destinations ?? "Not provided"}</td>
                     <td>{formatDate(trip.departure_date)}</td>
                     <td>{formatDate(trip.return_date)}</td>
-                    <td>{trip.trip_status ?? "draft"}</td>
                     <td>
-                      <a
+                      <StatusBadge status={trip.trip_status} />
+                    </td>
+                    <td>
+                      <Link
                         href={`/trips/${trip.trip_id}`}
+                        className="btn btn-primary"
                         style={{
-                          color: "var(--accent-dark)",
-                          fontWeight: 700,
+                          padding: "6px 10px",
+                          fontSize: 13,
+                          whiteSpace: "nowrap",
                         }}
                       >
                         Open
-                      </a>
+                      </Link>
                     </td>
                   </tr>
                 ))}

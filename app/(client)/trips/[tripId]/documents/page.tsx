@@ -337,7 +337,7 @@ export default async function ClientTripDocumentsPage({
             </p>
           </div>
 
-          <Link href={`/trips/${tripId}`} className="btn btn-outline">
+          <Link href={`/trips/${tripId}`} className="btn btn-primary">
             Back to Trip
           </Link>
         </div>
@@ -379,7 +379,7 @@ export default async function ClientTripDocumentsPage({
                           href={doc.signedUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn btn-outline"
+                          className="btn btn-primary"
                           style={{
                             padding: "6px 10px",
                             fontSize: 13,
@@ -405,7 +405,7 @@ export default async function ClientTripDocumentsPage({
           Back to Trip
         </Link>
 
-        <Link href="/trips" className="btn btn-outline">
+        <Link href="/trips" className="btn btn-primary">
           Back to My Trips
         </Link>
       </div>

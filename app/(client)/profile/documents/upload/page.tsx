@@ -115,6 +115,45 @@ function requireAllowedDocumentType(value: string) {
   return value;
 }
 
+function DocumentTypeBadge({ type }: { type: string | null | undefined }) {
+  const isMedical = type === "medical";
+  const isInsurance = type === "insurance";
+  const isMinor =
+    type === "minor_permission" || type === "minor_international_consent";
+
+  let background = "#f0f7f8";
+  let color = "var(--accent-dark)";
+
+  if (isMedical) {
+    background = "#fef2f2";
+    color = "#b42318";
+  } else if (isInsurance) {
+    background = "#ecfdf3";
+    color = "#027a48";
+  } else if (isMinor) {
+    background = "#eff6ff";
+    color = "#1d4ed8";
+  }
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background,
+        color,
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {getDocumentTypeLabel(type)}
+    </span>
+  );
+}
+
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
@@ -330,23 +369,16 @@ export default async function ClientDocumentUploadPage({
           Supporting Travel Documents
         </h1>
 
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Upload documents that may be needed for travel, including minor travel
-          permission slips, one-parent international travel consent forms, insurance
-          documents, medical notes, accessibility documentation, or other
-          supplier-required paperwork.
-        </p>
-
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/profile" className="btn btn-outline">
+          <Link href="/profile" className="btn btn-primary">
             Back to Profile
           </Link>
 
-          <Link href="/profile/passport-upload" className="btn btn-outline">
+          <Link href="/profile/passport-upload" className="btn btn-primary">
             Upload Passport Image
           </Link>
 
-          <Link href="/trips" className="btn btn-outline">
+          <Link href="/trips" className="btn btn-primary">
             Back to My Trips
           </Link>
         </div>
@@ -366,33 +398,16 @@ export default async function ClientDocumentUploadPage({
       ) : null}
 
       <div
-        className="card stack"
+        className="card"
         style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
         }}
       >
-        <h2 style={{ margin: 0 }}>Important Document Upload Notice</h2>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Some travel documents may contain sensitive personal, medical, legal, or
-          identity information. Only upload documents that are necessary for travel
-          planning, supplier documentation, or trip support.
-        </p>
-
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: 20,
-            color: "#9a3412",
-            lineHeight: 1.6,
-          }}
-        >
-          <li>Do not upload documents for another traveler unless you are authorized.</li>
-          <li>Do not upload documents from a public or shared computer.</li>
-          <li>Do not share temporary document links with anyone who should not see them.</li>
-          <li>Uploaded copies do not replace required original documents.</li>
-        </ul>
+        <strong>Document upload notice:</strong> Only upload documents that are necessary
+        for travel planning, supplier documentation, or trip support.
       </div>
 
       <div className="card stack">
@@ -420,7 +435,7 @@ export default async function ClientDocumentUploadPage({
               <input
                 className="input"
                 name="document_title"
-                placeholder="Example: Notarized Minor Travel Consent"
+                placeholder="Notarized Minor Travel Consent"
               />
             </label>
           </div>
@@ -434,10 +449,6 @@ export default async function ClientDocumentUploadPage({
               accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx"
               required
             />
-            <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
-              Accepted formats: JPG, PNG, WEBP, PDF, DOC, or DOCX. Maximum size:
-              15MB.
-            </span>
           </label>
 
           <label className="stack-sm">
@@ -446,7 +457,7 @@ export default async function ClientDocumentUploadPage({
               className="textarea"
               name="notes"
               rows={4}
-              placeholder="Optional notes, such as traveler name, trip name, destination, or what this document is for."
+              placeholder="Traveler name, trip name, destination, or what this document is for."
             />
           </label>
 
@@ -471,9 +482,8 @@ export default async function ClientDocumentUploadPage({
               style={{ marginTop: 4 }}
             />
             <span>
-              I understand this document may contain sensitive information, and I
-              authorize Cozy Adventure Vacations to store it in my secure client
-              document area for travel planning, supplier documentation, or trip
+              I authorize Cozy Adventure Vacations to store this document in my secure
+              client document area for travel planning, supplier documentation, or trip
               support purposes.
             </span>
           </label>
@@ -488,10 +498,8 @@ export default async function ClientDocumentUploadPage({
               lineHeight: 1.6,
             }}
           >
-            <strong>Reminder:</strong> Uploading a document here helps keep things
-            organized, but travelers are still responsible for carrying and
-            presenting required originals when airlines, border officials, cruise
-            lines, resorts, or suppliers require them.
+            <strong>Upload limits:</strong> JPG, PNG, WEBP, PDF, DOC, or DOCX. Maximum
+            file size is 15MB.
           </div>
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -499,7 +507,7 @@ export default async function ClientDocumentUploadPage({
               Upload Travel Document
             </button>
 
-            <Link href="/profile" className="btn btn-outline">
+            <Link href="/profile" className="btn btn-primary">
               Cancel
             </Link>
           </div>
@@ -509,10 +517,19 @@ export default async function ClientDocumentUploadPage({
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Uploaded Travel Documents</h2>
 
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          For security, document links on this page expire after 5 minutes. Refresh
-          the page to generate a new temporary link if needed.
-        </p>
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+            color: "#667085",
+            lineHeight: 1.6,
+          }}
+        >
+          Document links expire after 5 minutes. Refresh the page to generate a new
+          temporary link.
+        </div>
 
         {documentsError ? (
           <div>
@@ -542,7 +559,9 @@ export default async function ClientDocumentUploadPage({
               <tbody>
                 {documentsWithUrls.map((document) => (
                   <tr key={document.id}>
-                    <td>{getDocumentTypeLabel(document.document_type)}</td>
+                    <td>
+                      <DocumentTypeBadge type={document.document_type} />
+                    </td>
                     <td>{document.document_title}</td>
                     <td>{document.file_name}</td>
                     <td>{formatDateTime(document.created_at)}</td>
@@ -553,7 +572,7 @@ export default async function ClientDocumentUploadPage({
                           href={document.signedUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn btn-outline"
+                          className="btn btn-primary"
                           style={{
                             padding: "6px 10px",
                             fontSize: 13,

@@ -6,6 +6,7 @@ type ClientSummary = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  preferred_name: string | null;
   email: string | null;
 };
 
@@ -22,118 +23,55 @@ type ClientDocumentRow = {
   client_accounts: ClientSummary | ClientSummary[] | null;
 };
 
-function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
-  if (!value) return fallback;
-
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit",
   });
 }
 
 function getDocumentTypeLabel(type: string | null | undefined) {
   switch (type) {
-    case "passport":
-      return "Passport";
-    case "minor_permission":
-      return "Minor Permission Slip";
-    case "minor_international_consent":
-      return "Minor International Travel Consent";
-    case "medical":
-      return "Medical / Health Document";
-    case "insurance":
-      return "Travel Insurance Document";
-    case "accessibility":
-      return "Accessibility Document";
-    case "supplier_required":
-      return "Supplier-Required Document";
-    case "general":
-      return "General Travel Document";
-    default:
-      return type ?? "Unknown Document";
+    case "passport": return "Passport";
+    case "minor_permission": return "Minor Permission";
+    case "minor_international_consent": return "Minor International Consent";
+    case "medical": return "Medical";
+    case "insurance": return "Insurance";
+    case "accessibility": return "Accessibility";
+    case "supplier_required": return "Supplier Required";
+    case "general": return "General";
+    default: return type ?? "Unknown";
   }
 }
 
-function getClientFromRelation(
-  clientRelation: ClientDocumentRow["client_accounts"],
-): ClientSummary | null {
+function getClientFromRelation(clientRelation: ClientDocumentRow["client_accounts"]): ClientSummary | null {
   if (!clientRelation) return null;
-
-  if (Array.isArray(clientRelation)) {
-    return clientRelation[0] ?? null;
-  }
-
+  if (Array.isArray(clientRelation)) return clientRelation[0] ?? null;
   return clientRelation;
 }
 
 function getClientName(client: ClientSummary | null) {
-  if (!client) return "Unknown Client";
-
-  return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Unnamed Client";
+  if (!client) return "—";
+  const display = client.preferred_name ?? client.first_name;
+  return `${display ?? ""} ${client.last_name ?? ""}`.trim() || "—";
 }
 
 function DocumentTypeBadge({ type }: { type: string | null | undefined }) {
   const isPassport = type === "passport";
-  const isMinorDocument =
-    type === "minor_permission" || type === "minor_international_consent";
-
+  const isMinor = type === "minor_permission" || type === "minor_international_consent";
+  const isMedical = type === "medical";
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        borderRadius: 999,
-        padding: "5px 10px",
-        background: isPassport ? "#fff7ed" : isMinorDocument ? "#eff6ff" : "#f0f7f8",
-        color: isPassport ? "#c2410c" : isMinorDocument ? "#1d4ed8" : "var(--accent-dark)",
-        fontWeight: 700,
-        fontSize: 13,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{
+      display: "inline-flex", alignItems: "center", borderRadius: 999,
+      padding: "4px 10px", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap",
+      background: isPassport ? "#fff7ed" : isMinor ? "#eff6ff" : isMedical ? "#fff1f2" : "#f0f7f8",
+      color: isPassport ? "#c2410c" : isMinor ? "#1d4ed8" : isMedical ? "#be123c" : "var(--accent-dark)",
+    }}>
       {getDocumentTypeLabel(type)}
     </span>
-  );
-}
-
-function ActionButton({
-  href,
-  children,
-  variant = "primary",
-}: {
-  href: string;
-  children: React.ReactNode;
-  variant?: "primary" | "secondary";
-}) {
-  const isPrimary = variant === "primary";
-
-  return (
-    <Link
-      href={href}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "10px 14px",
-        borderRadius: 10,
-        background: isPrimary ? "var(--accent-dark)" : "white",
-        color: isPrimary ? "white" : "var(--accent-dark)",
-        border: isPrimary ? "none" : "1px solid var(--accent-dark)",
-        fontWeight: 700,
-        textDecoration: "none",
-      }}
-    >
-      {children}
-    </Link>
   );
 }
 
@@ -142,8 +80,7 @@ export default async function AdminClientDocumentsIndexPage() {
 
   const { data: documents, error: documentsError } = await supabase
     .from("client_documents")
-    .select(
-      `
+    .select(`
       id,
       client_account_id,
       document_type,
@@ -157,123 +94,66 @@ export default async function AdminClientDocumentsIndexPage() {
         id,
         first_name,
         last_name,
+        preferred_name,
         email
       )
-      `,
-    )
+    `)
     .order("created_at", { ascending: false });
 
   const documentRows = (documents ?? []) as ClientDocumentRow[];
 
-  const passportDocuments = documentRows.filter(
-    (document) => document.document_type === "passport",
-  );
-
-  const minorTravelDocuments = documentRows.filter(
-    (document) =>
-      document.document_type === "minor_permission" ||
-      document.document_type === "minor_international_consent",
-  );
-
-  const sensitiveDocuments = documentRows.filter(
-    (document) =>
-      document.document_type === "passport" ||
-      document.document_type === "medical" ||
-      document.document_type === "minor_permission" ||
-      document.document_type === "minor_international_consent",
-  );
+  const passportCount = documentRows.filter((d) => d.document_type === "passport").length;
+  const minorCount = documentRows.filter((d) =>
+    d.document_type === "minor_permission" || d.document_type === "minor_international_consent"
+  ).length;
+  const sensitiveCount = documentRows.filter((d) =>
+    ["passport", "medical", "minor_permission", "minor_international_consent"].includes(d.document_type)
+  ).length;
 
   return (
     <PageShell
       title="Client Documents"
       subtitle="Review client-uploaded passport files, consent forms, permission slips, and supporting travel documents."
     >
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-        }}
-      >
-        <ActionButton href="/admin/dashboard" variant="secondary">
-          Back to Dashboard
-        </ActionButton>
-
-        <ActionButton href="/admin/clients" variant="secondary">
-          View Clients
-        </ActionButton>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Link href="/admin/dashboard" className="btn btn-primary">Back to Dashboard</Link>
+        <Link href="/admin/clients" className="btn btn-primary">View Clients</Link>
       </div>
 
       <div className="grid grid-3">
         <div className="card">
           <span className="label">Total Documents</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {documentRows.length}
-          </p>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{documentRows.length}</p>
         </div>
-
         <div className="card">
           <span className="label">Passport Documents</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {passportDocuments.length}
-          </p>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{passportCount}</p>
         </div>
-
         <div className="card">
           <span className="label">Minor Travel Documents</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {minorTravelDocuments.length}
-          </p>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{minorCount}</p>
         </div>
       </div>
 
-      <div
-        className="card stack"
-        style={{
-          border: "1px solid #fed7aa",
-          background: "#fff7ed",
-        }}
-      >
+      <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
         <h2 style={{ margin: 0 }}>Sensitive Document Reminder</h2>
-
         <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Some uploaded files may contain sensitive personal, identity, legal, medical,
-          or minor travel information. Only open documents when needed for legitimate
-          trip support, supplier documentation, or travel planning. Temporary links
-          expire after 5 minutes.
+          Some files may contain sensitive personal, identity, legal, or medical information.
+          Only open documents when needed for legitimate trip support. Secure links expire after 5 minutes.
         </p>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Sensitive documents currently shown: <strong>{sensitiveDocuments.length}</strong>
+        <p style={{ margin: 0, color: "#9a3412" }}>
+          Sensitive documents shown: <strong>{sensitiveCount}</strong>
         </p>
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>All Client Documents</h2>
-
         {documentsError ? (
           <div>
-            <p>
-              <strong>Error loading client documents:</strong>
-            </p>
+            <p><strong>Error loading client documents:</strong></p>
             <pre>{JSON.stringify(documentsError, null, 2)}</pre>
           </div>
         ) : documentRows.length === 0 ? (
-          <div
-            style={{
-              padding: "12px",
-              borderRadius: 12,
-              background: "#f7fbfc",
-              border: "1px solid #e6f0f2",
-            }}
-          >
-            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              No client-uploaded documents found yet.
-            </p>
-          </div>
+          <p style={{ margin: 0, color: "#64748b" }}>No client-uploaded documents found yet.</p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 1180 }}>
@@ -286,11 +166,10 @@ export default async function AdminClientDocumentsIndexPage() {
                   <th>File Name</th>
                   <th>Uploaded</th>
                   <th>Notes</th>
-                  <th>Client Page</th>
+                  <th>Client Docs</th>
                   <th>Open</th>
                 </tr>
               </thead>
-
               <tbody>
                 {documentRows.map((document) => {
                   const client = getClientFromRelation(document.client_accounts);
@@ -298,51 +177,33 @@ export default async function AdminClientDocumentsIndexPage() {
 
                   return (
                     <tr key={document.id}>
-                      <td>
-                        <DocumentTypeBadge type={document.document_type} />
-                      </td>
-
+                      <td><DocumentTypeBadge type={document.document_type} /></td>
                       <td>{clientName}</td>
-
-                      <td>{client?.email ?? "Not provided"}</td>
-
+                      <td>{client?.email ?? "—"}</td>
                       <td>{document.document_title}</td>
-
                       <td>{document.file_name}</td>
-
                       <td>{formatDateTime(document.created_at)}</td>
-
-                      <td style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>
-                        {document.notes ?? "Not provided"}
+                      <td style={{ maxWidth: 280, whiteSpace: "pre-wrap" }}>
+                        {document.notes ?? "—"}
                       </td>
-
                       <td>
                         <Link
                           href={`/admin/clients/${document.client_account_id}/documents`}
-                          style={{
-                            color: "var(--accent-dark)",
-                            fontWeight: 700,
-                            textDecoration: "none",
-                            whiteSpace: "nowrap",
-                          }}
+                          className="btn btn-primary"
+                          style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}
                         >
                           Client Docs
                         </Link>
                       </td>
-
                       <td>
                         <a
                           href={`/api/admin/client-documents/${document.id}/open`}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn btn-outline"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
+                          className="btn btn-primary"
+                          style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}
                         >
-                          Open Secure Link
+                          Open File
                         </a>
                       </td>
                     </tr>

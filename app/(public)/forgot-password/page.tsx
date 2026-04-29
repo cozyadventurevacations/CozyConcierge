@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { createClient } from "@/lib/supabase/client";
@@ -93,9 +94,9 @@ export default function ForgotPasswordPage() {
               {isLoading ? "Sending..." : "Send Reset Email"}
             </button>
 
-            <a href="/login" className="btn btn-outline">
+            <Link href="/login" className="btn btn-primary">
               Back to Login
-            </a>
+            </Link>
           </div>
         </form>
       </div>

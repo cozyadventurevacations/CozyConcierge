@@ -251,28 +251,30 @@ export default async function NewCommissionPage({
 
           <div className="grid grid-2">
             <label className="stack-sm">
-              <span>Commission Name</span>
+              <span className="label">Commission Name</span>
               <input
                 name="commission_name"
                 type="text"
                 placeholder="Example: Disney Package Commission"
                 defaultValue={generatedCommissionName}
                 required
+                className="input"
               />
             </label>
 
             <label className="stack-sm">
-              <span>Booking Number</span>
+              <span className="label">Booking Number</span>
               <input
                 name="booking_number"
                 type="text"
                 defaultValue={defaultBookingNumber}
+                className="input"
               />
             </label>
 
             <label className="stack-sm">
-              <span>Status</span>
-              <select name="commission_status" defaultValue="expected">
+              <span className="label">Status</span>
+              <select name="commission_status" defaultValue="expected" className="select">
                 <option value="expected">expected</option>
                 <option value="pending">pending</option>
                 <option value="received">received</option>
@@ -324,8 +326,8 @@ export default async function NewCommissionPage({
 
           <div className="grid grid-2">
             <label className="stack-sm">
-              <span>Client</span>
-              <select name="client_account_id" defaultValue={selectedClientId}>
+              <span className="label">Client</span>
+              <select name="client_account_id" defaultValue={selectedClientId} className="select">
                 <option value="">No client selected</option>
                 {clientRows.map((client) => (
                   <option key={client.id} value={client.id}>
@@ -336,8 +338,8 @@ export default async function NewCommissionPage({
             </label>
 
             <label className="stack-sm">
-              <span>Trip</span>
-              <select name="trip_id" defaultValue={selectedTripId}>
+              <span className="label">Trip</span>
+              <select name="trip_id" defaultValue={selectedTripId} className="select">
                 <option value="">No trip selected</option>
                 {tripRows.map((trip) => (
                   <option key={trip.id} value={trip.id}>
@@ -348,8 +350,8 @@ export default async function NewCommissionPage({
             </label>
 
             <label className="stack-sm">
-              <span>Supplier</span>
-              <select name="supplier_id" defaultValue={selectedSupplierId}>
+              <span className="label">Supplier</span>
+              <select name="supplier_id" defaultValue={selectedSupplierId} className="select">
                 <option value="">No supplier selected</option>
                 {supplierRows.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>
@@ -361,12 +363,13 @@ export default async function NewCommissionPage({
             </label>
 
             <label className="stack-sm">
-              <span>Supplier Name Snapshot / Manual Supplier</span>
+              <span className="label">Manual Supplier Name</span>
               <input
                 name="supplier_name_snapshot"
                 type="text"
+                className="input"
                 defaultValue={selectedSupplier?.supplier_name ?? ""}
-                placeholder="Use if supplier is not in supplier list yet"
+                placeholder="Use if supplier is not in the supplier list yet"
               />
             </label>
           </div>
@@ -377,41 +380,45 @@ export default async function NewCommissionPage({
 
           <div className="grid grid-2">
             <label className="stack-sm">
-              <span>Gross Booking Amount</span>
+              <span className="label">Gross Booking Amount</span>
               <input
                 name="gross_booking_amount"
                 type="number"
                 step="0.01"
+                className="input"
                 defaultValue={defaultGrossBookingAmount || "0"}
               />
             </label>
 
             <label className="stack-sm">
-              <span>Full Commission</span>
+              <span className="label">Full Commission</span>
               <input
                 name="full_commission_amount"
                 type="number"
                 step="0.01"
+                className="input"
                 defaultValue={defaultFullCommissionAmount || "0"}
               />
             </label>
 
             <label className="stack-sm">
-              <span>Your Commission Percentage</span>
+              <span className="label">Your Commission %</span>
               <input
                 name="agency_commission_percent"
                 type="number"
                 step="0.01"
+                className="input"
                 defaultValue="90"
               />
             </label>
 
             <label className="stack-sm">
-              <span>Received Commission Amount</span>
+              <span className="label">Received Amount</span>
               <input
                 name="received_commission_amount"
                 type="number"
                 step="0.01"
+                className="input"
                 defaultValue="0"
               />
             </label>
@@ -439,38 +446,35 @@ export default async function NewCommissionPage({
 
           <div className="grid grid-2">
             <label className="stack-sm">
-              <span>Expected Payment Date</span>
-              <input name="expected_payment_date" type="date" />
+              <span className="label">Expected Payment Date</span>
+              <input name="expected_payment_date" type="date" className="input" />
             </label>
 
             <label className="stack-sm">
-              <span>Received Payment Date</span>
-              <input name="received_payment_date" type="date" />
+              <span className="label">Received Payment Date</span>
+              <input name="received_payment_date" type="date" className="input" />
             </label>
           </div>
         </section>
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Notes</h2>
-
-          <label className="stack-sm">
-            <span>Notes</span>
-            <textarea
-              name="notes"
-              rows={5}
-              placeholder="Supplier follow-up notes, payment notes, manual tracking details, etc."
-            />
-          </label>
+          <textarea
+            name="notes"
+            rows={5}
+            className="textarea"
+            placeholder="Supplier follow-up notes, payment notes, manual tracking details, etc."
+          />
         </section>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button type="submit" className="button">
+          <button type="submit" className="btn btn-primary">
             Create Commission
           </button>
 
           <a
             href={selectedTripId ? `/admin/trips/${selectedTripId}` : "/admin/commissions"}
-            className="button-secondary"
+            className="btn btn-primary"
           >
             Cancel
           </a>

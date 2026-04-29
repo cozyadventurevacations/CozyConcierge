@@ -1,6 +1,38 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const dynamic = "force-dynamic";
+
+// Rate limiting: max 5 registration attempts per IP per minute
+const rateLimitMap = new Map<string, { count: number; firstRequest: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 5;
+
+function getRateLimitKey(request: Request): string {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+
+  return forwardedFor?.split(",")[0]?.trim() || realIp || "unknown";
+}
+
+function isRateLimited(request: Request): boolean {
+  const key = getRateLimitKey(request);
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+
+  if (!entry || now - entry.firstRequest > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(key, { count: 1, firstRequest: now });
+    return false;
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  entry.count++;
+  return false;
+}
+
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -30,11 +62,48 @@ function cleanEmail(value: unknown) {
   return cleanText(value).toLowerCase();
 }
 
-function validatePassword(password: string) {
-  return password.length >= 8;
+function validatePassword(password: string): { valid: boolean; message: string } {
+  if (password.length < 8) {
+    return { valid: false, message: "Password must be at least 8 characters." };
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return {
+      valid: false,
+      message: "Password must contain at least one uppercase letter.",
+    };
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return {
+      valid: false,
+      message: "Password must contain at least one number.",
+    };
+  }
+
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return {
+      valid: false,
+      message:
+        "Password must contain at least one special character (e.g. !@#$%).",
+    };
+  }
+
+  return { valid: true, message: "" };
 }
 
 export async function POST(request: Request) {
+  if (isRateLimited(request)) {
+    return NextResponse.json(
+      {
+        error: "Too many registration attempts. Please try again in a minute.",
+      },
+      {
+        status: 429,
+      },
+    );
+  }
+
   try {
     const body = await request.json();
 
@@ -55,10 +124,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!validatePassword(password)) {
+    const passwordCheck = validatePassword(password);
+
+    if (!passwordCheck.valid) {
       return NextResponse.json(
         {
-          error: "Password must be at least 8 characters.",
+          error: passwordCheck.message,
         },
         {
           status: 400,
@@ -94,11 +165,12 @@ export async function POST(request: Request) {
 
     const authUser = createdUserData.user;
 
-    const { data: existingProfile, error: existingProfileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("auth_user_id", authUser.id)
-      .maybeSingle();
+    const { data: existingProfile, error: existingProfileError } =
+      await supabaseAdmin
+        .from("user_profiles")
+        .select("id")
+        .eq("auth_user_id", authUser.id)
+        .maybeSingle();
 
     if (existingProfileError) {
       return NextResponse.json(

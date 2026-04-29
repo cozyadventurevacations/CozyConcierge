@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
@@ -117,9 +118,9 @@ export default function ResetPasswordPage() {
               {isLoading ? "Updating..." : "Update Password"}
             </button>
 
-            <a href="/login" className="btn btn-outline">
+            <Link href="/login" className="btn btn-primary">
               Back to Login
-            </a>
+            </Link>
           </div>
         </form>
       </div>

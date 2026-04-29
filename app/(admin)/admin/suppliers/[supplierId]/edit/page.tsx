@@ -1,6 +1,27 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+
+const supplierTypes = [
+  "Hotel / Resort",
+  "Cruise Line",
+  "Tour Operator",
+  "Transfer Company",
+  "Rental Car",
+  "Airline",
+  "Insurance",
+  "Theme Park",
+  "Activity / Excursion",
+  "Wholesaler",
+  "Destination Management Company",
+  "Rail",
+  "River Cruise",
+  "All-Inclusive Resort",
+  "Villa / Vacation Rental",
+  "Travel Technology",
+  "Other",
+];
 
 type SupplierDetail = {
   id: string;
@@ -19,6 +40,89 @@ type SupplierDetail = {
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function Field({
+  label,
+  name,
+  type = "text",
+  defaultValue,
+  required = false,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  type?: string;
+  defaultValue?: string | null;
+  required?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <input
+        className="input"
+        name={name}
+        type={type}
+        defaultValue={defaultValue ?? ""}
+        required={required}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  defaultValue,
+  options,
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | null;
+  options: string[];
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <select className="select" name={name} defaultValue={defaultValue ?? ""}>
+        <option value="">Select supplier type</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  rows = 4,
+  defaultValue,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  rows?: number;
+  defaultValue?: string | null;
+  placeholder?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <textarea
+        className="textarea"
+        name={name}
+        rows={rows}
+        defaultValue={defaultValue ?? ""}
+        placeholder={placeholder}
+      />
+    </label>
+  );
 }
 
 async function updateSupplier(supplierId: string, formData: FormData) {
@@ -92,44 +196,43 @@ export default async function EditSupplierPage({
       title={`Edit ${supplierRow.supplier_name}`}
       subtitle="Update supplier contact details, booking links, and internal notes."
     >
-      <form action={saveSupplier} className="card stack" style={{ maxWidth: 900 }}>
-        <section className="stack">
+      <form action={saveSupplier} className="stack" style={{ maxWidth: 1100 }}>
+        <div
+          className="card stack"
+          style={{
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+            }}
+          >
+            Supplier Edit
+          </p>
+
           <h2 style={{ margin: 0 }}>Supplier Information</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Supplier Name</span>
-              <input
-                name="supplier_name"
-                type="text"
-                defaultValue={supplierRow.supplier_name ?? ""}
-                required
-              />
-            </label>
+            <Field
+              label="Supplier Name"
+              name="supplier_name"
+              defaultValue={supplierRow.supplier_name}
+              required
+            />
 
-            <label className="stack-sm">
-              <span>Supplier Type</span>
-              <select
-                name="supplier_type"
-                defaultValue={supplierRow.supplier_type ?? ""}
-              >
-                <option value="">Select supplier type</option>
-                <option value="Hotel / Resort">Hotel / Resort</option>
-                <option value="Cruise Line">Cruise Line</option>
-                <option value="Tour Operator">Tour Operator</option>
-                <option value="Transfer Company">Transfer Company</option>
-                <option value="Rental Car">Rental Car</option>
-                <option value="Airline">Airline</option>
-                <option value="Insurance">Insurance</option>
-                <option value="Theme Park">Theme Park</option>
-                <option value="Activity / Excursion">Activity / Excursion</option>
-                <option value="Wholesaler">Wholesaler</option>
-                <option value="Destination Management Company">
-                  Destination Management Company
-                </option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
+            <SelectField
+              label="Supplier Type"
+              name="supplier_type"
+              defaultValue={supplierRow.supplier_type}
+              options={supplierTypes}
+            />
           </div>
 
           <label
@@ -137,7 +240,11 @@ export default async function EditSupplierPage({
               display: "flex",
               gap: 10,
               alignItems: "center",
-              marginTop: 4,
+              padding: "12px",
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+              cursor: "pointer",
             }}
           >
             <input
@@ -145,93 +252,110 @@ export default async function EditSupplierPage({
               type="checkbox"
               defaultChecked={Boolean(supplierRow.preferred_supplier)}
             />
-            <span>Preferred supplier</span>
+            <span style={{ lineHeight: 1.45 }}>
+              <strong>Preferred supplier</strong>
+            </span>
           </label>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Contact Details</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Contact Name</span>
-              <input
-                name="contact_name"
-                type="text"
-                defaultValue={supplierRow.contact_name ?? ""}
-              />
-            </label>
+            <Field
+              label="Contact Name"
+              name="contact_name"
+              defaultValue={supplierRow.contact_name}
+              placeholder="e.g. Sales manager, BDM, group contact"
+            />
 
-            <label className="stack-sm">
-              <span>Contact Email</span>
-              <input
-                name="contact_email"
-                type="email"
-                defaultValue={supplierRow.contact_email ?? ""}
-              />
-            </label>
+            <Field
+              label="Contact Email"
+              name="contact_email"
+              type="email"
+              defaultValue={supplierRow.contact_email}
+              placeholder="name@example.com"
+            />
 
-            <label className="stack-sm">
-              <span>Contact Phone</span>
-              <input
-                name="contact_phone"
-                type="tel"
-                defaultValue={supplierRow.contact_phone ?? ""}
-              />
-            </label>
+            <Field
+              label="Contact Phone"
+              name="contact_phone"
+              type="tel"
+              defaultValue={supplierRow.contact_phone}
+              placeholder="Phone number or direct line"
+            />
 
-            <label className="stack-sm">
-              <span>Website URL</span>
-              <input
-                name="website_url"
-                type="url"
-                defaultValue={supplierRow.website_url ?? ""}
-              />
-            </label>
+            <Field
+              label="Website URL"
+              name="website_url"
+              type="url"
+              defaultValue={supplierRow.website_url}
+              placeholder="https://example.com"
+            />
 
-            <label className="stack-sm">
-              <span>Booking Portal URL</span>
-              <input
-                name="booking_portal_url"
-                type="url"
-                defaultValue={supplierRow.booking_portal_url ?? ""}
-              />
-            </label>
+            <Field
+              label="Booking Portal URL"
+              name="booking_portal_url"
+              type="url"
+              defaultValue={supplierRow.booking_portal_url}
+              placeholder="https://supplier-booking-portal.com"
+            />
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Internal Notes</h2>
 
-          <label className="stack-sm">
-            <span>Commission Notes</span>
-            <textarea
-              name="commission_notes"
-              rows={4}
-              defaultValue={supplierRow.commission_notes ?? ""}
-              placeholder="Commission percentage, payment timing, tracking notes, supplier-specific reminders, etc."
-            />
-          </label>
+          <TextAreaField
+            label="Commission Notes"
+            name="commission_notes"
+            rows={4}
+            defaultValue={supplierRow.commission_notes}
+            placeholder="Commission percentage, payment timing, tracking notes, supplier-specific reminders, etc."
+          />
 
-          <label className="stack-sm">
-            <span>General Internal Notes</span>
-            <textarea
-              name="internal_notes"
-              rows={5}
-              defaultValue={supplierRow.internal_notes ?? ""}
-              placeholder="Preferred contacts, support experience, booking tips, portal notes, or internal reminders."
-            />
-          </label>
-        </section>
+          <TextAreaField
+            label="General Internal Notes"
+            name="internal_notes"
+            rows={5}
+            defaultValue={supplierRow.internal_notes}
+            placeholder="Preferred contacts, support experience, booking tips, portal notes, or internal reminders."
+          />
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button type="submit" className="button">
-            Save Supplier
-          </button>
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Internal use reminder:</strong> Do not store supplier portal passwords,
+            full credit card numbers, or sensitive client payment information in supplier
+            notes.
+          </div>
+        </div>
 
-          <a href={`/admin/suppliers/${supplierRow.id}`} className="button-secondary">
-            Cancel
-          </a>
+        <div
+          className="card stack"
+          style={{
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Save Supplier</h2>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button type="submit" className="btn btn-primary">
+              Save Supplier
+            </button>
+
+            <Link href={`/admin/suppliers/${supplierRow.id}`} className="btn btn-primary">
+              Cancel
+            </Link>
+          </div>
         </div>
       </form>
     </PageShell>

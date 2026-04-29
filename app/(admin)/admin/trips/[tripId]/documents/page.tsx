@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
 const allowedMimeTypes = [
   "application/pdf",
@@ -76,6 +77,46 @@ function formatFileSize(bytes: number | null | undefined) {
   }
 
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatDateTime(value: string | null | undefined, fallback = "") {
+  if (!value) return fallback;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function VisibilityBadge({ visibility }: { visibility: string | null | undefined }) {
+  const isClient = visibility === "client";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: isClient ? "#ecfdf3" : "#fff7ed",
+        color: isClient ? "#027a48" : "#c2410c",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isClient ? "Visible to Client" : "Internal Only"}
+    </span>
+  );
 }
 
 async function uploadTripDocument(formData: FormData) {
@@ -291,10 +332,47 @@ export default async function AdminTripDocumentsPage({
       title="Trip Documents"
       subtitle={`Upload and manage files for ${trip.trip_name ?? "this trip"}.`}
     >
-      <form action={uploadTripDocument} className="card stack">
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary">
+          Back to Trip
+        </Link>
+      </div>
+
+      <form
+        action={uploadTripDocument}
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
         <input type="hidden" name="trip_id" value={trip.id} />
 
-        <label>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Trip Document Upload
+        </p>
+
+        <h2 style={{ margin: 0 }}>Upload Document</h2>
+
+        <label className="stack-sm">
           <span className="label">File</span>
           <input
             className="input"
@@ -305,12 +383,7 @@ export default async function AdminTripDocumentsPage({
           />
         </label>
 
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
-          Allowed files: PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, and XLSX. Maximum
-          file size: 15MB.
-        </p>
-
-        <label>
+        <label className="stack-sm">
           <span className="label">Visibility</span>
           <select className="select" name="visibility" defaultValue="internal">
             <option value="internal">Internal Only</option>
@@ -318,14 +391,24 @@ export default async function AdminTripDocumentsPage({
           </select>
         </label>
 
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            color: "#9a3412",
+            lineHeight: 1.6,
+          }}
+        >
+          <strong>Upload limits:</strong> PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, or XLSX.
+          Maximum file size is 15MB.
+        </div>
+
         <div className="row">
           <button type="submit" className="btn btn-primary">
             Upload Document
           </button>
-
-          <a href={`/admin/trips/${trip.id}`} className="btn btn-outline">
-            Back to Trip
-          </a>
         </div>
       </form>
 
@@ -335,7 +418,7 @@ export default async function AdminTripDocumentsPage({
         {docsError ? (
           <pre>{JSON.stringify(docsError, null, 2)}</pre>
         ) : documentsWithUrls.length === 0 ? (
-          <p>No documents uploaded yet.</p>
+          <p style={{ margin: 0, color: "#667085" }}>No documents uploaded yet.</p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 980 }}>
@@ -351,25 +434,29 @@ export default async function AdminTripDocumentsPage({
                   <th>Delete</th>
                 </tr>
               </thead>
+
               <tbody>
                 {documentsWithUrls.map((doc) => (
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
-                    <td>{doc.visibility}</td>
+                    <td>
+                      <VisibilityBadge visibility={doc.visibility} />
+                    </td>
                     <td>{doc.mime_type ?? "unknown"}</td>
                     <td>{formatFileSize(doc.file_size_bytes)}</td>
-                    <td>
-                      {doc.created_at
-                        ? new Date(doc.created_at).toLocaleString()
-                        : ""}
-                    </td>
+                    <td>{formatDateTime(doc.created_at)}</td>
                     <td>
                       {doc.signedUrl ? (
                         <a
                           href={doc.signedUrl}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: "var(--accent-dark)", fontWeight: 600 }}
+                          className="btn btn-primary"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
                         >
                           Open
                         </a>
@@ -389,7 +476,15 @@ export default async function AdminTripDocumentsPage({
                           <option value="internal">Internal</option>
                           <option value="client">Client</option>
                         </select>
-                        <button type="submit" className="btn btn-outline">
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           Save
                         </button>
                       </form>
@@ -398,7 +493,15 @@ export default async function AdminTripDocumentsPage({
                       <form action={deleteTripDocument}>
                         <input type="hidden" name="trip_id" value={trip.id} />
                         <input type="hidden" name="document_id" value={doc.id} />
-                        <button type="submit" className="btn btn-outline">
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           Delete
                         </button>
                       </form>

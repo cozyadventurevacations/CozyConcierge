@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
@@ -24,6 +25,28 @@ const travelComponentLabels: Record<string, string> = {
   vacation_package: "Vacation Package Details",
   insurance: "Insurance Details",
   activity: "Activity / Excursion Details",
+};
+
+type QuoteRequestRow = {
+  id: string;
+  status: string | null;
+  submitted_at: string | null;
+  full_name: string | null;
+  email: string | null;
+  phone_number: string | null;
+  preferred_contact_method: string | null;
+  departure_date: string | null;
+  return_date: string | null;
+  destinations: string | null;
+  optional_travel_dates: string | null;
+  number_of_travelers: number | string | null;
+  traveler_ages: unknown;
+  budget: string | null;
+  trip_vision_notes: string | null;
+  zoom_call_availability: string | null;
+  travel_types_requested: unknown;
+  converted_trip_id: string | null;
+  client_account_id: string | null;
 };
 
 function formatDate(value: string | null | undefined, fallback = "Not provided") {
@@ -74,6 +97,21 @@ function formatTravelType(value: string) {
   return travelComponentLabels[value] ?? value.replaceAll("_", " ");
 }
 
+function formatTravelerAges(value: unknown) {
+  if (!value) return "Not provided";
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "Not provided";
+    return value.map(String).join(", ");
+  }
+
+  if (typeof value === "string") {
+    return value.trim() || "Not provided";
+  }
+
+  return JSON.stringify(value, null, 2);
+}
+
 function InfoItem({
   label,
   value,
@@ -97,6 +135,63 @@ function InfoItem({
           : value}
       </p>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: "#f0f7f8",
+        color: "var(--accent-dark)",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {status ?? "new"}
+    </span>
+  );
+}
+
+function ActionLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="btn btn-primary"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textDecoration: "none",
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function StatusButton({
+  requestId,
+  status,
+  label,
+}: {
+  requestId: string;
+  status: string;
+  label: string;
+}) {
+  return (
+    <form action={updateQuoteRequestStatus}>
+      <input type="hidden" name="request_id" value={requestId} />
+      <input type="hidden" name="status" value={status} />
+      <button type="submit" className="btn btn-primary">
+        {label}
+      </button>
+    </form>
   );
 }
 
@@ -144,7 +239,7 @@ function RequestedComponents({
   request,
 }: {
   travelTypes: string[];
-  request: Record<string, any>;
+  request: QuoteRequestRow;
 }) {
   if (!travelTypes.length) {
     return (
@@ -164,7 +259,7 @@ function RequestedComponents({
             <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
             <InfoItem label="Return Date" value={formatDate(request.return_date)} />
             <InfoItem label="Number of Travelers" value={request.number_of_travelers} />
-            <InfoItem label="Traveler Ages" value={JSON.stringify(request.traveler_ages ?? [], null, 2)} />
+            <InfoItem label="Traveler Ages" value={formatTravelerAges(request.traveler_ages)} />
             <InfoItem label="Budget" value={request.budget ?? "Not provided"} />
             <InfoItem
               label="Optional Travel Dates"
@@ -181,22 +276,6 @@ function RequestedComponents({
             label="Zoom Call Availability"
             value={request.zoom_call_availability ?? "Not provided"}
           />
-
-          <div
-            style={{
-              padding: "12px",
-              border: "1px solid #eef2f5",
-              borderRadius: 12,
-              background: "#fbfdfe",
-            }}
-          >
-            <span className="label">Admin Planning Notes</span>
-            <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
-              Future update: this area can become a component-specific planning workspace
-              for supplier options, pricing, confirmation numbers, commission notes, and
-              client-facing proposal details.
-            </p>
-          </div>
         </CollapsibleSection>
       ))}
     </div>
@@ -261,15 +340,17 @@ async function convertToTrip(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  if (requestError || !request) {
+  const quoteRequest = request as QuoteRequestRow | null;
+
+  if (requestError || !quoteRequest) {
     throw new Error(requestError?.message ?? "Quote request not found.");
   }
 
-  if (request.converted_trip_id) {
-    redirect(`/admin/trips/${request.converted_trip_id}`);
+  if (quoteRequest.converted_trip_id) {
+    redirect(`/admin/trips/${quoteRequest.converted_trip_id}`);
   }
 
-  if (!request.client_account_id) {
+  if (!quoteRequest.client_account_id) {
     throw new Error(
       "This quote request is not linked to a client account yet. Link or create a client before converting to a trip.",
     );
@@ -278,7 +359,7 @@ async function convertToTrip(formData: FormData) {
   const { data: clientAccount, error: clientAccountError } = await supabase
     .from("client_accounts")
     .select("id")
-    .eq("id", request.client_account_id)
+    .eq("id", quoteRequest.client_account_id)
     .single();
 
   if (clientAccountError || !clientAccount) {
@@ -286,8 +367,8 @@ async function convertToTrip(formData: FormData) {
   }
 
   const tripName =
-    request.destinations && request.departure_date
-      ? `${request.destinations} Trip`
+    quoteRequest.destinations && quoteRequest.departure_date
+      ? `${quoteRequest.destinations} Trip`
       : "New Trip";
 
   const { data: trip, error: tripError } = await supabase
@@ -295,15 +376,15 @@ async function convertToTrip(formData: FormData) {
     .insert({
       client_account_id: clientAccount.id,
       trip_name: tripName,
-      departure_date: request.departure_date,
-      return_date: request.return_date,
-      destinations: request.destinations,
+      departure_date: quoteRequest.departure_date,
+      return_date: quoteRequest.return_date,
+      destinations: quoteRequest.destinations,
       primary_contact_client_id: clientAccount.id,
       occasion: null,
       trip_status: "draft",
       total_paid: 0,
       balance_due: 0,
-      created_from_quote_request_id: request.id,
+      created_from_quote_request_id: quoteRequest.id,
     })
     .select("id")
     .single();
@@ -317,10 +398,10 @@ async function convertToTrip(formData: FormData) {
     planning_fee: 0,
     total_price: 0,
     commission_admin_only: 0,
-    proposal_title: request.destinations
-      ? `${request.destinations} Proposal`
+    proposal_title: quoteRequest.destinations
+      ? `${quoteRequest.destinations} Proposal`
       : "Trip Proposal",
-    proposal_welcome_text: request.trip_vision_notes ?? null,
+    proposal_welcome_text: quoteRequest.trip_vision_notes ?? null,
     proposal_highlights: [],
     proposal_closing_text: null,
   });
@@ -335,14 +416,14 @@ async function convertToTrip(formData: FormData) {
       status: "converted_to_trip",
       converted_trip_id: trip.id,
     })
-    .eq("id", request.id);
+    .eq("id", quoteRequest.id);
 
   if (requestUpdateError) {
     throw new Error(requestUpdateError.message);
   }
 
   revalidatePath("/admin/quote-requests");
-  revalidatePath(`/admin/quote-requests/${request.id}`);
+  revalidatePath(`/admin/quote-requests/${quoteRequest.id}`);
   revalidatePath("/admin/trips");
   revalidatePath(`/admin/trips/${trip.id}`);
   revalidatePath(`/trips/${trip.id}`);
@@ -358,13 +439,13 @@ export default async function AdminQuoteRequestDetailPage({
   const { requestId } = await params;
   const { supabase } = await requireAdmin();
 
-  const { data: request, error } = await supabase
+  const { data, error } = await supabase
     .from("quote_requests")
     .select("*")
     .eq("id", requestId)
     .single();
 
-  if (error || !request) {
+  if (error || !data) {
     return (
       <PageShell
         title="Travel Request Detail"
@@ -380,6 +461,8 @@ export default async function AdminQuoteRequestDetailPage({
     );
   }
 
+  const request = data as QuoteRequestRow;
+
   const travelTypesRequested = Array.isArray(request.travel_types_requested)
     ? request.travel_types_requested.map(String)
     : [];
@@ -387,124 +470,163 @@ export default async function AdminQuoteRequestDetailPage({
   return (
     <PageShell
       title="Travel Request Detail"
-      subtitle="Review the request details and selected travel components."
+      subtitle={`${request.full_name ?? "Unknown Client"} • ${request.destinations ?? "Destination not provided"}`}
     >
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <ActionLink href="/admin/quote-requests">Back to Quote Requests</ActionLink>
+
+        {request.converted_trip_id ? (
+          <ActionLink href={`/admin/trips/${request.converted_trip_id}`}>
+            Open Converted Trip
+          </ActionLink>
+        ) : null}
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--accent-dark)",
+                fontWeight: 800,
+              }}
+            >
+              Travel Request
+            </p>
+
+            <h1 style={{ margin: "4px 0 0", fontSize: 28 }}>
+              {request.full_name ?? "Unknown Client"}
+            </h1>
+
+            <p style={{ margin: "6px 0 0", color: "#667085" }}>
+              {request.destinations ?? "Destination not provided"}
+            </p>
+          </div>
+
+          <StatusBadge status={request.status} />
+        </div>
+      </div>
+
+      <div className="grid grid-3">
+        <div className="card">
+          <span className="label">Status</span>
+          <p style={{ marginTop: 8 }}>
+            <StatusBadge status={request.status} />
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Submitted</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 800 }}>
+            {formatDateTime(request.submitted_at)}
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Converted Trip</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 800 }}>
+            {request.converted_trip_id ? "Yes" : "No"}
+          </p>
+        </div>
+      </div>
+
       <div className="card stack">
-        <CollapsibleSection title="Request Overview" defaultOpen>
-          <div className="grid grid-2">
-            <InfoItem label="Status" value={request.status} />
-            <InfoItem label="Submitted" value={formatDateTime(request.submitted_at)} />
-            <InfoItem label="Full Name" value={request.full_name} />
-            <InfoItem label="Email" value={request.email} />
-            <InfoItem label="Phone Number" value={request.phone_number} />
-            <InfoItem
-              label="Preferred Contact Method"
-              value={request.preferred_contact_method}
-            />
-            <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
-            <InfoItem label="Return Date" value={formatDate(request.return_date)} />
-            <InfoItem label="Number of Travelers" value={request.number_of_travelers} />
-            <InfoItem label="Budget" value={request.budget ?? "Not provided"} />
-            <InfoItem
-              label="Converted Trip"
-              value={request.converted_trip_id ? "Yes" : "No"}
-            />
-            <InfoItem
-              label="Travel Components"
-              value={
-                travelTypesRequested.length
-                  ? travelTypesRequested.map(formatTravelType).join(", ")
-                  : "Not provided"
-              }
-            />
-          </div>
+        <h2 style={{ margin: 0 }}>Request Overview</h2>
 
-          {request.converted_trip_id ? (
-            <div className="row">
-              <a
-                href={`/admin/trips/${request.converted_trip_id}`}
-                className="btn btn-primary"
-              >
-                Open Converted Trip
-              </a>
-            </div>
-          ) : null}
-        </CollapsibleSection>
-
-        <CollapsibleSection title="General Trip Notes" defaultOpen>
-          <InfoItem label="Destination(s)" value={request.destinations ?? "Not provided"} />
+        <div className="grid grid-2">
+          <InfoItem label="Full Name" value={request.full_name} />
+          <InfoItem label="Email" value={request.email} />
+          <InfoItem label="Phone Number" value={request.phone_number} />
           <InfoItem
-            label="Optional Travel Dates"
-            value={request.optional_travel_dates ?? "Not provided"}
+            label="Preferred Contact Method"
+            value={request.preferred_contact_method}
           />
+          <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
+          <InfoItem label="Return Date" value={formatDate(request.return_date)} />
+          <InfoItem label="Number of Travelers" value={request.number_of_travelers} />
+          <InfoItem label="Traveler Ages" value={formatTravelerAges(request.traveler_ages)} />
+          <InfoItem label="Budget" value={request.budget ?? "Not provided"} />
           <InfoItem
-            label="Trip Vision Notes"
-            value={request.trip_vision_notes ?? "Not provided"}
+            label="Travel Components"
+            value={
+              travelTypesRequested.length
+                ? travelTypesRequested.map(formatTravelType).join(", ")
+                : "Not provided"
+            }
           />
-          <InfoItem
-            label="Zoom Call Availability"
-            value={request.zoom_call_availability ?? "Not provided"}
+        </div>
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Trip Notes</h2>
+
+        <InfoItem label="Destination(s)" value={request.destinations ?? "Not provided"} />
+        <InfoItem
+          label="Optional Travel Dates"
+          value={request.optional_travel_dates ?? "Not provided"}
+        />
+        <InfoItem
+          label="Trip Vision Notes"
+          value={request.trip_vision_notes ?? "Not provided"}
+        />
+        <InfoItem
+          label="Zoom Call Availability"
+          value={request.zoom_call_availability ?? "Not provided"}
+        />
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Requested Travel Components</h2>
+
+        <RequestedComponents
+          travelTypes={travelTypesRequested}
+          request={request}
+        />
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Status Actions</h2>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <StatusButton requestId={request.id} status="new" label="Mark New" />
+          <StatusButton requestId={request.id} status="reviewed" label="Mark Reviewed" />
+          <StatusButton requestId={request.id} status="in_progress" label="Mark In Progress" />
+          <StatusButton
+            requestId={request.id}
+            status="awaiting_client_response"
+            label="Awaiting Client"
           />
-          <InfoItem
-            label="Traveler Ages"
-            value={JSON.stringify(request.traveler_ages ?? [], null, 2)}
-          />
-        </CollapsibleSection>
+          <StatusButton requestId={request.id} status="closed" label="Mark Closed" />
+        </div>
+      </div>
 
-        <CollapsibleSection title="Requested Travel Components">
-          <RequestedComponents
-            travelTypes={travelTypesRequested}
-            request={request as Record<string, any>}
-          />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Status Actions">
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <form action={updateQuoteRequestStatus}>
-              <input type="hidden" name="request_id" value={request.id} />
-              <input type="hidden" name="status" value="new" />
-              <button type="submit" className="btn btn-outline">
-                Mark New
-              </button>
-            </form>
-
-            <form action={updateQuoteRequestStatus}>
-              <input type="hidden" name="request_id" value={request.id} />
-              <input type="hidden" name="status" value="reviewed" />
-              <button type="submit" className="btn btn-outline">
-                Mark Reviewed
-              </button>
-            </form>
-
-            <form action={updateQuoteRequestStatus}>
-              <input type="hidden" name="request_id" value={request.id} />
-              <input type="hidden" name="status" value="in_progress" />
-              <button type="submit" className="btn btn-outline">
-                Mark In Progress
-              </button>
-            </form>
-
-            <form action={updateQuoteRequestStatus}>
-              <input type="hidden" name="request_id" value={request.id} />
-              <input
-                type="hidden"
-                name="status"
-                value="awaiting_client_response"
-              />
-              <button type="submit" className="btn btn-outline">
-                Awaiting Client
-              </button>
-            </form>
-
-            <form action={updateQuoteRequestStatus}>
-              <input type="hidden" name="request_id" value={request.id} />
-              <input type="hidden" name="status" value="closed" />
-              <button type="submit" className="btn btn-outline">
-                Mark Closed
-              </button>
-            </form>
-          </div>
-        </CollapsibleSection>
+      <div
+        className="card stack"
+        style={{
+          background: "#f7fbfc",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Next Steps</h2>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           {!request.converted_trip_id ? (
@@ -516,9 +638,13 @@ export default async function AdminQuoteRequestDetailPage({
             </form>
           ) : null}
 
-          <a href="/admin/quote-requests" className="btn btn-outline">
-            Back to Quote Requests
-          </a>
+          {request.converted_trip_id ? (
+            <ActionLink href={`/admin/trips/${request.converted_trip_id}`}>
+              Open Converted Trip
+            </ActionLink>
+          ) : null}
+
+          <ActionLink href="/admin/quote-requests">Back to Quote Requests</ActionLink>
         </div>
       </div>
     </PageShell>

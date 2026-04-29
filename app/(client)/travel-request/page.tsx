@@ -1,22 +1,25 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const allowedContactMethods = ["email", "text", "phone"];
 
-const allowedTravelTypes = [
-  "tour",
-  "cruise",
-  "air",
-  "hotel",
-  "transfer",
-  "theme_park",
-  "rental_car",
-  "rail",
-  "vacation_package",
-  "insurance",
-  "activity",
+const travelTypes = [
+  { value: "tour", label: "Tour" },
+  { value: "cruise", label: "Cruise" },
+  { value: "air", label: "Air" },
+  { value: "hotel", label: "Hotel" },
+  { value: "transfer", label: "Transfer" },
+  { value: "theme_park", label: "Theme Park" },
+  { value: "rental_car", label: "Rental Car" },
+  { value: "rail", label: "Rail" },
+  { value: "vacation_package", label: "Vacation Package" },
+  { value: "insurance", label: "Insurance" },
+  { value: "activity", label: "Activity / Excursion" },
 ];
+
+const allowedTravelTypes = travelTypes.map((type) => type.value);
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
@@ -220,234 +223,226 @@ export default async function TravelRequestPage() {
       title="Request Travel Planning"
       subtitle="Tell us a little about your trip and we’ll help bring it to life."
     >
-      <form action={submitTravelRequest} className="card stack">
-        <div className="grid grid-2">
-          <label>
-            <span className="label">Name</span>
-            <input
-              className="input"
-              name="full_name"
-              defaultValue={defaultName}
-              required
-            />
-          </label>
+      <form action={submitTravelRequest} className="stack" style={{ maxWidth: 1100 }}>
+        <div
+          className="card stack"
+          style={{
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+            }}
+          >
+            Cozy Concierge
+          </p>
 
-          <label>
-            <span className="label">Email</span>
-            <input
-              className="input"
-              type="email"
-              name="email"
-              defaultValue={clientAccount.email ?? ""}
-              required
-            />
-          </label>
+          <h2 style={{ margin: 0 }}>Contact Information</h2>
 
-          <label>
-            <span className="label">Phone Number</span>
-            <input
-              className="input"
-              name="phone_number"
-              defaultValue={clientAccount.phone_primary ?? ""}
-              required
-            />
-          </label>
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Name</span>
+              <input
+                className="input"
+                name="full_name"
+                defaultValue={defaultName}
+                required
+              />
+            </label>
 
-          <label>
-            <span className="label">Preferred Contact Method</span>
-            <select
-              className="select"
-              name="preferred_contact_method"
-              defaultValue="email"
-              required
-            >
-              <option value="email">Email</option>
-              <option value="text">Text</option>
-              <option value="phone">Phone</option>
-            </select>
-          </label>
+            <label className="stack-sm">
+              <span className="label">Email</span>
+              <input
+                className="input"
+                type="email"
+                name="email"
+                defaultValue={clientAccount.email ?? ""}
+                required
+              />
+            </label>
 
-          <label>
-            <span className="label">Departure Date</span>
-            <input className="input" type="date" name="departure_date" required />
-          </label>
+            <label className="stack-sm">
+              <span className="label">Phone Number</span>
+              <input
+                className="input"
+                name="phone_number"
+                defaultValue={clientAccount.phone_primary ?? ""}
+                required
+              />
+            </label>
 
-          <label>
-            <span className="label">Return Date</span>
-            <input className="input" type="date" name="return_date" required />
-          </label>
-
-          <label>
-            <span className="label">Number of Travelers</span>
-            <input
-              className="input"
-              type="number"
-              name="number_of_travelers"
-              min="1"
-              defaultValue="1"
-              required
-            />
-          </label>
-
-          <label>
-            <span className="label">Traveler Ages</span>
-            <input
-              className="input"
-              name="traveler_ages"
-              placeholder="Example: 45, 43, 12"
-            />
-          </label>
-        </div>
-
-        <label>
-          <span className="label">Optional Travel Dates</span>
-          <textarea
-            className="textarea"
-            name="optional_travel_dates"
-            placeholder="Share any flexible dates or alternate travel windows."
-          />
-        </label>
-
-        <div className="card" style={{ background: "#f7fbfc" }}>
-          <div className="stack">
-            <strong>Type of Travel</strong>
-
-            <div className="grid grid-2">
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="tour" /> Tour
-              </label>
-
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="cruise" /> Cruise
-              </label>
-
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="air" /> Air
-              </label>
-
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="hotel" /> Hotel
-              </label>
-
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="transfer" /> Transfer
-              </label>
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="travel_types_requested"
-                  value="theme_park"
-                />{" "}
-                Theme Park
-              </label>
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="travel_types_requested"
-                  value="rental_car"
-                />{" "}
-                Rental Car
-              </label>
-
-              <label>
-                <input type="checkbox" name="travel_types_requested" value="rail" /> Rail
-              </label>
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="travel_types_requested"
-                  value="vacation_package"
-                />{" "}
-                Vacation Package
-              </label>
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="travel_types_requested"
-                  value="insurance"
-                />{" "}
-                Insurance
-              </label>
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="travel_types_requested"
-                  value="activity"
-                />{" "}
-                Activity / Excursion
-              </label>
-            </div>
+            <label className="stack-sm">
+              <span className="label">Preferred Contact Method</span>
+              <select
+                className="select"
+                name="preferred_contact_method"
+                defaultValue="email"
+                required
+              >
+                <option value="email">Email</option>
+                <option value="text">Text</option>
+                <option value="phone">Phone</option>
+              </select>
+            </label>
           </div>
         </div>
 
-        <div className="grid grid-2">
-          <label>
-            <span className="label">Destination(s)</span>
-            <input
-              className="input"
-              name="destinations"
-              placeholder="Example: Alaska cruise, Walt Disney World, Italy"
-              required
-            />
-          </label>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Trip Basics</h2>
 
-          <label>
-            <span className="label">Budget</span>
-            <select className="select" name="budget" defaultValue="">
-              <option value="">Select a budget range</option>
-              <option value="Under $2,500">Under $2,500</option>
-              <option value="$2,500–$5,000">$2,500–$5,000</option>
-              <option value="$5,000–$10,000">$5,000–$10,000</option>
-              <option value="$10,000+">$10,000+</option>
-              <option value="Prefer to discuss">Prefer to discuss</option>
-            </select>
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Departure Date</span>
+              <input className="input" type="date" name="departure_date" required />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Return Date</span>
+              <input className="input" type="date" name="return_date" required />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Number of Travelers</span>
+              <input
+                className="input"
+                type="number"
+                name="number_of_travelers"
+                min="1"
+                defaultValue="1"
+                required
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Traveler Ages</span>
+              <input
+                className="input"
+                name="traveler_ages"
+                placeholder="45, 43, 12"
+              />
+            </label>
+          </div>
+
+          <label className="stack-sm">
+            <span className="label">Optional Travel Dates</span>
+            <textarea
+              className="textarea"
+              name="optional_travel_dates"
+              rows={3}
+              placeholder="Flexible dates or alternate travel windows"
+            />
           </label>
         </div>
 
-        <label>
-          <span className="label">Tell Us About Your Trip</span>
-          <textarea
-            className="textarea"
-            name="trip_vision_notes"
-            placeholder="What kind of experience are you hoping for? Any must-dos, must-avoids, celebrations, accessibility needs, or travel preferences?"
-          />
-        </label>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Type of Travel</h2>
 
-        <label>
-          <span className="label">When are you available for a Zoom call?</span>
-          <textarea
-            className="textarea"
-            name="zoom_call_availability"
-            placeholder="Example: Weeknights after 6pm, Tuesday mornings, weekends only, etc."
-          />
-        </label>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 10,
+            }}
+          >
+            {travelTypes.map((type) => (
+              <label
+                key={type.value}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  border: "1px solid #e6f0f2",
+                  borderRadius: 12,
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  lineHeight: 1.35,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="travel_types_requested"
+                  value={type.value}
+                />
+                <span>{type.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Destination & Budget</h2>
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Destination(s)</span>
+              <input
+                className="input"
+                name="destinations"
+                placeholder="Alaska cruise, Walt Disney World, Italy"
+                required
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Budget</span>
+              <select className="select" name="budget" defaultValue="">
+                <option value="">Select a budget range</option>
+                <option value="Under $2,500">Under $2,500</option>
+                <option value="$2,500–$5,000">$2,500–$5,000</option>
+                <option value="$5,000–$10,000">$5,000–$10,000</option>
+                <option value="$10,000+">$10,000+</option>
+                <option value="Prefer to discuss">Prefer to discuss</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="stack-sm">
+            <span className="label">Tell Us About Your Trip</span>
+            <textarea
+              className="textarea"
+              name="trip_vision_notes"
+              rows={5}
+              placeholder="Must-dos, must-avoids, celebrations, accessibility needs, or travel preferences"
+            />
+          </label>
+
+          <label className="stack-sm">
+            <span className="label">Zoom Call Availability</span>
+            <textarea
+              className="textarea"
+              name="zoom_call_availability"
+              rows={3}
+              placeholder="Weeknights after 6pm, Tuesday mornings, weekends only"
+            />
+          </label>
+        </div>
 
         <div
-          className="card"
+          className="card stack"
           style={{
             background: "#f7fbfc",
             border: "1px solid #e6f0f2",
           }}
         >
-          <p style={{ margin: 0, lineHeight: 1.6 }}>
-            After submitting, your request will be sent to Cozy Adventure
-            Vacations for review. Jeremy will follow up with next steps.
-          </p>
-        </div>
+          <h2 style={{ margin: 0 }}>Submit Request</h2>
 
-        <div className="row">
-          <button type="submit" className="btn btn-primary">
-            Submit Travel Request
-          </button>
+          <div className="row">
+            <button type="submit" className="btn btn-primary">
+              Submit Travel Request
+            </button>
 
-          <a href="/trips" className="btn btn-outline">
-            Back to My Trips
-          </a>
+            <Link href="/trips" className="btn btn-primary">
+              Back to My Trips
+            </Link>
+          </div>
         </div>
       </form>
     </PageShell>

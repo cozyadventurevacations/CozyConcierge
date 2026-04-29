@@ -2,6 +2,20 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/get-session";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+function normalizeRole(role: string | null | undefined) {
+  return String(role ?? "").trim().toLowerCase();
+}
+
+function isAdminRole(role: string | null | undefined) {
+  const normalizedRole = normalizeRole(role);
+
+  return (
+    normalizedRole === "admin" ||
+    normalizedRole === "owner" ||
+    normalizedRole === "administrator"
+  );
+}
+
 export async function requireClient() {
   const user = await getSessionUser();
 
@@ -10,15 +24,26 @@ export async function requireClient() {
   }
 
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase
+
+  const { data, error } = await supabase
     .from("user_profiles")
     .select("role")
     .eq("auth_user_id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (!data || data.role !== "client") {
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const role = normalizeRole(data?.role);
+
+  if (role === "client") {
+    return user;
+  }
+
+  if (isAdminRole(role)) {
     redirect("/admin/dashboard");
   }
 
-  return user;
+  redirect("/login");
 }

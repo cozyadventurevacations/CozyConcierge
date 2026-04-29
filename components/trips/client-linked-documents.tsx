@@ -312,7 +312,7 @@ export async function ClientLinkedDocuments({ tripId }: { tripId: string }) {
                         href={linkedDocument.signedUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="btn btn-outline"
+                        className="btn btn-primary"
                         style={{
                           padding: "6px 10px",
                           fontSize: 13,

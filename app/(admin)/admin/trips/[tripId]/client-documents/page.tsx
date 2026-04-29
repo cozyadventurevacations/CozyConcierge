@@ -444,15 +444,15 @@ export default async function AdminTripClientDocumentsPage({
           marginBottom: 16,
         }}
       >
-        <Link href={`/admin/trips/${tripId}`} className="btn btn-outline">
+        <Link href={`/admin/trips/${tripId}`} className="btn btn-primary">
           Back to Trip
         </Link>
 
-        <Link href={`/admin/clients/${clientRow.id}/documents`} className="btn btn-outline">
+        <Link href={`/admin/clients/${clientRow.id}/documents`} className="btn btn-primary">
           Client Documents
         </Link>
 
-        <Link href={`/trips/${tripId}`} className="btn btn-outline">
+        <Link href={`/trips/${tripId}`} className="btn btn-primary">
           View Client Trip Page
         </Link>
       </div>
@@ -517,20 +517,16 @@ export default async function AdminTripClientDocumentsPage({
       </div>
 
       <div
-        className="card stack"
+        className="card"
         style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
         }}
       >
-        <h2 style={{ margin: 0 }}>How to Use This</h2>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Attach only the documents that matter for this specific trip. A passport may
-          be needed for an international trip, but not for a domestic trip. Minor
-          consent forms, insurance documents, medical notes, and accessibility
-          documents should only be attached when they are relevant.
-        </p>
+        <strong>Sensitive document reminder:</strong> Attach only documents that are
+        relevant to this specific trip.
       </div>
 
       <div className="card stack">
@@ -603,7 +599,7 @@ export default async function AdminTripClientDocumentsPage({
                         href={`/api/admin/client-documents/${document.id}/open`}
                         target="_blank"
                         rel="noreferrer"
-                        className="btn btn-outline"
+                        className="btn btn-primary"
                       >
                         Open Secure Link
                       </a>
@@ -652,7 +648,6 @@ export default async function AdminTripClientDocumentsPage({
                         name="notes"
                         rows={3}
                         defaultValue={linkedDocument.notes ?? ""}
-                        placeholder="Example: Passport needed for international entry."
                       />
                     </label>
 
@@ -671,7 +666,7 @@ export default async function AdminTripClientDocumentsPage({
                       value={linkedDocument.id}
                     />
 
-                    <button type="submit" className="btn btn-outline">
+                    <button type="submit" className="btn btn-primary">
                       Remove from This Trip
                     </button>
                   </form>
@@ -744,7 +739,7 @@ export default async function AdminTripClientDocumentsPage({
                     href={`/api/admin/client-documents/${document.id}/open`}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn btn-outline"
+                    className="btn btn-primary"
                   >
                     Open Secure Link
                   </a>
@@ -771,12 +766,7 @@ export default async function AdminTripClientDocumentsPage({
 
                 <label className="stack-sm">
                   <span className="label">Trip-Specific Notes</span>
-                  <textarea
-                    className="textarea"
-                    name="notes"
-                    rows={3}
-                    placeholder="Example: Passport needed for international trip."
-                  />
+                  <textarea className="textarea" name="notes" rows={3} />
                 </label>
 
                 <button type="submit" className="btn btn-primary">

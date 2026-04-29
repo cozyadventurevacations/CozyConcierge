@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -66,10 +67,100 @@ function calculateExpectedCommission(
   return Math.round(fullCommissionAmount * (agencyCommissionPercent / 100) * 100) / 100;
 }
 
+function formatMoney(value: number | null | undefined, fallback = "$0.00") {
+  if (typeof value !== "number") return fallback;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+
 function getClientDisplayName(client: ClientOption) {
   const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
 
   return name || client.email || "Unnamed Client";
+}
+
+function Field({
+  label,
+  name,
+  type = "text",
+  defaultValue,
+  placeholder,
+  required = false,
+  step,
+}: {
+  label: string;
+  name: string;
+  type?: string;
+  defaultValue?: string | number | null;
+  placeholder?: string;
+  required?: boolean;
+  step?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <input
+        className="input"
+        name={name}
+        type={type}
+        defaultValue={defaultValue ?? ""}
+        placeholder={placeholder}
+        required={required}
+        step={step}
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  defaultValue,
+  children,
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <select className="select" name={name} defaultValue={defaultValue ?? ""}>
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  rows = 5,
+  defaultValue,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  rows?: number;
+  defaultValue?: string | null;
+  placeholder?: string;
+}) {
+  return (
+    <label className="stack-sm">
+      <span className="label">{label}</span>
+      <textarea
+        className="textarea"
+        name={name}
+        rows={rows}
+        defaultValue={defaultValue ?? ""}
+        placeholder={placeholder}
+      />
+    </label>
+  );
 }
 
 async function updateCommission(commissionId: string, formData: FormData) {
@@ -243,146 +334,142 @@ export default async function EditCommissionPage({
       title={`Edit ${row.commission_name}`}
       subtitle="Update commission tracking details."
     >
-      <form action={saveCommission} className="card stack" style={{ maxWidth: 900 }}>
-        <section className="stack">
+      <form action={saveCommission} className="stack" style={{ maxWidth: 1100 }}>
+        <div
+          className="card stack"
+          style={{
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+            }}
+          >
+            Commission Edit
+          </p>
+
           <h2 style={{ margin: 0 }}>Commission Basics</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Commission Name</span>
-              <input
-                name="commission_name"
-                type="text"
-                defaultValue={row.commission_name ?? ""}
-                required
-              />
-            </label>
+            <Field
+              label="Commission Name"
+              name="commission_name"
+              defaultValue={row.commission_name}
+              required
+            />
 
-            <label className="stack-sm">
-              <span>Booking Number</span>
-              <input
-                name="booking_number"
-                type="text"
-                defaultValue={row.booking_number ?? ""}
-              />
-            </label>
+            <Field
+              label="Booking Number"
+              name="booking_number"
+              defaultValue={row.booking_number}
+            />
 
-            <label className="stack-sm">
-              <span>Status</span>
-              <select
-                name="commission_status"
-                defaultValue={row.commission_status ?? "expected"}
-              >
-                <option value="expected">expected</option>
-                <option value="pending">pending</option>
-                <option value="received">received</option>
-                <option value="partial">partial</option>
-                <option value="overdue">overdue</option>
-                <option value="cancelled">cancelled</option>
-              </select>
-            </label>
+            <SelectField
+              label="Status"
+              name="commission_status"
+              defaultValue={row.commission_status ?? "expected"}
+            >
+              <option value="expected">expected</option>
+              <option value="pending">pending</option>
+              <option value="received">received</option>
+              <option value="partial">partial</option>
+              <option value="overdue">overdue</option>
+              <option value="cancelled">cancelled</option>
+            </SelectField>
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Connections</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Client</span>
-              <select
-                name="client_account_id"
-                defaultValue={row.client_account_id ?? ""}
-              >
-                <option value="">No client selected</option>
-                {clientRows.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {getClientDisplayName(client)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectField
+              label="Client"
+              name="client_account_id"
+              defaultValue={row.client_account_id}
+            >
+              <option value="">No client selected</option>
+              {clientRows.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {getClientDisplayName(client)}
+                </option>
+              ))}
+            </SelectField>
 
-            <label className="stack-sm">
-              <span>Trip</span>
-              <select name="trip_id" defaultValue={row.trip_id ?? ""}>
-                <option value="">No trip selected</option>
-                {tripRows.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {trip.trip_name ?? trip.destinations ?? "Unnamed Trip"}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectField label="Trip" name="trip_id" defaultValue={row.trip_id}>
+              <option value="">No trip selected</option>
+              {tripRows.map((trip) => (
+                <option key={trip.id} value={trip.id}>
+                  {trip.trip_name ?? trip.destinations ?? "Unnamed Trip"}
+                </option>
+              ))}
+            </SelectField>
 
-            <label className="stack-sm">
-              <span>Supplier</span>
-              <select name="supplier_id" defaultValue={row.supplier_id ?? ""}>
-                <option value="">No supplier selected</option>
-                {supplierRows.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.supplier_name}
-                    {supplier.supplier_type ? ` — ${supplier.supplier_type}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectField
+              label="Supplier"
+              name="supplier_id"
+              defaultValue={row.supplier_id}
+            >
+              <option value="">No supplier selected</option>
+              {supplierRows.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.supplier_name}
+                  {supplier.supplier_type ? ` — ${supplier.supplier_type}` : ""}
+                </option>
+              ))}
+            </SelectField>
 
-            <label className="stack-sm">
-              <span>Supplier Name Snapshot / Manual Supplier</span>
-              <input
-                name="supplier_name_snapshot"
-                type="text"
-                defaultValue={row.supplier_name_snapshot ?? ""}
-                placeholder="Use if supplier is not in supplier list yet"
-              />
-            </label>
+            <Field
+              label="Supplier Name Snapshot / Manual Supplier"
+              name="supplier_name_snapshot"
+              defaultValue={row.supplier_name_snapshot}
+              placeholder="Use if supplier is not in supplier list yet"
+            />
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Amounts</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Gross Booking Amount</span>
-              <input
-                name="gross_booking_amount"
-                type="number"
-                step="0.01"
-                defaultValue={row.gross_booking_amount ?? 0}
-              />
-            </label>
+            <Field
+              label="Gross Booking Amount"
+              name="gross_booking_amount"
+              type="number"
+              step="0.01"
+              defaultValue={row.gross_booking_amount ?? 0}
+            />
 
-            <label className="stack-sm">
-              <span>Full Commission</span>
-              <input
-                name="full_commission_amount"
-                type="number"
-                step="0.01"
-                defaultValue={row.full_commission_amount ?? 0}
-              />
-            </label>
+            <Field
+              label="Full Commission"
+              name="full_commission_amount"
+              type="number"
+              step="0.01"
+              defaultValue={row.full_commission_amount ?? 0}
+            />
 
-            <label className="stack-sm">
-              <span>Your Commission Percentage</span>
-              <input
-                name="agency_commission_percent"
-                type="number"
-                step="0.01"
-                defaultValue={currentAgencyPercent}
-              />
-            </label>
+            <Field
+              label="Your Commission Percentage"
+              name="agency_commission_percent"
+              type="number"
+              step="0.01"
+              defaultValue={currentAgencyPercent}
+            />
 
-            <label className="stack-sm">
-              <span>Received Commission Amount</span>
-              <input
-                name="received_commission_amount"
-                type="number"
-                step="0.01"
-                defaultValue={row.received_commission_amount ?? 0}
-              />
-            </label>
+            <Field
+              label="Received Commission Amount"
+              name="received_commission_amount"
+              type="number"
+              step="0.01"
+              defaultValue={row.received_commission_amount ?? 0}
+            />
 
             <div
               style={{
@@ -391,63 +478,67 @@ export default async function EditCommissionPage({
                 borderRadius: 12,
                 background: "#f7fbfc",
                 border: "1px solid #e6f0f2",
-                color: "#64748b",
                 lineHeight: 1.5,
               }}
             >
-              <strong>Current Expected Commission:</strong>{" "}
-              ${currentExpectedCommission.toFixed(2)}. This recalculates when you
-              save based on Full Commission × Your Commission Percentage.
+              <span className="label">Current Expected Commission</span>
+              <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                {formatMoney(currentExpectedCommission)}
+              </p>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Payment Timing</h2>
 
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span>Expected Payment Date</span>
-              <input
-                name="expected_payment_date"
-                type="date"
-                defaultValue={row.expected_payment_date ?? ""}
-              />
-            </label>
+            <Field
+              label="Expected Payment Date"
+              name="expected_payment_date"
+              type="date"
+              defaultValue={row.expected_payment_date}
+            />
 
-            <label className="stack-sm">
-              <span>Received Payment Date</span>
-              <input
-                name="received_payment_date"
-                type="date"
-                defaultValue={row.received_payment_date ?? ""}
-              />
-            </label>
+            <Field
+              label="Received Payment Date"
+              name="received_payment_date"
+              type="date"
+              defaultValue={row.received_payment_date}
+            />
           </div>
-        </section>
+        </div>
 
-        <section className="stack">
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Notes</h2>
 
-          <label className="stack-sm">
-            <span>Notes</span>
-            <textarea
-              name="notes"
-              rows={5}
-              defaultValue={row.notes ?? ""}
-              placeholder="Supplier follow-up notes, payment notes, manual tracking details, etc."
-            />
-          </label>
-        </section>
+          <TextAreaField
+            label="Notes"
+            name="notes"
+            rows={5}
+            defaultValue={row.notes}
+            placeholder="Supplier follow-up notes, payment notes, manual tracking details, etc."
+          />
+        </div>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button type="submit" className="button">
-            Save Commission
-          </button>
+        <div
+          className="card stack"
+          style={{
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Save Commission</h2>
 
-          <a href={`/admin/commissions/${row.id}`} className="button-secondary">
-            Cancel
-          </a>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button type="submit" className="btn btn-primary">
+              Save Commission
+            </button>
+
+            <Link href={`/admin/commissions/${row.id}`} className="btn btn-primary">
+              Cancel
+            </Link>
+          </div>
         </div>
       </form>
     </PageShell>

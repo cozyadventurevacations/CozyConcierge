@@ -122,7 +122,7 @@ export default function LogoutPage() {
               Sign In Again
             </Link>
 
-            <Link href="/travel-request" className="btn btn-outline">
+            <Link href="/travel-request" className="btn btn-primary">
               Request a Trip
             </Link>
           </div>

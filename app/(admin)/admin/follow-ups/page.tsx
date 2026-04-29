@@ -148,19 +148,16 @@ function FollowUpBadge({
 function SummaryCard({
   title,
   value,
-  subtitle,
 }: {
   title: string;
   value: string | number;
-  subtitle?: string;
 }) {
   return (
-    <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
+    <div className="card" style={{ border: "1px solid #e6f0f2" }}>
       <span className="label">{title}</span>
-      <strong style={{ fontSize: "2rem", lineHeight: 1 }}>{value}</strong>
-      {subtitle ? (
-        <span style={{ color: "#64748b", lineHeight: 1.45 }}>{subtitle}</span>
-      ) : null}
+      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -219,42 +216,36 @@ export default async function AdminFollowUpsPage() {
       title="Client Follow-Ups"
       subtitle="View and manage client notes, reminders, and follow-up tasks."
     >
-      <div className="grid grid-3">
-        <SummaryCard
-          title="Open Follow-Ups"
-          value={openRows.length}
-          subtitle="Notes still needing attention"
-        />
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Follow-Up Center
+        </p>
 
-        <SummaryCard
-          title="Overdue"
-          value={overdueRows.length}
-          subtitle="Past follow-up date"
-        />
+        <h2 style={{ margin: 0 }}>Client Follow-Up Summary</h2>
 
-        <SummaryCard
-          title="Upcoming"
-          value={upcomingRows.length}
-          subtitle="Today or future follow-up date"
-        />
-
-        <SummaryCard
-          title="No Date"
-          value={noDateRows.length}
-          subtitle="Open notes without a follow-up date"
-        />
-
-        <SummaryCard
-          title="Completed"
-          value={completedRows.length}
-          subtitle="Finished follow-ups"
-        />
-
-        <SummaryCard
-          title="Total Notes"
-          value={rows.length}
-          subtitle="All client CRM notes"
-        />
+        <div className="grid grid-3">
+          <SummaryCard title="Open Follow-Ups" value={openRows.length} />
+          <SummaryCard title="Overdue" value={overdueRows.length} />
+          <SummaryCard title="Upcoming" value={upcomingRows.length} />
+          <SummaryCard title="No Date" value={noDateRows.length} />
+          <SummaryCard title="Completed" value={completedRows.length} />
+          <SummaryCard title="Total Notes" value={rows.length} />
+        </div>
       </div>
 
       <div className="card stack">
@@ -269,7 +260,7 @@ export default async function AdminFollowUpsPage() {
         >
           <h2 style={{ margin: 0 }}>All Client Follow-Ups</h2>
 
-          <Link href="/admin/clients" className="btn btn-outline">
+          <Link href="/admin/clients" className="btn btn-primary">
             View Clients
           </Link>
         </div>
@@ -315,9 +306,11 @@ export default async function AdminFollowUpsPage() {
                           isOverdue={overdue}
                         />
                       </td>
+
                       <td>{getClientDisplayName(row)}</td>
                       <td>{row.note_type}</td>
                       <td>{row.title ?? "Not provided"}</td>
+
                       <td style={{ maxWidth: 380 }}>
                         <span
                           style={{
@@ -329,16 +322,19 @@ export default async function AdminFollowUpsPage() {
                           {row.content ?? "Not provided"}
                         </span>
                       </td>
+
                       <td>{formatDate(row.follow_up_date)}</td>
                       <td>{formatDateTime(row.created_at)}</td>
+
                       <td>
                         {client?.id ? (
                           <Link
                             href={`/admin/clients/${client.id}`}
+                            className="btn btn-primary"
                             style={{
-                              color: "var(--accent-dark)",
-                              fontWeight: 700,
-                              textDecoration: "none",
+                              padding: "6px 10px",
+                              fontSize: 13,
+                              whiteSpace: "nowrap",
                             }}
                           >
                             Open Client
@@ -347,6 +343,7 @@ export default async function AdminFollowUpsPage() {
                           "Unavailable"
                         )}
                       </td>
+
                       <td>
                         <form action={updateFollowUpStatus}>
                           <input type="hidden" name="follow_up_id" value={row.id} />
@@ -357,7 +354,7 @@ export default async function AdminFollowUpsPage() {
                           />
                           <button
                             type="submit"
-                            className="btn btn-outline"
+                            className="btn btn-primary"
                             style={{
                               padding: "6px 10px",
                               fontSize: 13,

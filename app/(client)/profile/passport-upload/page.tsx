@@ -281,22 +281,16 @@ export default async function PassportUploadPage({
 
         <h1 style={{ margin: "4px 0 0", fontSize: 30 }}>Passport Document</h1>
 
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Uploading your passport image or PDF can help keep your travel profile
-          organized when passport details are needed for trip planning, supplier
-          documentation, or reservation support.
-        </p>
-
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/profile" className="btn btn-outline">
+          <Link href="/profile" className="btn btn-primary">
             Back to Profile
           </Link>
 
-          <Link href="/profile/documents/upload" className="btn btn-outline">
+          <Link href="/profile/documents/upload" className="btn btn-primary">
             Upload Other Travel Documents
           </Link>
 
-          <Link href="/trips" className="btn btn-outline">
+          <Link href="/trips" className="btn btn-primary">
             Back to My Trips
           </Link>
         </div>
@@ -316,33 +310,17 @@ export default async function PassportUploadPage({
       ) : null}
 
       <div
-        className="card stack"
+        className="card"
         style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
+          color: "#9a3412",
+          lineHeight: 1.6,
         }}
       >
-        <h2 style={{ margin: 0 }}>Important Passport Upload Notice</h2>
-
-        <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-          Passport documents contain highly sensitive identity information. Only
-          upload this document if you are comfortable storing it in your secure
-          Cozy Concierge profile for travel planning or trip support purposes.
-        </p>
-
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: 20,
-            color: "#9a3412",
-            lineHeight: 1.6,
-          }}
-        >
-          <li>Do not upload passport documents from a public or shared computer.</li>
-          <li>Do not upload another traveler’s passport unless you are authorized.</li>
-          <li>Do not share temporary passport links with anyone who should not see them.</li>
-          <li>Uploaded copies do not replace your original passport for travel.</li>
-        </ul>
+        <strong>Passport upload notice:</strong> Passport documents contain sensitive
+        identity information. Only upload passport documents that are necessary for
+        travel planning, supplier documentation, or trip support.
       </div>
 
       <div className="card stack">
@@ -354,7 +332,7 @@ export default async function PassportUploadPage({
             <input
               className="input"
               name="document_title"
-              placeholder="Example: Jeremy Passport"
+              placeholder="Jeremy Passport"
             />
           </label>
 
@@ -367,9 +345,6 @@ export default async function PassportUploadPage({
               accept="image/jpeg,image/png,image/webp,application/pdf"
               required
             />
-            <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
-              Accepted formats: JPG, PNG, WEBP, or PDF. Maximum size: 15MB.
-            </span>
           </label>
 
           <label className="stack-sm">
@@ -378,7 +353,7 @@ export default async function PassportUploadPage({
               className="textarea"
               name="notes"
               rows={4}
-              placeholder="Optional notes, such as traveler name or trip this passport is connected to."
+              placeholder="Traveler name or trip this passport is connected to."
             />
           </label>
 
@@ -403,8 +378,7 @@ export default async function PassportUploadPage({
               style={{ marginTop: 4 }}
             />
             <span>
-              I understand this passport document contains sensitive identity
-              information, and I authorize Cozy Adventure Vacations to store it
+              I authorize Cozy Adventure Vacations to store this passport document
               in my secure client document area for travel planning, supplier
               documentation, or trip support purposes.
             </span>
@@ -420,10 +394,8 @@ export default async function PassportUploadPage({
               lineHeight: 1.6,
             }}
           >
-            <strong>Reminder:</strong> Uploading a passport copy here helps keep
-            your profile organized, but travelers are still responsible for
-            carrying and presenting their original passport when required by
-            airlines, cruise lines, border officials, resorts, or suppliers.
+            <strong>Upload limits:</strong> JPG, PNG, WEBP, or PDF. Maximum file size
+            is 15MB. Uploaded copies do not replace your original passport for travel.
           </div>
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -431,7 +403,7 @@ export default async function PassportUploadPage({
               Upload Passport Document
             </button>
 
-            <Link href="/profile" className="btn btn-outline">
+            <Link href="/profile" className="btn btn-primary">
               Cancel
             </Link>
           </div>
@@ -441,10 +413,19 @@ export default async function PassportUploadPage({
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Uploaded Passport Documents</h2>
 
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          For security, passport document links on this page expire after 5
-          minutes. Refresh the page to generate a new temporary link if needed.
-        </p>
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+            color: "#667085",
+            lineHeight: 1.6,
+          }}
+        >
+          Passport document links expire after 5 minutes. Refresh the page to generate
+          a new temporary link.
+        </div>
 
         {passportDocumentsError ? (
           <div>
@@ -483,7 +464,7 @@ export default async function PassportUploadPage({
                           href={document.signedUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn btn-outline"
+                          className="btn btn-primary"
                           style={{
                             padding: "6px 10px",
                             fontSize: 13,

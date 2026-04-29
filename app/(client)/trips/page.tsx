@@ -256,7 +256,7 @@ function TripCard({ trip }: { trip: TripRow }) {
 
         <Link
           href={`/trips/${trip.id}/documents`}
-          className="btn btn-outline"
+          className="btn btn-primary"
           style={{
             flex: "1 1 180px",
             textAlign: "center",
@@ -268,7 +268,7 @@ function TripCard({ trip }: { trip: TripRow }) {
 
         <Link
           href={`/trips/${trip.id}/request-payment`}
-          className="btn btn-outline"
+          className="btn btn-primary"
           style={{
             flex: "1 1 180px",
             textAlign: "center",

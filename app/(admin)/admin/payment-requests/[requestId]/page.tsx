@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -35,7 +36,11 @@ const allowedStatuses = ["new", "sent", "completed", "cancelled", "declined"];
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
-  return `$${value.toFixed(2)}`;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
 }
 
 function formatDate(value: string | null | undefined, fallback = "Not provided") {
@@ -119,12 +124,49 @@ function InfoItem({
       }}
     >
       <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45 }}>
+      <p style={{ margin: "6px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
         {value === null || value === undefined || value === ""
           ? "Not provided"
           : value}
       </p>
     </div>
+  );
+}
+
+function ActionLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="btn btn-primary"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textDecoration: "none",
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function StatusButton({
+  requestId,
+  status,
+  label,
+}: {
+  requestId: string;
+  status: string;
+  label: string;
+}) {
+  return (
+    <form action={updatePaymentRequestStatus}>
+      <input type="hidden" name="request_id" value={requestId} />
+      <input type="hidden" name="status" value={status} />
+      <button type="submit" className="btn btn-primary">
+        {label}
+      </button>
+    </form>
   );
 }
 
@@ -151,9 +193,7 @@ async function updatePaymentRequestStatus(formData: FormData) {
     .single();
 
   if (existingRequestError || !existingRequest) {
-    throw new Error(
-      existingRequestError?.message ?? "Payment request not found.",
-    );
+    throw new Error(existingRequestError?.message ?? "Payment request not found.");
   }
 
   const updates: {
@@ -280,8 +320,27 @@ export default async function AdminPaymentRequestDetailPage({
   return (
     <PageShell
       title="Payment Request Detail"
-      subtitle="Review the full payment request details below."
+      subtitle={`${clientName || "Unknown Client"} • ${trip?.trip_name ?? "Unknown Trip"}`}
     >
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <ActionLink href="/admin/payment-requests">
+          Back to Payment Requests
+        </ActionLink>
+
+        {trip ? (
+          <ActionLink href={`/admin/trips/${trip.id}`}>Open Linked Trip</ActionLink>
+        ) : null}
+      </div>
+
       <div
         className="card stack"
         style={{
@@ -309,8 +368,7 @@ export default async function AdminPaymentRequestDetailPage({
             </h1>
 
             <p style={{ margin: "6px 0 0", color: "#667085" }}>
-              {clientName || "Unknown Client"} •{" "}
-              {trip?.trip_name ?? "Unknown Trip"}
+              {clientName || "Unknown Client"} • {trip?.trip_name ?? "Unknown Trip"}
             </p>
           </div>
 
@@ -318,95 +376,59 @@ export default async function AdminPaymentRequestDetailPage({
         </div>
       </div>
 
+      <div className="grid grid-3">
+        <div className="card">
+          <span className="label">Requested Amount</span>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+            {formatMoney(request.requested_amount)}
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Requested Payment Date</span>
+          <p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 800 }}>
+            {formatDate(request.requested_payment_date)}
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Status</span>
+          <p style={{ marginTop: 8 }}>
+            <StatusBadge status={request.status} />
+          </p>
+        </div>
+      </div>
+
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Request Details</h2>
 
         <div className="grid grid-2">
-          <InfoItem label="Status" value={request.status} />
           <InfoItem label="Submitted" value={formatDateTime(request.requested_at)} />
           <InfoItem label="Completed" value={formatDateTime(request.completed_at)} />
-          <InfoItem
-            label="Requested Amount"
-            value={formatMoney(request.requested_amount)}
-          />
-          <InfoItem
-            label="Requested Payment Date"
-            value={formatDate(request.requested_payment_date)}
-          />
           <InfoItem label="Client" value={clientName || "Unknown Client"} />
           <InfoItem label="Client Email" value={client?.email ?? "Not provided"} />
-          <InfoItem
-            label="Client Phone"
-            value={client?.phone_primary ?? "Not provided"}
-          />
+          <InfoItem label="Client Phone" value={client?.phone_primary ?? "Not provided"} />
+          <InfoItem label="Trip" value={trip?.trip_name ?? "Unknown Trip"} />
         </div>
 
-        <div
-          style={{
-            padding: "12px",
-            border: "1px solid #eef2f5",
-            borderRadius: 12,
-            background: "#fbfdfe",
-          }}
-        >
-          <span className="label">Client Message</span>
-          <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-            {request.client_message ?? "No message provided."}
-          </p>
-        </div>
+        <InfoItem
+          label="Client Message"
+          value={request.client_message ?? "No message provided."}
+        />
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <form action={updatePaymentRequestStatus}>
-            <input type="hidden" name="request_id" value={request.id} />
-            <input type="hidden" name="status" value="new" />
-            <button type="submit" className="btn btn-outline">
-              Mark New
-            </button>
-          </form>
-
-          <form action={updatePaymentRequestStatus}>
-            <input type="hidden" name="request_id" value={request.id} />
-            <input type="hidden" name="status" value="sent" />
-            <button type="submit" className="btn btn-outline">
-              Mark Sent
-            </button>
-          </form>
-
-          <form action={updatePaymentRequestStatus}>
-            <input type="hidden" name="request_id" value={request.id} />
-            <input type="hidden" name="status" value="completed" />
-            <button type="submit" className="btn btn-primary">
-              Mark Completed
-            </button>
-          </form>
-
-          <form action={updatePaymentRequestStatus}>
-            <input type="hidden" name="request_id" value={request.id} />
-            <input type="hidden" name="status" value="cancelled" />
-            <button type="submit" className="btn btn-outline">
-              Mark Cancelled
-            </button>
-          </form>
-
-          <form action={updatePaymentRequestStatus}>
-            <input type="hidden" name="request_id" value={request.id} />
-            <input type="hidden" name="status" value="declined" />
-            <button type="submit" className="btn btn-outline">
-              Mark Declined
-            </button>
-          </form>
+          <StatusButton requestId={request.id} status="new" label="Mark New" />
+          <StatusButton requestId={request.id} status="sent" label="Mark Sent" />
+          <StatusButton requestId={request.id} status="completed" label="Mark Completed" />
+          <StatusButton requestId={request.id} status="cancelled" label="Mark Cancelled" />
+          <StatusButton requestId={request.id} status="declined" label="Mark Declined" />
         </div>
       </div>
 
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Client Follow-Up</h2>
 
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Use this as a shortcut after you create the supplier payment link.
-          The email opens in your mail app with a starter message you can customize.
-        </p>
-
-        <div className="row">
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           {client?.email ? (
             <a
               href={`mailto:${client.email}?subject=${emailSubject}&body=${emailBody}`}
@@ -416,9 +438,9 @@ export default async function AdminPaymentRequestDetailPage({
             </a>
           ) : null}
 
-          <a href="/admin/payment-requests" className="btn btn-outline">
+          <ActionLink href="/admin/payment-requests">
             Back to Payment Requests
-          </a>
+          </ActionLink>
         </div>
       </div>
 
@@ -427,10 +449,7 @@ export default async function AdminPaymentRequestDetailPage({
 
         <div className="grid grid-2">
           <InfoItem label="Trip Name" value={trip?.trip_name ?? "Unknown Trip"} />
-          <InfoItem
-            label="Trip Status"
-            value={trip?.trip_status ?? "Not provided"}
-          />
+          <InfoItem label="Trip Status" value={trip?.trip_status ?? "Not provided"} />
           <InfoItem label="Balance Due" value={formatMoney(trip?.balance_due)} />
           <InfoItem
             label="Final Payment Due Date"
@@ -438,16 +457,14 @@ export default async function AdminPaymentRequestDetailPage({
           />
         </div>
 
-        <div className="row">
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           {trip ? (
-            <a href={`/admin/trips/${trip.id}`} className="btn btn-primary">
-              Open Linked Trip
-            </a>
+            <ActionLink href={`/admin/trips/${trip.id}`}>Open Linked Trip</ActionLink>
           ) : null}
 
-          <a href="/admin/payment-requests" className="btn btn-outline">
+          <ActionLink href="/admin/payment-requests">
             Back to Payment Requests
-          </a>
+          </ActionLink>
         </div>
       </div>
     </PageShell>

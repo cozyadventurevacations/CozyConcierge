@@ -309,10 +309,6 @@ function ComponentCommissionLink({
     >
       <div>
         <p style={{ margin: 0, fontWeight: 800 }}>Commission Tracking</p>
-        <p style={{ margin: "4px 0 0", color: "#64748b", lineHeight: 1.5 }}>
-          Create a commission record from this component. Save the trip first if
-          you just changed supplier, confirmation, or pricing details.
-        </p>
       </div>
 
       <Link
@@ -1482,14 +1478,14 @@ export default async function AdminTripEditorPage({
               <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
                 <Link
                   href={`/admin/clients/${clientInfo.id}`}
-                  className="btn btn-outline"
+                  className="btn btn-primary"
                 >
                   Open Client
                 </Link>
 
                 <Link
                   href={`/admin/clients/${clientInfo.id}/documents`}
-                  className="btn btn-outline"
+                  className="btn btn-primary"
                 >
                   Client Documents
                 </Link>
@@ -1694,9 +1690,6 @@ export default async function AdminTripEditorPage({
           >
             <div>
               <h3 style={{ margin: 0 }}>Trip Commission Tracker</h3>
-              <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
-                View commission records connected to this trip.
-              </p>
             </div>
 
             <Link
@@ -1822,7 +1815,7 @@ export default async function AdminTripEditorPage({
                                   form="mark-trip-commission-received-form"
                                   name="commission_id"
                                   value={commission.id}
-                                  className="btn btn-outline"
+                                  className="btn btn-primary"
                                   style={{
                                     padding: "4px 8px",
                                     fontSize: 12,
@@ -2162,14 +2155,12 @@ export default async function AdminTripEditorPage({
                 label="Departure Airport"
                 name="outbound_departure_airport_code"
                 defaultValue={outboundSegment?.departure_airport_code ?? ""}
-                helper="Search by airport code, city, or airport name."
               />
 
               <AirportPicker
                 label="Destination Airport"
                 name="outbound_destination_airport_code"
                 defaultValue={outboundSegment?.destination_airport_code ?? ""}
-                helper="Search by airport code, city, or airport name."
               />
 
               <label>
@@ -2217,7 +2208,6 @@ export default async function AdminTripEditorPage({
                 label="Carrier"
                 name="outbound_carrier"
                 defaultValue={outboundSegment?.carrier ?? ""}
-                helper="Search by airline code or airline name."
               />
 
               <label>
@@ -2248,14 +2238,12 @@ export default async function AdminTripEditorPage({
                 label="Departure Airport"
                 name="return_departure_airport_code"
                 defaultValue={returnSegment?.departure_airport_code ?? ""}
-                helper="Search by airport code, city, or airport name."
               />
 
               <AirportPicker
                 label="Destination Airport"
                 name="return_destination_airport_code"
                 defaultValue={returnSegment?.destination_airport_code ?? ""}
-                helper="Search by airport code, city, or airport name."
               />
 
               <label>
@@ -2303,7 +2291,6 @@ export default async function AdminTripEditorPage({
                 label="Carrier"
                 name="return_carrier"
                 defaultValue={returnSegment?.carrier ?? ""}
-                helper="Search by airline code or airline name."
               />
 
               <label>
@@ -3178,13 +3165,13 @@ export default async function AdminTripEditorPage({
             Save Trip
           </button>
 
-          <a href={`/admin/trips/${trip.id}/documents`} className="btn btn-outline">
+          <Link href={`/admin/trips/${trip.id}/documents`} className="btn btn-primary">
             Manage Documents
-          </a>
+          </Link>
 
-          <a href="/admin/trips" className="btn btn-outline">
+          <Link href="/admin/trips" className="btn btn-primary">
             Back to Trips
-          </a>
+          </Link>
         </div>
       </form>
     </PageShell>
