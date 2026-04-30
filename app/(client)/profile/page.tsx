@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type ClientAccount = {
@@ -969,33 +970,15 @@ export default async function ClientProfilePage({
 
         <Section
           title="Address"
-          intro="Address autocomplete can be added later with a service like Google Places or Mapbox. For now, enter your address manually."
+          intro="Start typing your street address and choose the best match. Please review the filled-in city, state, and postal code before saving."
         >
-          <div className="grid grid-2">
-            <Field
-              label="Address Line 1"
-              name="address_line_1"
-              defaultValue={clientAccount.address_line_1}
-              placeholder="Street address"
-            />
-
-            <Field
-              label="Address Line 2"
-              name="address_line_2"
-              defaultValue={clientAccount.address_line_2}
-              placeholder="Apartment, suite, unit, etc."
-            />
-
-            <Field label="City" name="city" defaultValue={clientAccount.city} />
-
-            <Field label="State" name="state" defaultValue={clientAccount.state} />
-
-            <Field
-              label="Postal Code"
-              name="postal_code"
-              defaultValue={clientAccount.postal_code}
-            />
-          </div>
+          <AddressAutocomplete
+            addressLine1Default={clientAccount.address_line_1}
+            addressLine2Default={clientAccount.address_line_2}
+            cityDefault={clientAccount.city}
+            stateDefault={clientAccount.state}
+            postalCodeDefault={clientAccount.postal_code}
+          />
         </Section>
 
         <Section
