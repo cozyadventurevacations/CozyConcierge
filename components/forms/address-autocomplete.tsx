@@ -2,46 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type AddressComponent = {
-  long_name: string;
-  short_name: string;
-  types: string[];
+type Suggestion = {
+  placeId: string;
+  text: string;
 };
 
-type PlaceResult = {
-  address_components?: AddressComponent[];
-  formatted_address?: string;
+type AddressDetails = {
+  addressLine1: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  formattedAddress: string;
 };
-
-type AutocompleteListener = {
-  remove?: () => void;
-};
-
-type PlacesAutocomplete = {
-  addListener: (
-    eventName: "place_changed",
-    handler: () => void,
-  ) => AutocompleteListener;
-  getPlace: () => PlaceResult;
-};
-
-type GoogleMapsWindow = Window &
-  typeof globalThis & {
-    google?: {
-      maps?: {
-        places?: {
-          Autocomplete: new (
-            input: HTMLInputElement,
-            options?: {
-              fields?: string[];
-              types?: string[];
-              componentRestrictions?: { country: string | string[] };
-            },
-          ) => PlacesAutocomplete;
-        };
-      };
-    };
-  };
 
 type AddressAutocompleteProps = {
   addressLine1Default?: string | null;
@@ -51,64 +23,6 @@ type AddressAutocompleteProps = {
   postalCodeDefault?: string | null;
 };
 
-function getComponent(place: PlaceResult, type: string, useShortName = false) {
-  const component = place.address_components?.find((item) =>
-    item.types.includes(type),
-  );
-
-  if (!component) return "";
-
-  return useShortName ? component.short_name : component.long_name;
-}
-
-function buildStreetAddress(place: PlaceResult) {
-  const streetNumber = getComponent(place, "street_number");
-  const route = getComponent(place, "route");
-
-  return [streetNumber, route].filter(Boolean).join(" ").trim();
-}
-
-function loadGoogleMapsScript(apiKey: string) {
-  const existingScript = document.querySelector<HTMLScriptElement>(
-    'script[data-google-maps-places="true"]',
-  );
-
-  if (existingScript) {
-    return new Promise<void>((resolve, reject) => {
-      const googleWindow = window as GoogleMapsWindow;
-
-      if (googleWindow.google?.maps?.places?.Autocomplete) {
-        resolve();
-        return;
-      }
-
-      existingScript.addEventListener("load", () => resolve(), { once: true });
-      existingScript.addEventListener(
-        "error",
-        () => reject(new Error("Google Maps script failed to load.")),
-        { once: true },
-      );
-    });
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      apiKey,
-    )}&libraries=places`;
-    script.async = true;
-    script.defer = true;
-    script.dataset.googleMapsPlaces = "true";
-
-    script.onload = () => resolve();
-    script.onerror = () =>
-      reject(new Error("Google Maps script failed to load."));
-
-    document.head.appendChild(script);
-  });
-}
-
 export function AddressAutocomplete({
   addressLine1Default,
   addressLine2Default,
@@ -116,111 +30,180 @@ export function AddressAutocomplete({
   stateDefault,
   postalCodeDefault,
 }: AddressAutocompleteProps) {
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<PlacesAutocomplete | null>(null);
-
   const [addressLine1, setAddressLine1] = useState(addressLine1Default ?? "");
   const [addressLine2, setAddressLine2] = useState(addressLine2Default ?? "");
   const [city, setCity] = useState(cityDefault ?? "");
   const [state, setState] = useState(stateDefault ?? "");
   const [postalCode, setPostalCode] = useState(postalCodeDefault ?? "");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    let listener: AutocompleteListener | null = null;
-    let isMounted = true;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
 
-    async function setupAutocomplete() {
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const input = addressLine1.trim();
 
-      if (!apiKey) {
-        setStatusMessage(
-          "Address autocomplete is not configured yet. You can still enter your address manually.",
-        );
-        return;
-      }
+    if (input.length < 3) {
+      setSuggestions([]);
+      setIsSearching(false);
+      return;
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
 
       try {
-        await loadGoogleMapsScript(apiKey);
+        const response = await fetch("/api/places/autocomplete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ input }),
+        });
 
-        if (!isMounted || !addressInputRef.current) return;
+        const data = await response.json();
 
-        const googleWindow = window as GoogleMapsWindow;
-        const Autocomplete = googleWindow.google?.maps?.places?.Autocomplete;
-
-        if (!Autocomplete) {
+        if (!response.ok) {
+          setSuggestions([]);
           setStatusMessage(
-            "Address autocomplete could not be loaded. You can still enter your address manually.",
+            data.error ??
+              "Address suggestions could not be loaded. You can still enter your address manually.",
           );
           return;
         }
 
-        autocompleteRef.current = new Autocomplete(addressInputRef.current, {
-          fields: ["address_components", "formatted_address"],
-          types: ["address"],
-          componentRestrictions: { country: "us" },
-        });
-
-        listener = autocompleteRef.current.addListener("place_changed", () => {
-          const place = autocompleteRef.current?.getPlace();
-
-          if (!place) return;
-
-          const streetAddress = buildStreetAddress(place);
-          const locality =
-            getComponent(place, "locality") ||
-            getComponent(place, "sublocality") ||
-            getComponent(place, "postal_town");
-          const administrativeArea = getComponent(
-            place,
-            "administrative_area_level_1",
-            true,
-          );
-          const postal = getComponent(place, "postal_code");
-
-          if (streetAddress) setAddressLine1(streetAddress);
-          if (locality) setCity(locality);
-          if (administrativeArea) setState(administrativeArea);
-          if (postal) setPostalCode(postal);
-
-          setStatusMessage(
-            "Address details filled in. Please review them before saving.",
-          );
-        });
+        setSuggestions(data.suggestions ?? []);
+        setStatusMessage(null);
       } catch {
-        if (!isMounted) return;
-
+        setSuggestions([]);
         setStatusMessage(
-          "Address autocomplete could not be loaded. You can still enter your address manually.",
+          "Address suggestions could not be loaded. You can still enter your address manually.",
         );
+      } finally {
+        setIsSearching(false);
       }
-    }
-
-    setupAutocomplete();
+    }, 350);
 
     return () => {
-      isMounted = false;
-      listener?.remove?.();
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
     };
-  }, []);
+  }, [addressLine1]);
+
+  async function handleSelectSuggestion(suggestion: Suggestion) {
+    setAddressLine1(suggestion.text);
+    setSuggestions([]);
+    setStatusMessage("Loading address details...");
+
+    try {
+      const response = await fetch("/api/places/details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ placeId: suggestion.placeId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setStatusMessage(
+          data.error ??
+            "Address details could not be loaded. Please review the address manually.",
+        );
+        return;
+      }
+
+      const address = data.address as AddressDetails;
+
+      if (address.addressLine1) {
+        setAddressLine1(address.addressLine1);
+      }
+
+      if (address.city) {
+        setCity(address.city);
+      }
+
+      if (address.state) {
+        setState(address.state);
+      }
+
+      if (address.postalCode) {
+        setPostalCode(address.postalCode);
+      }
+
+      setStatusMessage(
+        "Address details filled in. Please review them before saving.",
+      );
+    } catch {
+      setStatusMessage(
+        "Address details could not be loaded. Please review the address manually.",
+      );
+    }
+  }
 
   return (
     <div className="stack">
-      <label className="stack-sm">
-        <span className="label">Address Line 1</span>
-        <input
-          ref={addressInputRef}
-          className="input"
-          name="address_line_1"
-          value={addressLine1}
-          onChange={(event) => setAddressLine1(event.target.value)}
-          placeholder="Start typing your street address"
-          autoComplete="address-line1"
-        />
-        <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
-          Start typing your address, then choose the best match from the list.
-        </span>
-      </label>
+      <div style={{ position: "relative" }}>
+        <label className="stack-sm">
+          <span className="label">Address Line 1</span>
+          <input
+            className="input"
+            name="address_line_1"
+            value={addressLine1}
+            onChange={(event) => setAddressLine1(event.target.value)}
+            placeholder="Start typing your street address"
+            autoComplete="address-line1"
+          />
+          <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
+            Start typing your address, then choose the best match from the list.
+          </span>
+        </label>
+
+        {suggestions.length > 0 ? (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              zIndex: 20,
+              background: "#ffffff",
+              border: "1px solid #d0d5dd",
+              borderRadius: 12,
+              boxShadow: "0 12px 30px rgba(16, 24, 40, 0.12)",
+              overflow: "hidden",
+              marginTop: 6,
+            }}
+          >
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion.placeId}
+                type="button"
+                onClick={() => handleSelectSuggestion(suggestion)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  border: 0,
+                  background: "#ffffff",
+                  padding: "12px 14px",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  color: "var(--text)",
+                  borderBottom: "1px solid #eef2f5",
+                }}
+              >
+                {suggestion.text}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <label className="stack-sm">
         <span className="label">Address Line 2</span>
@@ -271,6 +254,21 @@ export function AddressAutocomplete({
           />
         </label>
       </div>
+
+      {isSearching ? (
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+            color: "#667085",
+            lineHeight: 1.6,
+          }}
+        >
+          Searching for address matches...
+        </div>
+      ) : null}
 
       {statusMessage ? (
         <div
