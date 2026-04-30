@@ -38,6 +38,7 @@ export function AddressAutocomplete({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSelectedSuggestion, setHasSelectedSuggestion] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,12 @@ export function AddressAutocomplete({
     }
 
     const input = addressLine1.trim();
+
+    if (hasSelectedSuggestion) {
+      setSuggestions([]);
+      setIsSearching(false);
+      return;
+    }
 
     if (input.length < 3) {
       setSuggestions([]);
@@ -93,11 +100,18 @@ export function AddressAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [addressLine1]);
+  }, [addressLine1, hasSelectedSuggestion]);
 
   async function handleSelectSuggestion(suggestion: Suggestion) {
+    setHasSelectedSuggestion(true);
     setAddressLine1(suggestion.text);
     setSuggestions([]);
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    setIsSearching(false);
     setStatusMessage("Loading address details...");
 
     try {
@@ -137,13 +151,27 @@ export function AddressAutocomplete({
         setPostalCode(address.postalCode);
       }
 
+      setSuggestions([]);
+      setIsSearching(false);
       setStatusMessage(
         "Address details filled in. Please review them before saving.",
       );
     } catch {
+      setSuggestions([]);
+      setIsSearching(false);
       setStatusMessage(
         "Address details could not be loaded. Please review the address manually.",
       );
+    }
+  }
+
+  function handleAddressLine1Change(value: string) {
+    setHasSelectedSuggestion(false);
+    setAddressLine1(value);
+
+    if (value.trim().length < 3) {
+      setSuggestions([]);
+      setIsSearching(false);
     }
   }
 
@@ -156,7 +184,12 @@ export function AddressAutocomplete({
             className="input"
             name="address_line_1"
             value={addressLine1}
-            onChange={(event) => setAddressLine1(event.target.value)}
+            onChange={(event) => handleAddressLine1Change(event.target.value)}
+            onBlur={() => {
+              setTimeout(() => {
+                setSuggestions([]);
+              }, 150);
+            }}
             placeholder="Start typing your street address"
             autoComplete="address-line1"
           />
@@ -185,7 +218,10 @@ export function AddressAutocomplete({
               <button
                 key={suggestion.placeId}
                 type="button"
-                onClick={() => handleSelectSuggestion(suggestion)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSelectSuggestion(suggestion);
+                }}
                 style={{
                   display: "block",
                   width: "100%",
