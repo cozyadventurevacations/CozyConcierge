@@ -8,6 +8,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 type ClientAccount = {
   id: string;
   first_name: string | null;
+  middle_name: string | null;
   last_name: string | null;
   preferred_name: string | null;
   email: string | null;
@@ -31,6 +32,7 @@ type ClientAccount = {
   passport_number: string | null;
   passport_expiration_date: string | null;
   emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
   emergency_contact_phone: string | null;
   notes: string | null;
   created_at: string | null;
@@ -78,53 +80,71 @@ const cruiseCabinPreferences = [
   "No preference",
 ];
 
-function formatDate(value: string | null | undefined, fallback = "Not provided") {
-  if (!value) return fallback;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-").map(Number);
-
-    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
-  if (!value) return fallback;
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+const emergencyRelationshipOptions = [
+  "Spouse",
+  "Parent",
+  "Child",
+  "Sibling",
+  "Friend",
+  "Travel Companion",
+  "Other",
+];
 
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function buildName(firstName: string | null, middleName: string | null, lastName: string | null) {
+  return `${firstName ?? ""} ${middleName ?? ""} ${lastName ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatPhoneForDisplay(value: string | null | undefined) {
+  if (!value) return "";
+
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) return "";
+
+  let normalizedDigits = digits;
+
+  if (normalizedDigits.length === 11 && normalizedDigits.startsWith("1")) {
+    normalizedDigits = normalizedDigits.slice(1);
+  }
+
+  if (normalizedDigits.length === 10) {
+    return `1 (${normalizedDigits.slice(0, 3)}) ${normalizedDigits.slice(
+      3,
+      6,
+    )}-${normalizedDigits.slice(6)}`;
+  }
+
+  return value;
+}
+
+function normalizePhoneForSave(value: string | null) {
+  if (!value) return null;
+
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) return null;
+
+  let normalizedDigits = digits;
+
+  if (normalizedDigits.length === 11 && normalizedDigits.startsWith("1")) {
+    normalizedDigits = normalizedDigits.slice(1);
+  }
+
+  if (normalizedDigits.length === 10) {
+    return `1 (${normalizedDigits.slice(0, 3)}) ${normalizedDigits.slice(
+      3,
+      6,
+    )}-${normalizedDigits.slice(6)}`;
+  }
+
+  return value.trim();
 }
 
 function buildFoodAllergiesValue(formData: FormData) {
@@ -245,6 +265,85 @@ function StatusPill({
     >
       {label}
     </span>
+  );
+}
+
+function Section({
+  title,
+  intro,
+  children,
+  defaultOpen = false,
+  tone = "default",
+}: {
+  title: string;
+  intro?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  tone?: "default" | "success" | "warning";
+}) {
+  let background = "#ffffff";
+  let border = "1px solid #e6f0f2";
+
+  if (tone === "success") {
+    background = "#f0fdf4";
+    border = "1px solid #bbf7d0";
+  }
+
+  if (tone === "warning") {
+    background = "#fff7ed";
+    border = "1px solid #fed7aa";
+  }
+
+  return (
+    <details
+      open={defaultOpen}
+      className="card"
+      style={{
+        background,
+        border,
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          listStyle: "none",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>{title}</h2>
+            {intro ? (
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+                {intro}
+              </p>
+            ) : null}
+          </div>
+
+          <span
+            style={{
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+              fontSize: 14,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open / Close
+          </span>
+        </div>
+      </summary>
+
+      <div className="stack" style={{ marginTop: 16 }}>
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -400,39 +499,6 @@ function FoodAllergyCheckboxes({
   );
 }
 
-function InfoItem({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string | number | null | undefined;
-  helper?: string;
-}) {
-  return (
-    <div
-      style={{
-        padding: "12px",
-        border: "1px solid #eef2f5",
-        borderRadius: 12,
-        background: "#fbfdfe",
-      }}
-    >
-      <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
-        {value === null || value === undefined || value === ""
-          ? "Not provided"
-          : value}
-      </p>
-      {helper ? (
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.45 }}>
-          {helper}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
@@ -454,6 +520,7 @@ async function getCurrentClientAccount() {
   const selectFields = `
     id,
     first_name,
+    middle_name,
     last_name,
     preferred_name,
     email,
@@ -477,6 +544,7 @@ async function getCurrentClientAccount() {
     passport_number,
     passport_expiration_date,
     emergency_contact_name,
+    emergency_contact_relationship,
     emergency_contact_phone,
     notes,
     created_at
@@ -535,23 +603,107 @@ async function getCurrentClientAccount() {
   };
 }
 
+async function syncPrimaryTravelerFromClientProfile({
+  supabase,
+  clientAccountId,
+  firstName,
+  middleName,
+  lastName,
+  dateOfBirth,
+  passportNumber,
+  passportExpirationDate,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  dateOfBirth: string | null;
+  passportNumber: string | null;
+  passportExpirationDate: string | null;
+}) {
+  const passportFullName = buildName(firstName, middleName, lastName);
+
+  const { data: existingPrimary, error: primaryError } = await supabase
+    .from("traveler_profiles")
+    .select("id")
+    .eq("client_account_id", clientAccountId)
+    .eq("is_primary_traveler", true)
+    .maybeSingle();
+
+  if (primaryError) {
+    throw new Error(primaryError.message);
+  }
+
+  if (existingPrimary) {
+    const { error } = await supabase
+      .from("traveler_profiles")
+      .update({
+        first_name: firstName,
+        middle_name: middleName,
+        last_name: lastName,
+        date_of_birth: dateOfBirth,
+        passport_full_name: passportFullName || null,
+        passport_number: passportNumber,
+        passport_expiration_date: passportExpirationDate,
+        relationship_to_client: "Self",
+        is_primary_traveler: true,
+        is_minor: false,
+      })
+      .eq("id", existingPrimary.id)
+      .eq("client_account_id", clientAccountId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return;
+  }
+
+  const { error } = await supabase.from("traveler_profiles").insert({
+    client_account_id: clientAccountId,
+    first_name: firstName,
+    middle_name: middleName,
+    last_name: lastName,
+    date_of_birth: dateOfBirth,
+    passport_full_name: passportFullName || null,
+    passport_number: passportNumber,
+    passport_expiration_date: passportExpirationDate,
+    relationship_to_client: "Self",
+    is_primary_traveler: true,
+    is_minor: false,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 async function updateClientProfile(formData: FormData) {
   "use server";
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
+  const firstName = cleanText(formData, "first_name");
+  const middleName = cleanText(formData, "middle_name");
+  const lastName = cleanText(formData, "last_name");
+  const dateOfBirth = cleanText(formData, "date_of_birth");
+  const passportNumber = cleanText(formData, "passport_number");
+  const passportExpirationDate = cleanText(formData, "passport_expiration_date");
+
   const profileUpdates = {
-    first_name: cleanText(formData, "first_name"),
-    last_name: cleanText(formData, "last_name"),
+    first_name: firstName,
+    middle_name: middleName,
+    last_name: lastName,
     preferred_name: cleanText(formData, "preferred_name"),
-    phone_primary: cleanText(formData, "phone_primary"),
-    phone_secondary: cleanText(formData, "phone_secondary"),
+    phone_primary: normalizePhoneForSave(cleanText(formData, "phone_primary")),
+    phone_secondary: normalizePhoneForSave(cleanText(formData, "phone_secondary")),
     address_line_1: cleanText(formData, "address_line_1"),
     address_line_2: cleanText(formData, "address_line_2"),
     city: cleanText(formData, "city"),
     state: cleanText(formData, "state"),
     postal_code: cleanText(formData, "postal_code"),
-    date_of_birth: cleanText(formData, "date_of_birth"),
+    date_of_birth: dateOfBirth,
     anniversary_date: cleanText(formData, "anniversary_date"),
     preferred_airport: cleanText(formData, "preferred_airport"),
     travel_style: cleanText(formData, "travel_style"),
@@ -561,10 +713,16 @@ async function updateClientProfile(formData: FormData) {
     travel_preference_notes: cleanText(formData, "travel_preference_notes"),
     accessibility_notes: cleanText(formData, "accessibility_notes"),
     food_allergies: buildFoodAllergiesValue(formData),
-    passport_number: cleanText(formData, "passport_number"),
-    passport_expiration_date: cleanText(formData, "passport_expiration_date"),
+    passport_number: passportNumber,
+    passport_expiration_date: passportExpirationDate,
     emergency_contact_name: cleanText(formData, "emergency_contact_name"),
-    emergency_contact_phone: cleanText(formData, "emergency_contact_phone"),
+    emergency_contact_relationship: cleanText(
+      formData,
+      "emergency_contact_relationship",
+    ),
+    emergency_contact_phone: normalizePhoneForSave(
+      cleanText(formData, "emergency_contact_phone"),
+    ),
   };
 
   const { error } = await supabase
@@ -576,7 +734,20 @@ async function updateClientProfile(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await syncPrimaryTravelerFromClientProfile({
+    supabase,
+    clientAccountId: clientAccount.id,
+    firstName,
+    middleName,
+    lastName,
+    dateOfBirth,
+    passportNumber,
+    passportExpirationDate,
+  });
+
   revalidatePath("/profile");
+  revalidatePath("/profile/passport-upload");
+  revalidatePath("/profile/traveler-numbers");
   revalidatePath("/trips");
   redirect("/profile?updated=profile");
 }
@@ -590,24 +761,18 @@ export default async function ClientProfilePage({
   const { clientAccount } = await getCurrentClientAccount();
 
   const clientName =
-    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-    "My Profile";
-
-  const fullAddress = [
-    clientAccount.address_line_1,
-    clientAccount.address_line_2,
-    [clientAccount.city, clientAccount.state, clientAccount.postal_code]
-      .filter(Boolean)
-      .join(", "),
-  ]
-    .filter(Boolean)
-    .join("\n");
+    buildName(
+      clientAccount.first_name,
+      clientAccount.middle_name,
+      clientAccount.last_name,
+    ) || "My Profile";
 
   const passportStatus = getPassportStatus(clientAccount.passport_expiration_date);
 
   const hasEmergencyContact =
     Boolean(clientAccount.emergency_contact_name) ||
-    Boolean(clientAccount.emergency_contact_phone);
+    Boolean(clientAccount.emergency_contact_phone) ||
+    Boolean(clientAccount.emergency_contact_relationship);
 
   const hasFoodAllergies = Boolean(clientAccount.food_allergies);
 
@@ -645,10 +810,9 @@ export default async function ClientProfilePage({
         ) : null}
 
         <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          This is your client profile. You can update your contact details,
-          emergency contact, passport information, travel preferences, accessibility
-          notes, food allergies, traveler numbers, rewards memberships, and upload
-          important supporting travel documents.
+          Update your contact details, emergency contact, passport reference
+          information, travel preferences, accessibility notes, food allergies,
+          traveler numbers, rewards memberships, and supporting travel documents.
         </p>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -656,8 +820,12 @@ export default async function ClientProfilePage({
             View My Trips
           </Link>
 
+          <Link href="/profile/passport-upload" className="btn btn-primary">
+            Passport Details & Upload
+          </Link>
+
           <Link href="/profile/traveler-numbers" className="btn btn-primary">
-            Manage Traveler Numbers & Rewards
+            Traveler Numbers & Rewards
           </Link>
 
           <Link href="/profile/documents/upload" className="btn btn-primary">
@@ -713,72 +881,36 @@ export default async function ClientProfilePage({
         </div>
       </div>
 
-      <div
-        className="card stack"
-        style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-          border: "1px solid #e6f0f2",
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
-          }}
-        >
-          Traveler Profile
-        </p>
-
-        <h2 style={{ margin: 0 }}>Traveler Numbers & Rewards</h2>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Add or update Known Traveler Numbers, Redress Numbers, Global Entry PASSIDs,
-          passport reference details, airline rewards, hotel rewards, cruise loyalty
-          numbers, rental car memberships, theme park rewards, rail memberships, and
-          other travel-related account numbers.
-        </p>
-
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#fff7ed",
-            border: "1px solid #fed7aa",
-            color: "#9a3412",
-            lineHeight: 1.6,
-          }}
-        >
-          <strong>Sensitive information note:</strong> Traveler numbers and rewards
-          memberships may be sensitive. Do not store passwords here.
-        </div>
-      </div>
-
       <form action={updateClientProfile} className="stack">
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Edit Personal Information</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            Update your basic contact information here. Your email is shown for
-            reference but is not editable here because it is connected to your login.
-          </p>
-
-          <div className="grid grid-2">
+        <Section
+          title="Personal Information"
+          defaultOpen
+          intro="Enter your name as shown on your passport or state-issued ID/DL."
+        >
+          <div className="grid grid-3">
             <Field
               label="First Name"
               name="first_name"
               defaultValue={clientAccount.first_name}
+              helper="As shown on your passport or state-issued ID/DL."
+            />
+
+            <Field
+              label="Middle Name"
+              name="middle_name"
+              defaultValue={clientAccount.middle_name}
+              helper="Use your legal middle name if shown on your travel document."
             />
 
             <Field
               label="Last Name"
               name="last_name"
               defaultValue={clientAccount.last_name}
+              helper="As shown on your passport or state-issued ID/DL."
             />
+          </div>
 
+          <div className="grid grid-2">
             <Field
               label="Preferred Name"
               name="preferred_name"
@@ -808,6 +940,7 @@ export default async function ClientProfilePage({
               name="date_of_birth"
               type="date"
               defaultValue={clientAccount.date_of_birth}
+              helper="Used for travel planning where age or date of birth is required."
             />
 
             <Field
@@ -821,31 +954,36 @@ export default async function ClientProfilePage({
             <Field
               label="Primary Phone"
               name="phone_primary"
-              defaultValue={clientAccount.phone_primary}
+              defaultValue={formatPhoneForDisplay(clientAccount.phone_primary)}
+              placeholder="1 (555) 123-4567"
             />
 
             <Field
               label="Secondary Phone"
               name="phone_secondary"
-              defaultValue={clientAccount.phone_secondary}
+              defaultValue={formatPhoneForDisplay(clientAccount.phone_secondary)}
+              placeholder="1 (555) 123-4567"
             />
           </div>
-        </div>
+        </Section>
 
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Edit Address</h2>
-
+        <Section
+          title="Address"
+          intro="Address autocomplete can be added later with a service like Google Places or Mapbox. For now, enter your address manually."
+        >
           <div className="grid grid-2">
             <Field
               label="Address Line 1"
               name="address_line_1"
               defaultValue={clientAccount.address_line_1}
+              placeholder="Street address"
             />
 
             <Field
               label="Address Line 2"
               name="address_line_2"
               defaultValue={clientAccount.address_line_2}
+              placeholder="Apartment, suite, unit, etc."
             />
 
             <Field label="City" name="city" defaultValue={clientAccount.city} />
@@ -858,40 +996,39 @@ export default async function ClientProfilePage({
               defaultValue={clientAccount.postal_code}
             />
           </div>
-        </div>
+        </Section>
 
-        <div
-          className="card stack"
-          style={{
-            background: hasEmergencyContact ? "#f0fdf4" : "#fff7ed",
-            border: hasEmergencyContact ? "1px solid #bbf7d0" : "1px solid #fed7aa",
-          }}
+        <Section
+          title="Emergency Contact"
+          tone={hasEmergencyContact ? "success" : "warning"}
+          intro="This is the person Cozy Adventure Vacations should have on file as your emergency contact for travel."
         >
-          <h2 style={{ margin: 0 }}>Edit Emergency Contact Information</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            This is the person Cozy Adventure Vacations should have on file as your
-            emergency contact for travel.
-          </p>
-
-          <div className="grid grid-2">
+          <div className="grid grid-3">
             <Field
               label="Emergency Contact Name"
               name="emergency_contact_name"
               defaultValue={clientAccount.emergency_contact_name}
             />
 
+            <SelectField
+              label="Relationship to Client"
+              name="emergency_contact_relationship"
+              defaultValue={clientAccount.emergency_contact_relationship}
+              options={emergencyRelationshipOptions}
+            />
+
             <Field
               label="Emergency Contact Phone"
               name="emergency_contact_phone"
-              defaultValue={clientAccount.emergency_contact_phone}
+              defaultValue={formatPhoneForDisplay(
+                clientAccount.emergency_contact_phone,
+              )}
+              placeholder="1 (555) 123-4567"
             />
           </div>
-        </div>
+        </Section>
 
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Edit Passport & Identity Details</h2>
-
+        <Section title="Passport & Identity Details">
           <div
             style={{
               padding: "12px",
@@ -904,6 +1041,12 @@ export default async function ClientProfilePage({
           >
             <strong>Passport reminder:</strong> {passportStatus.helper}
           </div>
+
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            Your name from the Personal Information section will automatically sync
+            to your primary passport profile. Use the Passport Details & Upload page
+            for a dedicated passport upload area.
+          </p>
 
           <div className="grid grid-2">
             <Field
@@ -920,38 +1063,21 @@ export default async function ClientProfilePage({
             />
           </div>
 
-          <div
-            style={{
-              padding: "12px",
-              borderRadius: 12,
-              background: "#f7fbfc",
-              border: "1px solid #e6f0f2",
-              color: "#667085",
-              lineHeight: 1.6,
-            }}
-          >
-            <strong>Passport image upload:</strong> Uploading a passport image can
-            help keep important travel details organized in your secure client
-            document area. For KTN, Redress, Global Entry PASSID, and rewards
-            memberships, use the traveler numbers section.
-          </div>
-
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/profile/passport-upload" className="btn btn-primary">
-              Upload Passport Image
+              Passport Details & Upload
+            </Link>
+
+            <Link href="/profile/traveler-numbers" className="btn btn-primary">
+              Traveler Numbers & Rewards
             </Link>
           </div>
-        </div>
+        </Section>
 
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Edit Travel Preferences</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            These details help your advisor plan trips that better fit how you like
-            to travel, including airport preferences, flight comfort preferences, and
-            cruise cabin style.
-          </p>
-
+        <Section
+          title="Travel Preferences"
+          intro="These details help your advisor plan trips that better fit how you like to travel."
+        >
           <div className="grid grid-2">
             <AirportPicker
               label="Preferred Airport"
@@ -1004,42 +1130,30 @@ export default async function ClientProfilePage({
             defaultValue={clientAccount.accessibility_notes}
             placeholder="e.g. Accessible room needed, limited walking, scooter use."
           />
+        </Section>
+
+        <Section
+          title="Food Allergies"
+          tone={hasFoodAllergies ? "success" : "warning"}
+          intro="Select any common food allergies that apply, then add anything else in the notes box."
+        >
+          <FoodAllergyCheckboxes savedAllergies={clientAccount.food_allergies} />
 
           <div
-            className="stack"
             style={{
-              background: hasFoodAllergies ? "#f0fdf4" : "#fff7ed",
-              border: hasFoodAllergies ? "1px solid #bbf7d0" : "1px solid #fed7aa",
-              borderRadius: 14,
-              padding: 14,
+              padding: "12px",
+              borderRadius: 12,
+              background: "#ffffff",
+              border: "1px solid #e6f0f2",
+              color: "#667085",
+              lineHeight: 1.6,
             }}
           >
-            <div>
-              <h3 style={{ margin: 0 }}>Food Allergies</h3>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                Select any common food allergies that apply, then add anything else
-                in the notes box.
-              </p>
-            </div>
-
-            <FoodAllergyCheckboxes savedAllergies={clientAccount.food_allergies} />
-
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#ffffff",
-                border: "1px solid #e6f0f2",
-                color: "#667085",
-                lineHeight: 1.6,
-              }}
-            >
-              This helps your advisor keep better travel notes on file. Please still
-              notify airlines, resorts, restaurants, cruise lines, tour operators,
-              or medical professionals directly when required.
-            </div>
+            This helps your advisor keep better travel notes on file. Please still
+            notify airlines, resorts, restaurants, cruise lines, tour operators,
+            or medical professionals directly when required.
           </div>
-        </div>
+        </Section>
 
         <div
           className="card stack"
@@ -1067,22 +1181,10 @@ export default async function ClientProfilePage({
         </div>
       </form>
 
-      <div
-        className="card stack"
-        style={{
-          background: "#f7fbfc",
-          border: "1px solid #e6f0f2",
-        }}
+      <Section
+        title="Supporting Travel Documents"
+        intro="Upload passport images, permission slips, minor travel consent forms, insurance documents, accessibility documentation, or supplier-required paperwork."
       >
-        <h2 style={{ margin: 0 }}>Upload Supporting Travel Documents</h2>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Use this section to upload documents that may be needed for travel, such
-          as permission slips, minor travel consent forms, notarized letters,
-          passport images, insurance documents, accessibility documentation, or
-          supplier-required paperwork.
-        </p>
-
         <div className="grid grid-3">
           <div
             className="card stack"
@@ -1098,7 +1200,7 @@ export default async function ClientProfilePage({
             </p>
 
             <Link href="/profile/passport-upload" className="btn btn-primary">
-              Upload Passport Image
+              Passport Details & Upload
             </Link>
           </div>
 
@@ -1111,8 +1213,7 @@ export default async function ClientProfilePage({
           >
             <h3 style={{ margin: 0 }}>Traveler Numbers & Rewards</h3>
             <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              Add KTN, Redress, Global Entry PASSID, passport reference details,
-              and travel rewards memberships.
+              Add KTN, Redress, Global Entry PASSID, and travel rewards memberships.
             </p>
 
             <Link href="/profile/traveler-numbers" className="btn btn-primary">
@@ -1129,8 +1230,8 @@ export default async function ClientProfilePage({
           >
             <h3 style={{ margin: 0 }}>Other Travel Documents</h3>
             <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              Upload permission slips, minor travel consent documents, one-parent
-              international travel documents, medical notes, or other supporting files.
+              Upload permission slips, minor travel consent documents, medical notes,
+              or other supporting files.
             </p>
 
             <Link href="/profile/documents/upload" className="btn btn-primary">
@@ -1155,8 +1256,7 @@ export default async function ClientProfilePage({
           airlines, cruise lines, border officials, resorts, tour operators, or other
           suppliers require them.
         </div>
-      </div>
-
+      </Section>
     </PageShell>
   );
 }
