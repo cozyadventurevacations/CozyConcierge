@@ -95,6 +95,26 @@ type ClientAccountRow = {
   email: string | null;
 };
 
+type TripMemberRow = {
+  id: string;
+  trip_id: string;
+  client_account_id: string | null;
+  invite_email: string | null;
+  invite_name: string | null;
+  role: "owner" | "contributor" | "viewer" | string;
+  invite_status: "active" | "invited" | "declined" | "removed" | string;
+  can_view_trip: boolean | null;
+  can_view_shared_documents: boolean | null;
+  can_join_group_messages: boolean | null;
+  can_upload_own_documents: boolean | null;
+  can_manage_companions: boolean | null;
+  created_at: string | null;
+  client_accounts:
+    | ClientAccountRow
+    | ClientAccountRow[]
+    | null;
+};
+
 type TripRow = {
   id: string;
   client_account_id: string;
@@ -504,6 +524,65 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
+function TravelCompanionBadge({ role }: { role: string | null | undefined }) {
+  const normalizedRole = role ?? "viewer";
+  const tone =
+    normalizedRole === "owner"
+      ? { background: "#ecfdf3", color: "#027a48" }
+      : normalizedRole === "contributor"
+        ? { background: "#f0f7f8", color: "var(--accent-dark)" }
+        : { background: "#f8fafc", color: "#475569" };
+
+  const label =
+    normalizedRole === "owner"
+      ? "Owner"
+      : normalizedRole === "contributor"
+        ? "Contributor"
+        : "Viewer";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: tone.background,
+        color: tone.color,
+        fontWeight: 800,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function getTripMemberAccount(member: TripMemberRow) {
+  if (Array.isArray(member.client_accounts)) {
+    return member.client_accounts[0] ?? null;
+  }
+
+  return member.client_accounts ?? null;
+}
+
+function getTripMemberDisplayName(member: TripMemberRow) {
+  const account = getTripMemberAccount(member);
+
+  if (account) {
+    const name = `${account.first_name ?? ""} ${account.last_name ?? ""}`.trim();
+    return name || account.email || "Travel Companion";
+  }
+
+  return member.invite_name || member.invite_email || "Invited Companion";
+}
+
+function getTripMemberEmail(member: TripMemberRow) {
+  const account = getTripMemberAccount(member);
+  return account?.email ?? member.invite_email ?? null;
+}
+
 function ActionLink({
   href,
   className,
@@ -659,7 +738,6 @@ export default async function TripDetailPage({
     .from("trips")
     .select("*")
     .eq("id", tripId)
-    .eq("client_account_id", clientAccount.id)
     .single();
 
   if (tripError || !trip) {
@@ -676,6 +754,48 @@ export default async function TripDetailPage({
   }
 
   const tripRow = trip as TripRow;
+
+  const isPrimaryClient = tripRow.client_account_id === clientAccount.id;
+
+  let currentMemberAccess: TripMemberRow | null = null;
+
+  if (!isPrimaryClient) {
+    const { data: memberAccess, error: memberAccessError } = await supabase
+      .from("trip_members" as any)
+      .select("id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at")
+      .eq("trip_id", tripId)
+      .eq("client_account_id", clientAccount.id)
+      .eq("invite_status", "active")
+      .maybeSingle();
+
+    if (memberAccessError) {
+      return (
+        <PageShell title="Trip Detail" subtitle="We could not confirm your trip access.">
+          <div className="card">
+            <p>
+              <strong>Error:</strong>
+            </p>
+            <pre>{JSON.stringify(memberAccessError, null, 2)}</pre>
+          </div>
+        </PageShell>
+      );
+    }
+
+    currentMemberAccess = memberAccess as TripMemberRow | null;
+
+    if (!currentMemberAccess || currentMemberAccess.can_view_trip === false) {
+      return (
+        <PageShell title="Trip Detail" subtitle="We could not load this trip.">
+          <div className="card">
+            <p>
+              <strong>Error:</strong>
+            </p>
+            <p>Trip not found or access denied.</p>
+          </div>
+        </PageShell>
+      );
+    }
+  }
 
   const emailSubject = encodeURIComponent(
     `Question about ${tripRow.trip_name ?? "my trip"}`,
@@ -873,6 +993,56 @@ export default async function TripDetailPage({
   }
 
   const clientReminderRow = clientReminder as TripNoteRow | null;
+
+  const { data: tripMembers, error: tripMembersError } = await supabase
+    .from("trip_members" as any)
+    .select(`
+      id,
+      trip_id,
+      client_account_id,
+      invite_email,
+      invite_name,
+      role,
+      invite_status,
+      can_view_trip,
+      can_view_shared_documents,
+      can_join_group_messages,
+      can_upload_own_documents,
+      can_manage_companions,
+      created_at,
+      client_accounts!trip_members_client_account_id_fkey(
+        id,
+        first_name,
+        last_name,
+        email
+      )
+    `)
+    .eq("trip_id", tripId)
+    .neq("invite_status", "removed")
+    .order("created_at", { ascending: true });
+
+  if (tripMembersError) {
+    return (
+      <PageShell
+        title="Trip Detail"
+        subtitle="There was a problem loading your Travel Circle."
+      >
+        <div className="card">
+          <p>
+            <strong>Error loading Travel Circle:</strong>
+          </p>
+          <pre>{JSON.stringify(tripMembersError, null, 2)}</pre>
+        </div>
+      </PageShell>
+    );
+  }
+
+  const tripMemberRows = (tripMembers ?? []) as TripMemberRow[];
+  const activeTripMembers = tripMemberRows.filter(
+    (member) => member.invite_status === "active" || member.invite_status === "invited",
+  );
+  const ownerMembers = activeTripMembers.filter((member) => member.role === "owner");
+  const companionMembers = activeTripMembers.filter((member) => member.role !== "owner");
 
   const { data: clientDocuments, error: clientDocumentsError } = await supabase
     .from("trip_documents")
@@ -1125,6 +1295,72 @@ export default async function TripDetailPage({
           <ActionLink href="/messages" className="btn btn-primary">
             Open Message Center
           </ActionLink>
+        </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: "#ffffff",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <SectionHeader
+          eyebrow="Travel Companions"
+          title="Your Travel Circle"
+          subtitle="These are the people who currently have shared access to this trip. Personal profile details and private documents remain protected."
+        />
+
+        {activeTripMembers.length === 0 ? (
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            No Travel Companions have been added yet. Your advisor can add companions
+            to this trip when shared access is needed.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {[...ownerMembers, ...companionMembers].map((member) => (
+              <div
+                key={member.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  padding: "12px",
+                  borderRadius: 14,
+                  border: "1px solid #eef2f5",
+                  background: member.role === "owner" ? "#f0fdf4" : "#fbfdfe",
+                }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontWeight: 900 }}>
+                    {getTripMemberDisplayName(member)}
+                  </p>
+                  <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.45 }}>
+                    {getTripMemberEmail(member) ?? "Email not provided"}
+                    {member.invite_status === "invited" ? " • Invitation pending" : ""}
+                  </p>
+                </div>
+
+                <TravelCompanionBadge role={member.role} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+            color: "#667085",
+            lineHeight: 1.6,
+          }}
+        >
+          <strong>Coming soon:</strong> Lead travelers will be able to invite Travel
+          Companions directly. For now, your advisor can manage access for this trip.
         </div>
       </div>
 
