@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { ClientLinkedDocuments } from "@/components/trips/client-linked-documents";
@@ -347,6 +348,181 @@ async function getCurrentClientAccount() {
     user,
     clientAccount: clientAccountByProfile as ClientAccountRow,
   };
+}
+
+function cleanText(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+  return value || null;
+}
+
+function cleanEmail(value: string | null) {
+  if (!value) return null;
+  return value.trim().toLowerCase() || null;
+}
+
+async function requireTripCircleManager(tripId: string) {
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) {
+    throw new Error("Trip not found or access denied.");
+  }
+
+  const isPrimaryClient = trip.client_account_id === clientAccount.id;
+
+  if (isPrimaryClient) {
+    return { supabase, clientAccount, trip };
+  }
+
+  const { data: managerAccess, error: managerAccessError } = await supabase
+    .from("trip_members" as any)
+    .select("id, can_manage_companions, invite_status")
+    .eq("trip_id", tripId)
+    .eq("client_account_id", clientAccount.id)
+    .eq("invite_status", "active")
+    .maybeSingle();
+
+  if (managerAccessError) {
+    throw new Error(managerAccessError.message);
+  }
+
+  if (!managerAccess || managerAccess.can_manage_companions !== true) {
+    throw new Error("You do not have permission to manage Travel Companions for this trip.");
+  }
+
+  return { supabase, clientAccount, trip };
+}
+
+async function inviteTravelCompanion(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const inviteName = cleanText(formData, "invite_name");
+  const inviteEmail = cleanEmail(cleanText(formData, "invite_email"));
+  const requestedRole = String(formData.get("role") ?? "viewer").trim();
+  const role = requestedRole === "contributor" ? "contributor" : "viewer";
+
+  if (!inviteEmail) {
+    throw new Error("Travel Companion email is required.");
+  }
+
+  const { supabase, clientAccount, trip } = await requireTripCircleManager(tripId);
+
+  if (inviteEmail === clientAccount.email?.trim().toLowerCase()) {
+    throw new Error("You are already connected to this trip.");
+  }
+
+  const { data: existingClient, error: existingClientError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .ilike("email", inviteEmail)
+    .maybeSingle();
+
+  if (existingClientError) {
+    throw new Error(existingClientError.message);
+  }
+
+  if (existingClient?.id === trip.client_account_id) {
+    return;
+  }
+
+  let existingMemberQuery = supabase
+    .from("trip_members" as any)
+    .select("id, invite_status")
+    .eq("trip_id", tripId)
+    .neq("invite_status", "removed");
+
+  if (existingClient?.id) {
+    existingMemberQuery = existingMemberQuery.or(
+      `client_account_id.eq.${existingClient.id},invite_email.ilike.${inviteEmail}`,
+    );
+  } else {
+    existingMemberQuery = existingMemberQuery.ilike("invite_email", inviteEmail);
+  }
+
+  const { data: existingMembers, error: existingMemberError } = await existingMemberQuery.limit(1);
+
+  if (existingMemberError) {
+    throw new Error(existingMemberError.message);
+  }
+
+  if ((existingMembers ?? []).length > 0) {
+    return;
+  }
+
+  const { error: insertError } = await supabase.from("trip_members" as any).insert({
+    trip_id: tripId,
+    client_account_id: existingClient?.id ?? null,
+    invite_email: inviteEmail,
+    invite_name: inviteName,
+    role,
+    invite_status: existingClient ? "active" : "invited",
+    invited_by_type: "client",
+    invited_by_client_account_id: clientAccount.id,
+    can_view_trip: true,
+    can_view_shared_documents: true,
+    can_join_group_messages: true,
+    can_upload_own_documents: role === "contributor",
+    can_manage_companions: false,
+  });
+
+  if (insertError) {
+    throw new Error(insertError.message);
+  }
+
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}`);
+}
+
+async function removeTravelCompanion(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const memberId = String(formData.get("member_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!memberId) throw new Error("Missing Travel Companion ID.");
+
+  const { supabase } = await requireTripCircleManager(tripId);
+
+  const { data: member, error: memberError } = await supabase
+    .from("trip_members" as any)
+    .select("id, role")
+    .eq("id", memberId)
+    .eq("trip_id", tripId)
+    .maybeSingle();
+
+  if (memberError) {
+    throw new Error(memberError.message);
+  }
+
+  if (!member) {
+    return;
+  }
+
+  if (member.role === "owner") {
+    throw new Error("The trip owner cannot be removed from the Travel Circle here.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("trip_members" as any)
+    .update({ invite_status: "removed", updated_at: new Date().toISOString() })
+    .eq("id", memberId)
+    .eq("trip_id", tripId);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}`);
 }
 
 function SectionHeader({
@@ -1043,6 +1219,8 @@ export default async function TripDetailPage({
   );
   const ownerMembers = activeTripMembers.filter((member) => member.role === "owner");
   const companionMembers = activeTripMembers.filter((member) => member.role !== "owner");
+  const canManageTravelCircle =
+    isPrimaryClient || currentMemberAccess?.can_manage_companions === true;
 
   const { data: clientDocuments, error: clientDocumentsError } = await supabase
     .from("trip_documents")
@@ -1343,25 +1521,117 @@ export default async function TripDetailPage({
                   </p>
                 </div>
 
-                <TravelCompanionBadge role={member.role} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <TravelCompanionBadge role={member.role} />
+
+                  {canManageTravelCircle && member.role !== "owner" ? (
+                    <form action={removeTravelCompanion}>
+                      <input type="hidden" name="trip_id" value={tripRow.id} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        style={{
+                          padding: "6px 10px",
+                          fontSize: 13,
+                          background: "#ffffff",
+                          color: "#b42318",
+                          border: "1px solid #fecaca",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-            color: "#667085",
-            lineHeight: 1.6,
-          }}
-        >
-          <strong>Coming soon:</strong> Lead travelers will be able to invite Travel
-          Companions directly. For now, your advisor can manage access for this trip.
-        </div>
+        {canManageTravelCircle ? (
+          <div
+            className="card stack"
+            style={{
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+            }}
+          >
+            <SectionHeader
+              eyebrow="Invite Access"
+              title="Invite a Travel Companion"
+              subtitle="Add someone who should be able to view this trip. If they already have a Cozy Concierge client account, access is connected right away. Otherwise, the invite is saved as pending."
+            />
+
+            <form action={inviteTravelCompanion} className="stack">
+              <input type="hidden" name="trip_id" value={tripRow.id} />
+
+              <div className="grid grid-3">
+                <label className="stack-sm">
+                  <span className="label">Name</span>
+                  <input
+                    className="input"
+                    name="invite_name"
+                    placeholder="e.g. Pat Brown"
+                  />
+                </label>
+
+                <label className="stack-sm">
+                  <span className="label">Email</span>
+                  <input
+                    className="input"
+                    name="invite_email"
+                    type="email"
+                    required
+                    placeholder="traveler@example.com"
+                  />
+                </label>
+
+                <label className="stack-sm">
+                  <span className="label">Access Level</span>
+                  <select className="select" name="role" defaultValue="viewer">
+                    <option value="viewer">Viewer — read-only access</option>
+                    <option value="contributor">Contributor — can participate more</option>
+                  </select>
+                </label>
+              </div>
+
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#ffffff",
+                  border: "1px solid #e6f0f2",
+                  color: "#667085",
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Privacy note:</strong> Travel Companions can access shared trip
+                details and client-visible trip documents. Personal profile details,
+                passport uploads, traveler numbers, and private documents remain protected.
+              </div>
+
+              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                <button type="submit" className="btn btn-primary">
+                  Add Travel Companion
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+              color: "#667085",
+              lineHeight: 1.6,
+            }}
+          >
+            Only the lead traveler or your advisor can manage Travel Companions for this trip.
+          </div>
+        )}
       </div>
 
       {clientReminderRow ? (
