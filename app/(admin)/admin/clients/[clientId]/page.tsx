@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { decryptIfPresent } from "@/lib/encryption";
 
 type ClientDetail = {
   id: string;
@@ -158,6 +159,17 @@ function formatDateTime(value: string | null | undefined, fallback = "Not provid
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function safeDecrypt(value: string | null | undefined) {
+  if (!value) return null;
+
+  try {
+    return decryptIfPresent(value);
+  } catch (error) {
+    console.error("Unable to decrypt field:", error);
+    return "Unable to decrypt";
+  }
 }
 
 function getDocumentTypeLabel(type: string | null | undefined) {
@@ -917,14 +929,14 @@ export default async function AdminClientDetailPage({
                     />
                     <InfoItem
                       label="Known Traveler Number / KTN"
-                      value={traveler.known_traveler_number}
+                      value={safeDecrypt(traveler.known_traveler_number)}
                     />
-                    <InfoItem label="Redress Number" value={traveler.redress_number} />
+                    <InfoItem label="Redress Number" value={safeDecrypt(traveler.redress_number)} />
                     <InfoItem
                       label="Global Entry PASSID"
-                      value={traveler.global_entry_passid}
+                      value={safeDecrypt(traveler.global_entry_passid)}
                     />
-                    <InfoItem label="Passport Number" value={traveler.passport_number} />
+                    <InfoItem label="Passport Number" value={safeDecrypt(traveler.passport_number)} />
                     <InfoItem label="Passport Country" value={traveler.passport_country} />
                     <InfoItem
                       label="Passport Expiration"
@@ -962,7 +974,7 @@ export default async function AdminClientDetailPage({
                                 </td>
                                 <td>{loyalty.company_name}</td>
                                 <td>{loyalty.program_name ?? "Not provided"}</td>
-                                <td>{loyalty.loyalty_number}</td>
+                                <td>{safeDecrypt(loyalty.loyalty_number)}</td>
                                 <td>{loyalty.notes ?? "Not provided"}</td>
                                 <td>{formatDateTime(loyalty.created_at, "")}</td>
                               </tr>
@@ -998,7 +1010,7 @@ export default async function AdminClientDetailPage({
         </div>
 
         <div className="grid grid-2">
-          <InfoItem label="Passport Number" value={clientRow.passport_number} />
+          <InfoItem label="Passport Number" value={safeDecrypt(clientRow.passport_number)} />
           <InfoItem
             label="Passport Expiration"
             value={formatDate(clientRow.passport_expiration_date)}
