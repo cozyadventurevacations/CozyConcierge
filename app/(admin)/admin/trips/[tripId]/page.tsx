@@ -2332,7 +2332,7 @@ export default async function AdminTripEditorPage({
 
   const { data: tripMembers, error: tripMembersError } = await supabase
     .from("trip_members" as any)
-    .select("id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, invited_by_type, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at, client_accounts(id, first_name, last_name, email)")
+    .select("id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, invited_by_type, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at, client_accounts!trip_members_client_account_id_fkey(id, first_name, last_name, email)")
     .eq("trip_id", tripId)
     .neq("invite_status", "removed")
     .order("created_at", { ascending: true });
