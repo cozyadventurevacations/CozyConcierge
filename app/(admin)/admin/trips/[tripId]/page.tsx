@@ -451,6 +451,71 @@ function MilestoneStatusBadge({ isCompleted }: { isCompleted: boolean | null }) 
   );
 }
 
+function CommandStatCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: ReactNode;
+  helper?: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: "14px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: "#ffffff",
+        minHeight: 98,
+      }}
+    >
+      <span className="label">{label}</span>
+      <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>
+        {value}
+      </p>
+      {helper ? (
+        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.4 }}>
+          {helper}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CommandStatusBadge({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "good" | "warning" | "danger" | "neutral";
+}) {
+  const styles = {
+    good: { background: "#ecfdf3", color: "#027a48" },
+    warning: { background: "#fff7ed", color: "#c2410c" },
+    danger: { background: "#fef2f2", color: "#b42318" },
+    neutral: { background: "#f0f7f8", color: "var(--accent-dark)" },
+  }[tone];
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "6px 12px",
+        background: styles.background,
+        color: styles.color,
+        fontWeight: 800,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 async function updateTrip(formData: FormData) {
   "use server";
 
@@ -1602,10 +1667,63 @@ export default async function AdminTripEditorPage({
   const commissionOutstandingTotal =
     commissionExpectedTotal - commissionReceivedTotal;
 
+  const milestoneTotal = milestoneRows.length;
+  const milestoneCompleted = milestoneRows.filter(
+    (milestone) => milestone.is_completed,
+  ).length;
+  const milestonePercent = milestoneTotal
+    ? Math.round((milestoneCompleted / milestoneTotal) * 100)
+    : 0;
+
+  const tripComponentSummaries = [
+    { label: "Hotel", component: hotel.component },
+    { label: "Air", component: air.component },
+    { label: "Cruise", component: cruise.component },
+    { label: "Transfer", component: transfer.component },
+    { label: "Activity", component: activity.component },
+    { label: "Insurance", component: insurance.component },
+  ];
+
+  const activeTripComponents = tripComponentSummaries.filter(
+    (summary) => summary.component,
+  );
+  const componentsWithConfirmations = activeTripComponents.filter(
+    (summary) => summary.component?.confirmation_number,
+  );
+  const balanceDue = Number(trip.balance_due ?? 0);
+  const totalPaid = Number(trip.total_paid ?? 0);
+
+  const needsAttentionItems = [
+    !trip.final_payment_due_date && balanceDue > 0
+      ? "Final payment due date is missing while a balance is still open."
+      : null,
+    balanceDue > 0
+      ? `Balance due is still ${formatMoney(balanceDue)}.`
+      : null,
+    !insurance.component
+      ? "Travel insurance has not been added to this trip yet."
+      : null,
+    activeTripComponents.length === 0
+      ? "No trip components have been added yet."
+      : null,
+    activeTripComponents.length > 0 && componentsWithConfirmations.length < activeTripComponents.length
+      ? "One or more trip components are missing confirmation numbers."
+      : null,
+    milestoneTotal === 0
+      ? "Trip milestone checklist has not been created yet."
+      : null,
+    commissionOutstandingTotal > 0
+      ? `Outstanding commission balance is ${formatMoney(commissionOutstandingTotal)}.`
+      : null,
+    !clientReminder
+      ? "No client-facing trip reminder has been added yet."
+      : null,
+  ].filter(Boolean) as string[];
+
   return (
     <PageShell
-      title="Trip Editor"
-      subtitle="Update trip overview, proposal details, components, commissions, and notes."
+      title={trip.trip_name ?? "Trip Command Center"}
+      subtitle="Command center for this trip’s next steps, milestones, payments, components, commissions, and notes."
     >
       <form
         id="mark-trip-commission-received-form"
@@ -1653,68 +1771,145 @@ export default async function AdminTripEditorPage({
                   fontWeight: 800,
                 }}
               >
-                Client Information
+                Trip Command Center
               </p>
 
               <h2 style={{ margin: "6px 0 0" }}>
-                {getClientDisplayName(clientInfo)}
+                {trip.trip_name ?? "Unnamed Trip"}
               </h2>
 
               <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                {clientInfo?.email ?? "No email on file"}
+                {getClientDisplayName(clientInfo)} • {trip.destinations ?? "Destination not provided"} • {formatDate(trip.departure_date, "No departure date")} to {formatDate(trip.return_date, "No return date")}
               </p>
             </div>
 
-            {clientInfo?.id ? (
-              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                <Link
-                  href={`/admin/clients/${clientInfo.id}`}
-                  className="btn btn-primary"
-                >
-                  Open Client
-                </Link>
+            <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+              {clientInfo?.id ? (
+                <>
+                  <Link
+                    href={`/admin/clients/${clientInfo.id}`}
+                    className="btn btn-primary"
+                  >
+                    Open Client
+                  </Link>
 
-                <Link
-                  href={`/admin/clients/${clientInfo.id}/documents`}
-                  className="btn btn-primary"
-                >
-                  Client Documents
-                </Link>
+                  <Link
+                    href={`/admin/clients/${clientInfo.id}/documents`}
+                    className="btn btn-primary"
+                  >
+                    Client Documents
+                  </Link>
+                </>
+              ) : null}
 
-                <Link
-                  href={`/admin/trips/${trip.id}/client-documents`}
-                  className="btn btn-primary"
-                >
-                  Attach Docs to Trip
-                </Link>
-              </div>
-            ) : null}
+              <Link
+                href={`/admin/trips/${trip.id}/client-documents`}
+                className="btn btn-primary"
+              >
+                Attach Docs
+              </Link>
+
+              <Link href={`/admin/trips/${trip.id}/documents`} className="btn btn-primary">
+                Trip Documents
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-3">
-            <div>
-              <span className="label">Client ID</span>
-              <p style={{ margin: "6px 0 0", overflowWrap: "anywhere" }}>
-                {clientInfo?.id ?? "Not linked"}
-              </p>
+            <CommandStatCard
+              label="Trip Status"
+              value={
+                <CommandStatusBadge
+                  tone={
+                    trip.trip_status === "paid_in_full" || trip.trip_status === "travel_complete"
+                      ? "good"
+                      : trip.trip_status === "cancelled"
+                        ? "danger"
+                        : "neutral"
+                  }
+                >
+                  {trip.trip_status ?? "draft"}
+                </CommandStatusBadge>
+              }
+              helper="Current trip workflow status"
+            />
+
+            <CommandStatCard
+              label="Milestones"
+              value={`${milestoneCompleted} / ${milestoneTotal}`}
+              helper={`${milestonePercent}% complete`}
+            />
+
+            <CommandStatCard
+              label="Balance Due"
+              value={formatMoney(balanceDue)}
+              helper={trip.final_payment_due_date ? `Final due ${formatDate(trip.final_payment_due_date)}` : "No final due date"}
+            />
+          </div>
+
+          <div className="grid grid-3">
+            <CommandStatCard
+              label="Trip Components"
+              value={`${activeTripComponents.length} active`}
+              helper={`${componentsWithConfirmations.length} with confirmations`}
+            />
+
+            <CommandStatCard
+              label="Commission Outstanding"
+              value={formatMoney(commissionOutstandingTotal)}
+              helper={`${commissionRows.length} commission record${commissionRows.length === 1 ? "" : "s"}`}
+            />
+
+            <CommandStatCard
+              label="Total Paid"
+              value={formatMoney(totalPaid)}
+              helper="Recorded client payments"
+            />
+          </div>
+
+          <div
+            className="card stack"
+            style={{
+              background: needsAttentionItems.length > 0 ? "#fff7ed" : "#ecfdf3",
+              border: needsAttentionItems.length > 0 ? "1px solid #fed7aa" : "1px solid #bbf7d0",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0 }}>Needs Attention</h3>
+                <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                  Quick review items before this trip is considered buttoned up.
+                </p>
+              </div>
+
+              <CommandStatusBadge tone={needsAttentionItems.length > 0 ? "warning" : "good"}>
+                {needsAttentionItems.length > 0
+                  ? `${needsAttentionItems.length} item${needsAttentionItems.length === 1 ? "" : "s"}`
+                  : "All clear"}
+              </CommandStatusBadge>
             </div>
 
-            <div>
-              <span className="label">Email</span>
-              <p style={{ margin: "6px 0 0", overflowWrap: "anywhere" }}>
-                {clientInfo?.email ?? "Not provided"}
+            {needsAttentionItems.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
+                {needsAttentionItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ margin: 0, lineHeight: 1.6 }}>
+                No immediate workflow issues detected from the trip details currently entered.
               </p>
-            </div>
-
-            <div>
-              <span className="label">Trip</span>
-              <p style={{ margin: "6px 0 0" }}>
-                {trip.trip_name ?? "Not provided"}
-              </p>
-            </div>
+            )}
           </div>
         </div>
-
 
         <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
           {tripMilestonesError ? (
@@ -1890,7 +2085,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Proposal" defaultOpen>
+        <CollapsibleSection title="Proposal">
           <div className="grid grid-2">
             <label>
               <span className="label">Planning Fee</span>
