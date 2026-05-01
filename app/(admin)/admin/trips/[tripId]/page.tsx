@@ -832,16 +832,66 @@ function TripMemberRoleBadge({ role }: { role: string | null | undefined }) {
   return <CommandStatusBadge tone={tone}>{getTripMemberRoleLabel(role)}</CommandStatusBadge>;
 }
 
+function getTripMemberStatusLabel(status: string | null | undefined) {
+  switch (status) {
+    case "active":
+      return "Active Companion";
+    case "invited":
+      return "Pending Invitation";
+    case "declined":
+      return "Declined Invitation";
+    case "removed":
+      return "Removed";
+    default:
+      return status ?? "Pending";
+  }
+}
+
+function getTripMemberStatusTone(status: string | null | undefined): "good" | "warning" | "danger" | "neutral" {
+  switch (status) {
+    case "active":
+      return "good";
+    case "invited":
+      return "warning";
+    case "declined":
+    case "removed":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function getTripMemberHelperText(member: TripMemberRow) {
+  if (member.role === "owner") {
+    return "Primary trip owner. This access is tied to the lead client for the trip.";
+  }
+
+  if (member.invite_status === "invited") {
+    return `Invite pending. Ask them to create or log into Cozy Concierge using ${getTripMemberEmail(member)}, then open Travel Invitations to accept shared trip access.`;
+  }
+
+  if (member.invite_status === "active") {
+    return "Active access. This companion can open shared trip details, shared documents, and Travel Circle messages based on their role.";
+  }
+
+  if (member.invite_status === "declined") {
+    return "This invitation was declined. Add them again if they need access later.";
+  }
+
+  return "Travel Circle access is managed from this section.";
+}
+
 function TripCompanionCard({ member }: { member: TripMemberRow }) {
   const isOwner = member.role === "owner";
+  const isPendingInvite = member.invite_status === "invited";
 
   return (
     <div
       style={{
         padding: "14px",
         borderRadius: 14,
-        border: "1px solid #e6f0f2",
-        background: isOwner ? "#f0fdf4" : "#ffffff",
+        border: isPendingInvite ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+        background: isOwner ? "#f0fdf4" : isPendingInvite ? "#fff7ed" : "#ffffff",
         display: "grid",
         gap: 10,
       }}
@@ -864,18 +914,27 @@ function TripCompanionCard({ member }: { member: TripMemberRow }) {
           </p>
         </div>
 
-        <TripMemberRoleBadge role={member.role} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <TripMemberRoleBadge role={member.role} />
+          <CommandStatusBadge tone={getTripMemberStatusTone(member.invite_status)}>
+            {getTripMemberStatusLabel(member.invite_status)}
+          </CommandStatusBadge>
+        </div>
       </div>
 
+      <p style={{ margin: 0, color: isPendingInvite ? "#9a3412" : "#667085", lineHeight: 1.55 }}>
+        {getTripMemberHelperText(member)}
+      </p>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <CommandStatusBadge tone={member.invite_status === "active" ? "good" : "warning"}>
-          {member.invite_status}
-        </CommandStatusBadge>
         {member.can_join_group_messages ? (
           <CommandStatusBadge tone="neutral">Group messages</CommandStatusBadge>
         ) : null}
         {member.can_view_shared_documents ? (
           <CommandStatusBadge tone="neutral">Shared docs</CommandStatusBadge>
+        ) : null}
+        {member.can_upload_own_documents ? (
+          <CommandStatusBadge tone="neutral">Can upload own docs</CommandStatusBadge>
         ) : null}
       </div>
 
@@ -892,13 +951,9 @@ function TripCompanionCard({ member }: { member: TripMemberRow }) {
             fontSize: 13,
           }}
         >
-          Remove Companion
+          {isPendingInvite ? "Cancel Invitation" : "Remove Companion"}
         </button>
-      ) : (
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.45 }}>
-          Primary trip owner. This access is tied to the lead client for the trip.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -3178,7 +3233,7 @@ export default async function AdminTripEditorPage({
                 <h3 style={{ margin: 0 }}>Add a Travel Companion</h3>
                 <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
                   Add an existing client by email, or invite someone by email for later account setup.
-                  Owners are created automatically from the trip’s primary client.
+                  If the email does not already belong to a client account, the invite will stay pending until they register or log in with that same email and open Travel Invitations.
                 </p>
 
                 <div className="grid grid-3">
@@ -3232,10 +3287,27 @@ export default async function AdminTripEditorPage({
                   No Travel Companions are linked yet. The SQL setup should automatically create an owner row for the primary client.
                 </p>
               ) : (
-                <div className="grid grid-2">
-                  {activeTripMemberRows.map((member) => (
-                    <TripCompanionCard key={member.id} member={member} />
-                  ))}
+                <div className="stack">
+                  {invitedTripMembers.length > 0 ? (
+                    <div
+                      style={{
+                        padding: "12px",
+                        borderRadius: 12,
+                        background: "#fff7ed",
+                        border: "1px solid #fed7aa",
+                        color: "#9a3412",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <strong>Pending invitation next step:</strong> Ask invited companions to create or log into Cozy Concierge with the invited email address, then open <strong>Travel Invitations</strong> from their client dashboard or navigation.
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-2">
+                    {activeTripMemberRows.map((member) => (
+                      <TripCompanionCard key={member.id} member={member} />
+                    ))}
+                  </div>
                 </div>
               )}
 
