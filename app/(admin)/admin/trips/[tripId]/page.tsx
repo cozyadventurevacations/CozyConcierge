@@ -516,6 +516,61 @@ function CommandStatusBadge({
   );
 }
 
+function WorkflowActionCard({
+  title,
+  description,
+  href,
+  cta = "Go",
+}: {
+  title: string;
+  description: string;
+  href: string;
+  cta?: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "14px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: "#ffffff",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        minHeight: 150,
+      }}
+    >
+      <div>
+        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+          {title}
+        </p>
+        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+          {description}
+        </p>
+      </div>
+
+      <a
+        href={href}
+        style={{
+          marginTop: "auto",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          alignSelf: "flex-start",
+          padding: "8px 12px",
+          borderRadius: 10,
+          background: "var(--accent-dark)",
+          color: "white",
+          fontWeight: 800,
+          textDecoration: "none",
+        }}
+      >
+        {cta}
+      </a>
+    </div>
+  );
+}
+
 async function updateTrip(formData: FormData) {
   "use server";
 
@@ -1720,6 +1775,70 @@ export default async function AdminTripEditorPage({
       : null,
   ].filter(Boolean) as string[];
 
+  const nextBestActions = [
+    milestonePercent < 100
+      ? {
+          title: "Continue the timeline",
+          description: "Review the milestone checklist and mark the next completed trip task.",
+          href: "#trip-timeline",
+          cta: "Open Timeline",
+        }
+      : null,
+    !trip.final_payment_due_date && balanceDue > 0
+      ? {
+          title: "Set final payment due date",
+          description: "A balance is still open, but the final payment due date is missing.",
+          href: "#trip-overview",
+          cta: "Edit Overview",
+        }
+      : null,
+    !insurance.component
+      ? {
+          title: "Review travel protection",
+          description: "Add the insurance component or document that coverage was declined.",
+          href: "#insurance-component",
+          cta: "Open Insurance",
+        }
+      : null,
+    activeTripComponents.length === 0
+      ? {
+          title: "Add trip components",
+          description: "Start adding the hotel, air, cruise, transfer, activity, or insurance details.",
+          href: "#hotel-component",
+          cta: "Start Components",
+        }
+      : null,
+    activeTripComponents.length > 0 && componentsWithConfirmations.length < activeTripComponents.length
+      ? {
+          title: "Check confirmation numbers",
+          description: "At least one active component is missing a supplier confirmation number.",
+          href: "#hotel-component",
+          cta: "Review Components",
+        }
+      : null,
+    commissionOutstandingTotal > 0
+      ? {
+          title: "Review commissions",
+          description: "There is still outstanding commission expected for this trip.",
+          href: "#commissions",
+          cta: "Open Commissions",
+        }
+      : null,
+    !clientReminder
+      ? {
+          title: "Add client reminder",
+          description: "Create a client-facing reminder or note so the next communication is documented.",
+          href: "#trip-notes",
+          cta: "Open Notes",
+        }
+      : null,
+  ].filter(Boolean).slice(0, 4) as Array<{
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+  }>;
+
   return (
     <PageShell
       title={trip.trip_name ?? "Trip Command Center"}
@@ -1909,8 +2028,50 @@ export default async function AdminTripEditorPage({
               </p>
             )}
           </div>
+
+          <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0 }}>Recommended Next Steps</h3>
+                <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                  Use these shortcuts to jump straight to the next part of the workflow.
+                </p>
+              </div>
+
+              <CommandStatusBadge tone={nextBestActions.length > 0 ? "warning" : "good"}>
+                {nextBestActions.length > 0 ? "Action plan ready" : "No urgent actions"}
+              </CommandStatusBadge>
+            </div>
+
+            {nextBestActions.length > 0 ? (
+              <div className="grid grid-2">
+                {nextBestActions.map((action) => (
+                  <WorkflowActionCard
+                    key={action.title}
+                    title={action.title}
+                    description={action.description}
+                    href={action.href}
+                    cta={action.cta}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p style={{ margin: 0, lineHeight: 1.6 }}>
+                This trip is in good shape based on the details currently entered.
+              </p>
+            )}
+          </div>
         </div>
 
+        <span id="trip-timeline" />
         <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
           {tripMilestonesError ? (
             <div className="card">
@@ -1984,6 +2145,7 @@ export default async function AdminTripEditorPage({
             </>
           )}
         </CollapsibleSection>
+        <span id="trip-overview" />
         <CollapsibleSection title="Trip Overview" defaultOpen>
           <div className="grid grid-2">
             <label>
@@ -2085,6 +2247,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
+        <span id="proposal" />
         <CollapsibleSection title="Proposal">
           <div className="grid grid-2">
             <label>
@@ -2138,6 +2301,7 @@ export default async function AdminTripEditorPage({
           </label>
         </CollapsibleSection>
 
+        <span id="commissions" />
         <CollapsibleSection title="Commissions for This Trip">
           <div
             style={{
@@ -2297,6 +2461,7 @@ export default async function AdminTripEditorPage({
           )}
         </CollapsibleSection>
 
+        <span id="hotel-component" />
         <CollapsibleSection title="Hotel Component">
           <ComponentCommissionLink
             tripId={trip.id}
@@ -2477,7 +2642,8 @@ export default async function AdminTripEditorPage({
           </label>
         </CollapsibleSection>
 
-               <CollapsibleSection title="Air Component">
+        <span id="air-component" />
+        <CollapsibleSection title="Air Component">
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={air.component?.supplier_id ?? ""}
@@ -2774,6 +2940,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
+        <span id="cruise-component" />
         <CollapsibleSection title="Cruise Component">
           <ComponentCommissionLink
             tripId={trip.id}
@@ -2960,6 +3127,7 @@ export default async function AdminTripEditorPage({
           </label>
         </CollapsibleSection>
 
+        <span id="transfer-component" />
         <CollapsibleSection title="Transfer Component">
           <ComponentCommissionLink
             tripId={trip.id}
@@ -3164,6 +3332,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
+        <span id="activity-component" />
         <CollapsibleSection title="Activity Component">
           <ComponentCommissionLink
             tripId={trip.id}
@@ -3359,6 +3528,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
+        <span id="insurance-component" />
         <CollapsibleSection title="Insurance Component">
           <ComponentCommissionLink
             tripId={trip.id}
@@ -3543,6 +3713,7 @@ export default async function AdminTripEditorPage({
           </div>
         </CollapsibleSection>
 
+        <span id="trip-notes" />
         <CollapsibleSection title="Notes">
           <div className="card stack" style={{ background: "#fffaf0" }}>
             <h3 style={{ margin: 0 }}>Internal Notes</h3>
