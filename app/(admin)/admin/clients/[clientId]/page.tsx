@@ -547,35 +547,29 @@ export default async function AdminClientDetailPage({
       title={displayName}
       subtitle="Client dashboard with contact details, travel history, requests, notes, documents, traveler numbers, and preferences."
     >
+      {/* ── Action Buttons — all in one row ── */}
       <div
         style={{
           display: "flex",
           gap: 12,
           flexWrap: "wrap",
-          justifyContent: "space-between",
           alignItems: "center",
           marginBottom: 16,
         }}
       >
         <ActionButton href="/admin/clients">Back to Clients</ActionButton>
-
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton href={`/admin/clients/${clientRow.id}/documents`}>
-            View Client Documents
-          </ActionButton>
-
-          <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>
-            Add Client Note
-          </ActionButton>
-
-          <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>
-            Add New Trip
-          </ActionButton>
-
-          <ActionButton href={`/admin/clients/${clientRow.id}/edit`}>
-            Edit Client
-          </ActionButton>
-        </div>
+        <ActionButton href={`/admin/clients/${clientRow.id}/documents`}>
+          View Client Documents
+        </ActionButton>
+        <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>
+          Add Client Note
+        </ActionButton>
+        <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>
+          Add New Trip
+        </ActionButton>
+        <ActionButton href={`/admin/clients/${clientRow.id}/edit`}>
+          Edit Client
+        </ActionButton>
       </div>
 
       <div className="grid grid-3">
@@ -1106,7 +1100,7 @@ export default async function AdminClientDetailPage({
           <div>
             <p>No trips linked to this client yet.</p>
             <p style={{ marginBottom: 0, color: "#64748b" }}>
-              Use the Add Trip button to create this client’s first trip record.
+              Use the Add Trip button to create this client's first trip record.
             </p>
           </div>
         ) : (
