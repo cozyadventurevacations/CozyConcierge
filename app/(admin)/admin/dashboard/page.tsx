@@ -472,7 +472,7 @@ export default async function AdminDashboardPage() {
       .gt("admin_unread_count", 0),
     supabase
       .from("message_threads")
-      .select("id, client_account_id, trip_id, subject, status, priority, admin_unread_count, client_unread_count, last_message_at, created_at, client_accounts(id, first_name, last_name, email, preferred_name), trips(id, trip_name, destinations, departure_date)")
+      .select("id, client_account_id, trip_id, subject, status, priority, admin_unread_count, client_unread_count, last_message_at, created_at, client_accounts!message_threads_client_account_id_fkey(id, first_name, last_name, email, preferred_name), trips(id, trip_name, destinations, departure_date)")
       .eq("status", "open")
       .order("last_message_at", { ascending: false })
       .limit(8),
