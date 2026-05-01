@@ -110,6 +110,28 @@ type TravelerLoyaltyNumberRow = {
   created_at: string | null;
 };
 
+type TravelCircleTripRow = {
+  id: string;
+  client_account_id: string | null;
+  trip_name: string | null;
+  destinations: string | null;
+  departure_date: string | null;
+  return_date: string | null;
+  trip_status: string | null;
+};
+
+type TravelCircleAccessRow = {
+  id: string;
+  trip_id: string;
+  client_account_id: string | null;
+  invite_email: string | null;
+  invite_name: string | null;
+  role: "owner" | "contributor" | "viewer" | string;
+  invite_status: "active" | "invited" | "declined" | "removed" | string;
+  created_at: string | null;
+  trips: TravelCircleTripRow | TravelCircleTripRow[] | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -357,6 +379,54 @@ function LoyaltyTypeBadge({ type }: { type: string | null | undefined }) {
   );
 }
 
+function getTravelCircleTrip(access: TravelCircleAccessRow) {
+  if (Array.isArray(access.trips)) {
+    return access.trips[0] ?? null;
+  }
+
+  return access.trips ?? null;
+}
+
+function getTravelCircleRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "owner":
+      return "Owner";
+    case "contributor":
+      return "Contributor";
+    case "viewer":
+      return "Viewer";
+    default:
+      return role ?? "Viewer";
+  }
+}
+
+function TravelCircleStatusBadge({
+  status,
+}: {
+  status: string | null | undefined;
+}) {
+  const isActive = status === "active";
+  const isInvited = status === "invited";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: isActive ? "#ecfdf3" : isInvited ? "#fff7ed" : "#f8fafc",
+        color: isActive ? "#027a48" : isInvited ? "#c2410c" : "#475569",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isActive ? "Active" : isInvited ? "Pending" : status ?? "Unknown"}
+    </span>
+  );
+}
+
 async function updateClientNoteStatus(formData: FormData) {
   "use server";
 
@@ -516,6 +586,30 @@ export default async function AdminClientDetailPage({
     travelerLoyaltyNumbersResult.data ?? []
   ) as TravelerLoyaltyNumberRow[];
 
+  const normalizedClientEmail = clientRow.email?.trim().toLowerCase() ?? "";
+
+  const [travelCircleByClientResult, travelCircleByEmailResult] = await Promise.all([
+    supabase
+      .from("trip_members" as any)
+      .select(
+        "id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, created_at, trips!trip_members_trip_id_fkey(id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status)",
+      )
+      .eq("client_account_id", clientId)
+      .neq("invite_status", "removed")
+      .order("created_at", { ascending: false }),
+
+    normalizedClientEmail
+      ? supabase
+          .from("trip_members" as any)
+          .select(
+            "id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, created_at, trips!trip_members_trip_id_fkey(id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status)",
+          )
+          .ilike("invite_email", normalizedClientEmail)
+          .neq("invite_status", "removed")
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
   const clientName =
     `${clientRow.first_name ?? ""} ${clientRow.last_name ?? ""}`.trim() ||
     "Unnamed Client";
@@ -555,6 +649,34 @@ export default async function AdminClientDetailPage({
       document.document_type === "minor_permission" ||
       document.document_type === "minor_international_consent",
   );
+
+  const travelCircleAccessMap = new Map<string, TravelCircleAccessRow>();
+
+  for (const access of [
+    ...((travelCircleByClientResult.data ?? []) as TravelCircleAccessRow[]),
+    ...((travelCircleByEmailResult.data ?? []) as TravelCircleAccessRow[]),
+  ]) {
+    travelCircleAccessMap.set(access.id, access);
+  }
+
+  const travelCircleAccessRows = Array.from(travelCircleAccessMap.values());
+  const ownedTripIds = new Set(tripRows.map((trip) => trip.id));
+  const ownedTravelCircleRows = travelCircleAccessRows.filter(
+    (access) => access.role === "owner" || ownedTripIds.has(access.trip_id),
+  );
+  const sharedTravelCircleRows = travelCircleAccessRows.filter(
+    (access) =>
+      access.role !== "owner" &&
+      access.invite_status === "active" &&
+      !ownedTripIds.has(access.trip_id),
+  );
+  const pendingTravelCircleRows = travelCircleAccessRows.filter(
+    (access) => access.invite_status === "invited",
+  );
+  const declinedTravelCircleRows = travelCircleAccessRows.filter(
+    (access) => access.invite_status === "declined",
+  );
+  const travelCircleError = travelCircleByClientResult.error ?? travelCircleByEmailResult.error;
 
   return (
     <PageShell
@@ -637,6 +759,20 @@ export default async function AdminClientDetailPage({
           <span className="label">Minor Travel Documents</span>
           <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
             {minorTravelDocuments.length}
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Shared Trip Access</span>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+            {sharedTravelCircleRows.length}
+          </p>
+        </div>
+
+        <div className="card">
+          <span className="label">Pending Invites</span>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+            {pendingTravelCircleRows.length}
           </p>
         </div>
       </div>
@@ -1094,6 +1230,176 @@ export default async function AdminClientDetailPage({
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      <div className="card stack">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>Travel Circle Access</h2>
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+              See where this client is connected as a lead traveler, accepted Travel Companion, or pending invite.
+            </p>
+          </div>
+
+          <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>
+            Add Trip
+          </ActionButton>
+        </div>
+
+        {travelCircleError ? (
+          <div>
+            <p>
+              <strong>Error loading Travel Circle access:</strong>
+            </p>
+            <pre>{JSON.stringify(travelCircleError, null, 2)}</pre>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-3">
+              <div className="card">
+                <span className="label">Owned / Lead Trips</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {tripRows.length}
+                </p>
+              </div>
+
+              <div className="card">
+                <span className="label">Shared With Client</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {sharedTravelCircleRows.length}
+                </p>
+              </div>
+
+              <div className="card">
+                <span className="label">Pending / Declined Invites</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {pendingTravelCircleRows.length} / {declinedTravelCircleRows.length}
+                </p>
+              </div>
+            </div>
+
+            {sharedTravelCircleRows.length === 0 && pendingTravelCircleRows.length === 0 ? (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#f7fbfc",
+                  border: "1px solid #e6f0f2",
+                  color: "#667085",
+                  lineHeight: 1.6,
+                }}
+              >
+                <p style={{ margin: 0 }}>
+                  This client does not currently have shared Travel Circle access or pending invitations.
+                </p>
+              </div>
+            ) : null}
+
+            {sharedTravelCircleRows.length > 0 ? (
+              <div className="card stack" style={{ background: "#ffffff" }}>
+                <h3 style={{ margin: 0 }}>Trips Shared With This Client</h3>
+
+                <div style={{ width: "100%", overflowX: "auto" }}>
+                  <table className="table" style={{ minWidth: 860 }}>
+                    <thead>
+                      <tr>
+                        <th>Trip</th>
+                        <th>Destination</th>
+                        <th>Dates</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Open</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sharedTravelCircleRows.map((access) => {
+                        const trip = getTravelCircleTrip(access);
+
+                        return (
+                          <tr key={access.id}>
+                            <td>{trip?.trip_name ?? "Shared Trip"}</td>
+                            <td>{trip?.destinations ?? "Not provided"}</td>
+                            <td>
+                              {formatDate(trip?.departure_date, "")}
+                              {trip?.return_date ? ` → ${formatDate(trip.return_date, "")}` : ""}
+                            </td>
+                            <td>{getTravelCircleRoleLabel(access.role)}</td>
+                            <td>
+                              <TravelCircleStatusBadge status={access.invite_status} />
+                            </td>
+                            <td>
+                              {trip?.id ? (
+                                <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary">
+                                  Open Trip
+                                </Link>
+                              ) : (
+                                "Not available"
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {pendingTravelCircleRows.length > 0 ? (
+              <div className="card stack" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+                <h3 style={{ margin: 0 }}>Pending Travel Circle Invitations</h3>
+                <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
+                  Ask the traveler to create or log into Cozy Concierge using the invited email, then open Travel Invitations to accept shared trip access.
+                </p>
+
+                <div style={{ width: "100%", overflowX: "auto" }}>
+                  <table className="table" style={{ minWidth: 860 }}>
+                    <thead>
+                      <tr>
+                        <th>Trip</th>
+                        <th>Invited Email</th>
+                        <th>Role</th>
+                        <th>Invited</th>
+                        <th>Open</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingTravelCircleRows.map((access) => {
+                        const trip = getTravelCircleTrip(access);
+
+                        return (
+                          <tr key={access.id}>
+                            <td>{trip?.trip_name ?? "Shared Trip"}</td>
+                            <td>{access.invite_email ?? "Not provided"}</td>
+                            <td>{getTravelCircleRoleLabel(access.role)}</td>
+                            <td>{formatDateTime(access.created_at, "")}</td>
+                            <td>
+                              {trip?.id ? (
+                                <Link href={`/admin/trips/${trip.id}#travel-companions`} className="btn btn-primary">
+                                  Open Trip
+                                </Link>
+                              ) : (
+                                "Not available"
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 
