@@ -587,17 +587,29 @@ function StickyTripActionBar({
   clientId: string | null | undefined;
   tripId: string;
 }) {
+  const sectionLinkStyle = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "7px 10px",
+    borderRadius: 999,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    color: "#334155",
+    fontWeight: 800,
+    fontSize: 13,
+    textDecoration: "none",
+    whiteSpace: "nowrap" as const,
+  };
+
   return (
     <div
       style={{
         position: "sticky",
         top: 8,
         zIndex: 20,
-        display: "flex",
-        justifyContent: "space-between",
+        display: "grid",
         gap: 10,
-        flexWrap: "wrap",
-        alignItems: "center",
         padding: "10px",
         borderRadius: 14,
         border: "1px solid #e6f0f2",
@@ -606,39 +618,59 @@ function StickyTripActionBar({
         backdropFilter: "blur(8px)",
       }}
     >
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <a href="#trip-timeline" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Timeline
-        </a>
-        <a href="#trip-snapshot" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Snapshot
-        </a>
-        <a href="#document-readiness" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Documents
-        </a>
-        <a href="#trip-overview" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Overview
-        </a>
-        <a href="#commissions" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Money
-        </a>
-        <a href="#trip-notes" className="btn btn-primary" style={{ textDecoration: "none" }}>
-          Notes
-        </a>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {clientId ? (
-          <Link href={`/admin/clients/${clientId}`} className="btn btn-primary">
-            Open Client
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Link href="/admin/trips" className="btn btn-primary">
+            Back to Trips
           </Link>
-        ) : null}
-        <Link href={`/admin/trips/${tripId}/client-documents`} className="btn btn-primary">
-          Attach Docs
-        </Link>
+          {clientId ? (
+            <Link href={`/admin/clients/${clientId}`} className="btn btn-primary">
+              Open Client
+            </Link>
+          ) : null}
+          <Link href={`/admin/trips/${tripId}/client-documents`} className="btn btn-primary">
+            Attach Client Docs
+          </Link>
+          <Link href={`/admin/trips/${tripId}/documents`} className="btn btn-primary">
+            View Trip Docs
+          </Link>
+        </div>
+
         <button type="submit" className="btn btn-primary">
           Save Changes
         </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="label" style={{ marginRight: 2 }}>
+          Jump to
+        </span>
+        <a href="#trip-timeline" style={sectionLinkStyle}>
+          Timeline
+        </a>
+        <a href="#trip-snapshot" style={sectionLinkStyle}>
+          Snapshot
+        </a>
+        <a href="#document-readiness" style={sectionLinkStyle}>
+          Documents
+        </a>
+        <a href="#trip-overview" style={sectionLinkStyle}>
+          Overview
+        </a>
+        <a href="#commissions" style={sectionLinkStyle}>
+          Money
+        </a>
+        <a href="#trip-notes" style={sectionLinkStyle}>
+          Notes
+        </a>
       </div>
     </div>
   );
@@ -806,8 +838,9 @@ function SnapshotCard({
             justifyContent: "center",
             padding: "7px 10px",
             borderRadius: 10,
-            background: "var(--accent-dark)",
-            color: "white",
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#334155",
             fontWeight: 800,
             fontSize: 13,
             textDecoration: "none",
@@ -2122,7 +2155,7 @@ export default async function AdminTripEditorPage({
           : "No client documents are currently on file.",
       tone: clientDocumentsError ? "warning" : clientDocumentRows.length > 0 ? "good" : "warning",
       href: clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#trip-snapshot",
-      cta: "Open Client Docs",
+      cta: "View Client Docs",
     },
     {
       title: "Attached to this trip",
@@ -2134,7 +2167,7 @@ export default async function AdminTripEditorPage({
           : "No client documents are attached to this trip yet.",
       tone: attachedTripDocumentsError ? "warning" : attachedTripDocumentRows.length > 0 ? "good" : "warning",
       href: `/admin/trips/${trip.id}/client-documents`,
-      cta: "Attach Docs",
+      cta: "Attach Client Docs",
     },
     {
       title: "Passport document",
@@ -2370,35 +2403,23 @@ export default async function AdminTripEditorPage({
               </p>
             </div>
 
-            <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-              {clientInfo?.id ? (
-                <>
-                  <Link
-                    href={`/admin/clients/${clientInfo.id}`}
-                    className="btn btn-primary"
-                  >
-                    Open Client
-                  </Link>
-
-                  <Link
-                    href={`/admin/clients/${clientInfo.id}/documents`}
-                    className="btn btn-primary"
-                  >
-                    Client Documents
-                  </Link>
-                </>
-              ) : null}
-
-              <Link
-                href={`/admin/trips/${trip.id}/client-documents`}
-                className="btn btn-primary"
-              >
-                Attach Docs
-              </Link>
-
-              <Link href={`/admin/trips/${trip.id}/documents`} className="btn btn-primary">
-                Trip Documents
-              </Link>
+            <div
+              style={{
+                minWidth: 220,
+                padding: "12px",
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #e6f0f2",
+                color: "#667085",
+                lineHeight: 1.5,
+              }}
+            >
+              <p style={{ margin: 0, fontWeight: 800, color: "var(--accent-dark)" }}>
+                Primary actions live in the sticky bar.
+              </p>
+              <p style={{ margin: "6px 0 0" }}>
+                Use the jump links there to move through this trip without scrolling and hunting.
+              </p>
             </div>
           </div>
 
