@@ -1078,6 +1078,13 @@ export default async function TripDetailPage({
           </ActionLink>
 
           <ActionLink
+            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
+            className="btn btn-primary"
+          >
+            Message About This Trip
+          </ActionLink>
+
+          <ActionLink
             href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`}
             className="btn btn-primary"
           >
@@ -1090,6 +1097,33 @@ export default async function TripDetailPage({
 
           <ActionLink href="/trips" className="btn btn-primary">
             Back to My Trips
+          </ActionLink>
+        </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          border: "1px solid #e6f0f2",
+          background: "linear-gradient(135deg, #fffaf5 0%, #ffffff 70%)",
+        }}
+      >
+        <SectionHeader
+          eyebrow="Concierge Messages"
+          title="Have a Question About This Trip?"
+          subtitle="Send a secure trip-specific message directly from your Cozy Concierge portal. Your advisor will see the question connected to this trip."
+        />
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
+          <ActionLink
+            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
+            className="btn btn-primary"
+          >
+            Message About This Trip
+          </ActionLink>
+
+          <ActionLink href="/messages" className="btn btn-primary">
+            Open Message Center
           </ActionLink>
         </div>
       </div>
@@ -1850,6 +1884,13 @@ export default async function TripDetailPage({
             alignItems: "stretch",
           }}
         >
+          <ActionLink
+            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
+            className="btn btn-primary"
+          >
+            Message Your Advisor
+          </ActionLink>
+
           <ActionLink
             href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`}
             className="btn btn-primary"

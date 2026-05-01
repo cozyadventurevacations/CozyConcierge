@@ -252,9 +252,9 @@ async function replyToClientThread(formData: FormData) {
 export default async function ClientMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ threadId?: string; sent?: string }>;
+  searchParams: Promise<{ threadId?: string; sent?: string; tripId?: string; subject?: string }>;
 }) {
-  const { threadId } = await searchParams;
+  const { threadId, tripId: requestedTripId, subject: requestedSubject } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
   const { data: trips } = await supabase
@@ -281,6 +281,8 @@ export default async function ClientMessagesPage({
   }
 
   const tripRows = (trips ?? []) as TripOption[];
+  const defaultTripId = requestedTripId && tripRows.some((trip) => trip.trip_id === requestedTripId) ? requestedTripId : "";
+  const defaultSubject = requestedSubject ? decodeURIComponent(requestedSubject) : "";
   const threadRows = (threads ?? []) as MessageThreadRow[];
   const selectedThread = threadRows.find((thread) => thread.id === threadId) ?? threadRows[0] ?? null;
 
@@ -364,7 +366,7 @@ export default async function ClientMessagesPage({
           <form action={createClientMessageThread} className="stack">
             <label>
               <span className="label">Related Trip</span>
-              <select className="select" name="trip_id" defaultValue="">
+              <select className="select" name="trip_id" defaultValue={defaultTripId}>
                 <option value="">General question</option>
                 {tripRows.map((trip) => (
                   <option key={trip.trip_id} value={trip.trip_id}>
@@ -376,7 +378,7 @@ export default async function ClientMessagesPage({
 
             <label>
               <span className="label">Subject</span>
-              <input className="input" name="subject" placeholder="Example: Question about my final payment" />
+              <input className="input" name="subject" defaultValue={defaultSubject} placeholder="Example: Question about my final payment" />
             </label>
 
             <label>
