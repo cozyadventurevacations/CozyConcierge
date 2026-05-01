@@ -76,6 +76,20 @@ type TripMilestoneRow = {
   updated_at: string | null;
 };
 
+type ClientDocumentRow = {
+  id: string;
+  document_type: string | null;
+  document_title: string | null;
+  file_name: string | null;
+  created_at: string | null;
+};
+
+type TripAttachedDocumentRow = {
+  id: string;
+  client_document_id: string | null;
+  created_at: string | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -599,6 +613,9 @@ function StickyTripActionBar({
         <a href="#trip-snapshot" className="btn btn-primary" style={{ textDecoration: "none" }}>
           Snapshot
         </a>
+        <a href="#document-readiness" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Documents
+        </a>
         <a href="#trip-overview" className="btn btn-primary" style={{ textDecoration: "none" }}>
           Overview
         </a>
@@ -823,6 +840,63 @@ function SnapshotRow({
     >
       <span className="label">{label}</span>
       <span style={{ lineHeight: 1.45 }}>{value === null || value === undefined || value === "" ? "Not provided" : value}</span>
+    </div>
+  );
+}
+
+function DocumentReadinessCard({
+  title,
+  status,
+  helper,
+  tone,
+  href,
+  cta = "Open",
+}: {
+  title: string;
+  status: string;
+  helper: string;
+  tone: "good" | "warning" | "danger" | "neutral";
+  href: string;
+  cta?: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "14px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: "#ffffff",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        minHeight: 150,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>{title}</p>
+        <CommandStatusBadge tone={tone}>{status}</CommandStatusBadge>
+      </div>
+
+      <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>{helper}</p>
+
+      <a
+        href={href}
+        style={{
+          marginTop: "auto",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          alignSelf: "flex-start",
+          padding: "8px 12px",
+          borderRadius: 10,
+          background: "var(--accent-dark)",
+          color: "white",
+          fontWeight: 800,
+          textDecoration: "none",
+        }}
+      >
+        {cta}
+      </a>
     </div>
   );
 }
@@ -1929,6 +2003,18 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 
+  const { data: clientDocuments, error: clientDocumentsError } = await supabase
+    .from("client_documents")
+    .select("id, document_type, document_title, file_name, created_at")
+    .eq("client_account_id", trip.client_account_id)
+    .order("created_at", { ascending: false });
+
+  const { data: attachedTripDocuments, error: attachedTripDocumentsError } = await supabase
+    .from("trip_client_documents" as any)
+    .select("id, client_document_id, created_at")
+    .eq("trip_id", tripId)
+    .order("created_at", { ascending: false });
+
   const { data: existingMilestones, error: tripMilestonesError } = await supabase
     .from("trip_milestones" as any)
     .select("id, trip_id, title, description, sort_order, is_completed, completed_at, created_at, updated_at")
@@ -1959,6 +2045,20 @@ export default async function AdminTripEditorPage({
   }
 
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
+  const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
+  const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
+
+  const hasPassportDocument = clientDocumentRows.some(
+    (document) => document.document_type === "passport",
+  );
+  const hasInsuranceDocument = clientDocumentRows.some(
+    (document) => document.document_type === "insurance",
+  );
+  const hasMinorTravelDocument = clientDocumentRows.some(
+    (document) =>
+      document.document_type === "minor_permission" ||
+      document.document_type === "minor_international_consent",
+  );
 
   const commissionFullTotal = commissionRows.reduce(
     (sum, commission) => sum + Number(commission.full_commission_amount ?? 0),
@@ -2004,6 +2104,96 @@ export default async function AdminTripEditorPage({
   const balanceDue = Number(trip.balance_due ?? 0);
   const totalPaid = Number(trip.total_paid ?? 0);
 
+  const clientDocumentsCollectedMilestone = milestoneRows.find(
+    (milestone) => milestone.title === "Client documents collected",
+  );
+  const travelDocumentsSentMilestone = milestoneRows.find(
+    (milestone) => milestone.title === "Travel documents sent",
+  );
+
+  const documentReadinessItems = [
+    {
+      title: "Client document library",
+      status: clientDocumentsError ? "Review" : `${clientDocumentRows.length} file${clientDocumentRows.length === 1 ? "" : "s"}`,
+      helper: clientDocumentsError
+        ? "Client documents could not be checked from this page."
+        : clientDocumentRows.length > 0
+          ? "Client has uploaded documents available for review."
+          : "No client documents are currently on file.",
+      tone: clientDocumentsError ? "warning" : clientDocumentRows.length > 0 ? "good" : "warning",
+      href: clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#trip-snapshot",
+      cta: "Open Client Docs",
+    },
+    {
+      title: "Attached to this trip",
+      status: attachedTripDocumentsError ? "Review" : `${attachedTripDocumentRows.length} attached`,
+      helper: attachedTripDocumentsError
+        ? "Trip document attachments could not be checked from this page."
+        : attachedTripDocumentRows.length > 0
+          ? "Documents have been attached directly to this trip."
+          : "No client documents are attached to this trip yet.",
+      tone: attachedTripDocumentsError ? "warning" : attachedTripDocumentRows.length > 0 ? "good" : "warning",
+      href: `/admin/trips/${trip.id}/client-documents`,
+      cta: "Attach Docs",
+    },
+    {
+      title: "Passport document",
+      status: hasPassportDocument ? "On file" : "Missing",
+      helper: hasPassportDocument
+        ? "At least one passport document is available in the client document library."
+        : "No passport document was found in the client document library.",
+      tone: hasPassportDocument ? "good" : "warning",
+      href: clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#trip-snapshot",
+      cta: "Review Docs",
+    },
+    {
+      title: "Insurance documentation",
+      status: insurance.component || hasInsuranceDocument ? "Started" : "Missing",
+      helper: insurance.component
+        ? "Insurance details have been added as a trip component."
+        : hasInsuranceDocument
+          ? "Insurance document exists in the client document library."
+          : "No insurance component or insurance document is currently attached.",
+      tone: insurance.component || hasInsuranceDocument ? "good" : "warning",
+      href: insurance.component ? "#insurance-component" : clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#insurance-component",
+      cta: insurance.component ? "Open Insurance" : "Review Docs",
+    },
+    {
+      title: "Minor travel consent",
+      status: hasMinorTravelDocument ? "On file" : "Optional",
+      helper: hasMinorTravelDocument
+        ? "A minor travel consent or permission document is available."
+        : "Use this only when minors, guardians, or international consent forms apply.",
+      tone: hasMinorTravelDocument ? "good" : "neutral",
+      href: clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#trip-snapshot",
+      cta: "Review Docs",
+    },
+    {
+      title: "Document milestones",
+      status:
+        clientDocumentsCollectedMilestone?.is_completed && travelDocumentsSentMilestone?.is_completed
+          ? "Complete"
+          : "Open",
+      helper:
+        clientDocumentsCollectedMilestone?.is_completed && travelDocumentsSentMilestone?.is_completed
+          ? "Document collection and final travel document milestones are marked complete."
+          : "Use the timeline to mark document collection and final travel documents when ready.",
+      tone:
+        clientDocumentsCollectedMilestone?.is_completed && travelDocumentsSentMilestone?.is_completed
+          ? "good"
+          : "warning",
+      href: "#trip-timeline",
+      cta: "Open Timeline",
+    },
+  ] as Array<{
+    title: string;
+    status: string;
+    helper: string;
+    tone: "good" | "warning" | "danger" | "neutral";
+    href: string;
+    cta: string;
+  }>;
+
   const needsAttentionItems = [
     !trip.final_payment_due_date && balanceDue > 0
       ? "Final payment due date is missing while a balance is still open."
@@ -2025,6 +2215,18 @@ export default async function AdminTripEditorPage({
       : null,
     commissionOutstandingTotal > 0
       ? `Outstanding commission balance is ${formatMoney(commissionOutstandingTotal)}.`
+      : null,
+    !clientDocumentsError && clientDocumentRows.length === 0
+      ? "No client documents are currently on file."
+      : null,
+    !attachedTripDocumentsError && attachedTripDocumentRows.length === 0
+      ? "No client documents are attached to this trip yet."
+      : null,
+    clientDocumentsCollectedMilestone && !clientDocumentsCollectedMilestone.is_completed
+      ? "Client documents collected milestone is still open."
+      : null,
+    travelDocumentsSentMilestone && !travelDocumentsSentMilestone.is_completed
+      ? "Travel documents sent milestone is still open."
       : null,
     !clientReminder
       ? "No client-facing trip reminder has been added yet."
@@ -2078,6 +2280,14 @@ export default async function AdminTripEditorPage({
           description: "There is still outstanding commission expected for this trip.",
           href: "#commissions",
           cta: "Open Commissions",
+        }
+      : null,
+    !attachedTripDocumentsError && attachedTripDocumentRows.length === 0
+      ? {
+          title: "Attach trip documents",
+          description: "Client documents exist separately from the trip. Attach the needed files to this specific trip record.",
+          href: "#document-readiness",
+          cta: "Open Documents",
         }
       : null,
     !clientReminder
@@ -2326,6 +2536,89 @@ export default async function AdminTripEditorPage({
                 This trip is in good shape based on the details currently entered.
               </p>
             )}
+          </div>
+        </div>
+
+        <span id="document-readiness" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Document Readiness
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Trip document checklist</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                A quick check of client documents, trip attachments, passport files, insurance docs, and document-related milestones.
+              </p>
+            </div>
+
+            <CommandStatusBadge
+              tone={
+                attachedTripDocumentRows.length > 0 &&
+                (clientDocumentsCollectedMilestone?.is_completed || clientDocumentRows.length > 0)
+                  ? "good"
+                  : "warning"
+              }
+            >
+              {attachedTripDocumentRows.length > 0 ? "Docs attached" : "Needs review"}
+            </CommandStatusBadge>
+          </div>
+
+          <div className="grid grid-3">
+            <CommandStatCard
+              label="Client Documents"
+              value={clientDocumentsError ? "Review" : clientDocumentRows.length}
+              helper={clientDocumentsError ? "Could not check client documents" : "Files in client document library"}
+            />
+
+            <CommandStatCard
+              label="Attached to Trip"
+              value={attachedTripDocumentsError ? "Review" : attachedTripDocumentRows.length}
+              helper={attachedTripDocumentsError ? "Could not check trip attachments" : "Client docs linked to this trip"}
+            />
+
+            <CommandStatCard
+              label="Passport File"
+              value={hasPassportDocument ? "Yes" : "No"}
+              helper={hasPassportDocument ? "Passport document found" : "No passport document found"}
+            />
+          </div>
+
+          <div className="grid grid-2">
+            {documentReadinessItems.map((item) => (
+              <DocumentReadinessCard
+                key={item.title}
+                title={item.title}
+                status={item.status}
+                helper={item.helper}
+                tone={item.tone}
+                href={item.href}
+                cta={item.cta}
+              />
+            ))}
           </div>
         </div>
 
