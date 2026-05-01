@@ -439,29 +439,31 @@ export default async function TripsPage() {
     accessLabel: "Primary Client",
   }));
 
-  const sharedTrips: DisplayTrip[] = ((sharedTripMembers ?? []) as SharedTripRow[])
-    .map((member) => {
+  const sharedTrips: DisplayTrip[] = ((sharedTripMembers ?? []) as SharedTripRow[]).flatMap(
+    (member): DisplayTrip[] => {
       const trip = getSharedTrip(member);
 
       if (!trip || ownedTripIds.has(trip.id)) {
-        return null;
+        return [];
       }
 
-      return {
-        trip_id: trip.id,
-        trip_name: trip.trip_name,
-        destinations: trip.destinations,
-        departure_date: trip.departure_date,
-        return_date: trip.return_date,
-        trip_status: trip.trip_status,
-        balance_due: trip.balance_due,
-        final_payment_due_date: trip.final_payment_due_date,
-        accessType: "shared" as const,
-        accessLabel: getRoleLabel(member.role),
-        role: member.role,
-      };
-    })
-    .filter((trip): trip is DisplayTrip => Boolean(trip));
+      return [
+        {
+          trip_id: trip.id,
+          trip_name: trip.trip_name,
+          destinations: trip.destinations,
+          departure_date: trip.departure_date,
+          return_date: trip.return_date,
+          trip_status: trip.trip_status,
+          balance_due: trip.balance_due,
+          final_payment_due_date: trip.final_payment_due_date,
+          accessType: "shared",
+          accessLabel: getRoleLabel(member.role),
+          role: member.role,
+        },
+      ];
+    },
+  );
 
   const clientName = getClientDisplayName(clientAccount);
 
