@@ -194,7 +194,7 @@ function CollapsibleSection({
   children,
   defaultOpen = false,
 }: {
-  title: string;
+  title: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
@@ -448,6 +448,182 @@ function MilestoneStatusBadge({ isCompleted }: { isCompleted: boolean | null }) 
     >
       {isCompleted ? "complete" : "open"}
     </span>
+  );
+}
+
+function SectionTitleWithBadge({
+  title,
+  badge,
+  tone = "neutral",
+}: {
+  title: string;
+  badge: string;
+  tone?: "good" | "warning" | "danger" | "neutral";
+}) {
+  const styles = {
+    good: { background: "#ecfdf3", color: "#027a48" },
+    warning: { background: "#fff7ed", color: "#c2410c" },
+    danger: { background: "#fef2f2", color: "#b42318" },
+    neutral: { background: "#f0f7f8", color: "var(--accent-dark)" },
+  }[tone];
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        width: "100%",
+      }}
+    >
+      <span>{title}</span>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          borderRadius: 999,
+          padding: "4px 10px",
+          background: styles.background,
+          color: styles.color,
+          fontSize: 12,
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {badge}
+      </span>
+    </span>
+  );
+}
+
+function MilestoneChecklist({ milestones }: { milestones: TripMilestoneRow[] }) {
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      {milestones.map((milestone) => (
+        <div
+          key={milestone.id}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "auto 1fr auto",
+            gap: 12,
+            alignItems: "center",
+            padding: "12px",
+            borderRadius: 14,
+            border: "1px solid #e6f0f2",
+            background: milestone.is_completed ? "#f0fdf4" : "#ffffff",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 999,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: milestone.is_completed ? "#16a34a" : "#e2e8f0",
+              color: milestone.is_completed ? "#ffffff" : "#64748b",
+              fontWeight: 900,
+            }}
+          >
+            {milestone.is_completed ? "✓" : "○"}
+          </div>
+
+          <div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <p style={{ margin: 0, fontWeight: 900 }}>{milestone.title}</p>
+              <MilestoneStatusBadge isCompleted={milestone.is_completed} />
+            </div>
+            <p style={{ margin: "5px 0 0", color: "#667085", lineHeight: 1.45 }}>
+              {milestone.description ?? "Not provided"}
+            </p>
+            {milestone.completed_at ? (
+              <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13 }}>
+                Completed {formatDate(milestone.completed_at)}
+              </p>
+            ) : null}
+          </div>
+
+          <button
+            type="submit"
+            form="update-trip-milestone-status-form"
+            name="milestone_id"
+            value={milestone.id}
+            className="btn btn-primary"
+            style={{
+              padding: "7px 11px",
+              fontSize: 13,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {milestone.is_completed ? "Reopen" : "Mark Complete"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StickyTripActionBar({
+  clientId,
+  tripId,
+}: {
+  clientId: string | null | undefined;
+  tripId: string;
+}) {
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 8,
+        zIndex: 20,
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 10,
+        flexWrap: "wrap",
+        alignItems: "center",
+        padding: "10px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: "rgba(255, 255, 255, 0.96)",
+        boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
+        backdropFilter: "blur(8px)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <a href="#trip-timeline" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Timeline
+        </a>
+        <a href="#trip-snapshot" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Snapshot
+        </a>
+        <a href="#trip-overview" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Overview
+        </a>
+        <a href="#commissions" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Money
+        </a>
+        <a href="#trip-notes" className="btn btn-primary" style={{ textDecoration: "none" }}>
+          Notes
+        </a>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {clientId ? (
+          <Link href={`/admin/clients/${clientId}`} className="btn btn-primary">
+            Open Client
+          </Link>
+        ) : null}
+        <Link href={`/admin/trips/${tripId}/client-documents`} className="btn btn-primary">
+          Attach Docs
+        </Link>
+        <button type="submit" className="btn btn-primary">
+          Save Changes
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1943,6 +2119,8 @@ export default async function AdminTripEditorPage({
       <form action={updateTrip} className="stack">
         <input type="hidden" name="trip_id" value={trip.id} />
 
+        <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
+
         <div
           className="card stack"
           style={{
@@ -2151,6 +2329,7 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
+        <span id="trip-snapshot" />
         <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
           <div
             style={{
@@ -2357,50 +2536,7 @@ export default async function AdminTripEditorPage({
             <>
               <TripMilestoneProgress milestones={milestoneRows} />
 
-              <div style={{ width: "100%", overflowX: "auto" }}>
-                <table className="table" style={{ minWidth: 980 }}>
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Milestone</th>
-                      <th>Description</th>
-                      <th>Completed</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {milestoneRows.map((milestone) => (
-                      <tr key={milestone.id}>
-                        <td>
-                          <MilestoneStatusBadge isCompleted={milestone.is_completed} />
-                        </td>
-                        <td style={{ fontWeight: 800 }}>{milestone.title}</td>
-                        <td style={{ maxWidth: 420, lineHeight: 1.45 }}>
-                          {milestone.description ?? "Not provided"}
-                        </td>
-                        <td>{formatDate(milestone.completed_at, "")}</td>
-                        <td>
-                          <button
-                            type="submit"
-                            form="update-trip-milestone-status-form"
-                            name="milestone_id"
-                            value={milestone.id}
-                            className="btn btn-primary"
-                            style={{
-                              padding: "6px 10px",
-                              fontSize: 13,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {milestone.is_completed ? "Reopen" : "Mark Complete"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <MilestoneChecklist milestones={milestoneRows} />
             </>
           )}
         </CollapsibleSection>
@@ -2507,7 +2643,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="proposal" />
-        <CollapsibleSection title="Proposal">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal ? "Started" : "Empty"} tone={proposal ? "good" : "neutral"} />}>
           <div className="grid grid-2">
             <label>
               <span className="label">Planning Fee</span>
@@ -2561,7 +2697,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="commissions" />
-        <CollapsibleSection title="Commissions for This Trip">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Commissions for This Trip" badge={`${commissionRows.length} record${commissionRows.length === 1 ? "" : "s"}`} tone={commissionRows.length > 0 ? "good" : "neutral"} />}>
           <div
             style={{
               display: "flex",
@@ -2721,7 +2857,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="hotel-component" />
-        <CollapsibleSection title="Hotel Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hotel.component ? "Added" : "Missing"} tone={hotel.component ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={hotel.component?.supplier_id ?? ""}
@@ -2902,7 +3038,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="air-component" />
-        <CollapsibleSection title="Air Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={air.component ? "Added" : "Missing"} tone={air.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={air.component?.supplier_id ?? ""}
@@ -3200,7 +3336,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="cruise-component" />
-        <CollapsibleSection title="Cruise Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={cruise.component ? "Added" : "Missing"} tone={cruise.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={cruise.component?.supplier_id ?? ""}
@@ -3387,7 +3523,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="transfer-component" />
-        <CollapsibleSection title="Transfer Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={transfer.component ? "Added" : "Missing"} tone={transfer.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={transfer.component?.supplier_id ?? ""}
@@ -3592,7 +3728,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="activity-component" />
-        <CollapsibleSection title="Activity Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={activity.component ? "Added" : "Missing"} tone={activity.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={activity.component?.supplier_id ?? ""}
@@ -3788,7 +3924,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="insurance-component" />
-        <CollapsibleSection title="Insurance Component">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={insurance.component ? "Added" : "Missing"} tone={insurance.component ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             supplierId={insurance.component?.supplier_id ?? ""}
@@ -3973,7 +4109,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="trip-notes" />
-        <CollapsibleSection title="Notes">
+        <CollapsibleSection title={<SectionTitleWithBadge title="Notes" badge={clientReminder ? "Reminder added" : "Needs reminder"} tone={clientReminder ? "good" : "warning"} />}>
           <div className="card stack" style={{ background: "#fffaf0" }}>
             <h3 style={{ margin: 0 }}>Internal Notes</h3>
 
