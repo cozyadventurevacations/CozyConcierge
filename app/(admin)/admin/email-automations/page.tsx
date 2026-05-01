@@ -78,9 +78,7 @@ const automationTemplates: AutomationTemplate[] = [
 ];
 
 function labelForType(type: string): string {
-  return (
-    automationTemplates.find((t) => t.type === type)?.template ?? type
-  );
+  return automationTemplates.find((t) => t.type === type)?.template ?? type;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -149,7 +147,6 @@ export default async function AdminEmailAutomationsPage() {
 
   const supabase = await createServerSupabaseClient();
 
-  // Fetch last 50 log entries with client info
   const { data: logData } = await supabase
     .from("email_automation_log")
     .select(
@@ -158,7 +155,7 @@ export default async function AdminEmailAutomationsPage() {
     .order("scheduled_send_date", { ascending: false })
     .limit(50);
 
-  const logs = (logData ?? []) as EmailLogRow[];
+  const logs = (logData ?? []) as unknown as EmailLogRow[];
 
   const sentCount = logs.filter((l) => l.status === "sent").length;
   const failedCount = logs.filter((l) => l.status === "failed").length;
@@ -167,9 +164,8 @@ export default async function AdminEmailAutomationsPage() {
   return (
     <PageShell
       title="Email Automations"
-      subtitle="Review active client email automation templates and sending rules."
+      subtitle="Manage and monitor automated client email workflows."
     >
-      {/* Overview Card */}
       <div
         className="card stack"
         style={{
@@ -189,9 +185,7 @@ export default async function AdminEmailAutomationsPage() {
         >
           Cozy Concierge
         </p>
-
         <h2 style={{ margin: 0 }}>Automation Overview</h2>
-
         <div className="grid grid-3">
           <div className="card">
             <span className="label">Templates</span>
@@ -199,28 +193,19 @@ export default async function AdminEmailAutomationsPage() {
               {automationTemplates.length}
             </p>
           </div>
-
           <div className="card">
             <span className="label">Active</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {
-                automationTemplates.filter(
-                  (t) => t.status.toLowerCase() === "active",
-                ).length
-              }
+              {automationTemplates.filter((t) => t.status.toLowerCase() === "active").length}
             </p>
           </div>
-
           <div className="card">
             <span className="label">Mode</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              Auto
-            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>Auto</p>
           </div>
         </div>
       </div>
 
-      {/* Security reminder */}
       <div
         className="card"
         style={{
@@ -235,70 +220,34 @@ export default async function AdminEmailAutomationsPage() {
         sensitive details by normal email.
       </div>
 
-      {/* Log Stats */}
-      <div
-        className="card stack"
-        style={{
-          background: "#f7fbfc",
-          border: "1px solid #e6f0f2",
-        }}
-      >
+      <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
         <h2 style={{ margin: 0 }}>Recent Activity (Last 50 Entries)</h2>
-
         <div className="grid grid-3">
           <div className="card">
             <span className="label">Total Logged</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {totalCount}
-            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{totalCount}</p>
           </div>
-
           <div className="card">
             <span className="label">Successfully Sent</span>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#166534",
-              }}
-            >
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800, color: "#166534" }}>
               {sentCount}
             </p>
           </div>
-
           <div className="card">
             <span className="label">Failed</span>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: 24,
-                fontWeight: 800,
-                color: failedCount > 0 ? "#991b1b" : undefined,
-              }}
-            >
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800, color: failedCount > 0 ? "#991b1b" : undefined }}>
               {failedCount}
             </p>
           </div>
         </div>
       </div>
 
-      {/* Manual Test Trigger */}
       <EmailAutomationsClient />
 
-      {/* Email Log Table */}
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Email Log</h2>
-
         {logs.length === 0 ? (
-          <div
-            style={{
-              padding: "32px 0",
-              textAlign: "center",
-              color: "#888",
-              fontSize: 15,
-            }}
-          >
+          <div style={{ padding: "32px 0", textAlign: "center", color: "#888", fontSize: 15 }}>
             No emails have been logged yet. The cron job runs daily at 9 AM
             Eastern and will log activity here.
           </div>
@@ -327,28 +276,14 @@ export default async function AdminEmailAutomationsPage() {
                   return (
                     <tr key={log.id}>
                       <td>{name}</td>
-                      <td style={{ fontSize: 13, color: "#555" }}>
-                        {client?.email ?? "—"}
-                      </td>
-                      <td style={{ fontSize: 13 }}>
-                        {labelForType(log.email_type)}
-                      </td>
-                      <td style={{ fontSize: 13 }}>
-                        {formatDate(log.scheduled_send_date)}
-                      </td>
-                      <td style={{ fontSize: 13 }}>
-                        {formatDateTime(log.sent_at)}
-                      </td>
+                      <td style={{ fontSize: 13, color: "#555" }}>{client?.email ?? "—"}</td>
+                      <td style={{ fontSize: 13 }}>{labelForType(log.email_type)}</td>
+                      <td style={{ fontSize: 13 }}>{formatDate(log.scheduled_send_date)}</td>
+                      <td style={{ fontSize: 13 }}>{formatDateTime(log.sent_at)}</td>
                       <td>
                         <LogStatusBadge status={log.status} />
                         {log.error_message && (
-                          <p
-                            style={{
-                              margin: "4px 0 0",
-                              fontSize: 11,
-                              color: "#991b1b",
-                            }}
-                          >
+                          <p style={{ margin: "4px 0 0", fontSize: 11, color: "#991b1b" }}>
                             {log.error_message}
                           </p>
                         )}
@@ -362,10 +297,8 @@ export default async function AdminEmailAutomationsPage() {
         )}
       </div>
 
-      {/* Templates Table */}
-      <div className="card stack">
+      <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
         <h2 style={{ margin: 0 }}>Email Templates</h2>
-
         <div style={{ width: "100%", overflowX: "auto" }}>
           <table className="table" style={{ minWidth: 820 }}>
             <thead>
@@ -380,13 +313,9 @@ export default async function AdminEmailAutomationsPage() {
               {automationTemplates.map((template) => (
                 <tr key={template.type}>
                   <td>{template.template}</td>
-                  <td style={{ fontSize: 13, color: "#555" }}>
-                    {template.type}
-                  </td>
+                  <td style={{ fontSize: 13, color: "#555" }}>{template.type}</td>
                   <td>{template.trigger}</td>
-                  <td>
-                    <StatusBadge status={template.status} />
-                  </td>
+                  <td><StatusBadge status={template.status} /></td>
                 </tr>
               ))}
             </tbody>
