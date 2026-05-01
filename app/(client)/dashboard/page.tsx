@@ -73,9 +73,11 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 function SummaryCard({
   label,
   value,
+  helper,
 }: {
   label: string;
   value: string | number;
+  helper?: string;
 }) {
   return (
     <div className="card">
@@ -83,6 +85,11 @@ function SummaryCard({
       <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
         {value}
       </p>
+      {helper ? (
+        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.45 }}>
+          {helper}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -179,6 +186,12 @@ export default async function ClientDashboardPage() {
     .eq("client_account_id", clientAccount.id)
     .order("departure_date", { ascending: true });
 
+  const { data: messageThreads } = await supabase
+    .from("message_threads" as any)
+    .select("id, status, client_unread_count, last_message_at")
+    .eq("client_account_id", clientAccount.id)
+    .order("last_message_at", { ascending: false });
+
   if (error) {
     return (
       <PageShell title="Dashboard" subtitle="Your travel details, all in one place.">
@@ -218,6 +231,15 @@ export default async function ClientDashboardPage() {
   const clientName =
     `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
     "Traveler";
+
+  const unreadMessages = (messageThreads ?? []).reduce(
+    (sum, thread: any) => sum + Number(thread.client_unread_count ?? 0),
+    0,
+  );
+
+  const openMessageThreads = (messageThreads ?? []).filter(
+    (thread: any) => thread.status === "open",
+  ).length;
 
   return (
     <PageShell
@@ -267,6 +289,57 @@ export default async function ClientDashboardPage() {
         </div>
       </div>
 
+      <div
+        className="card stack"
+        style={{
+          background: unreadMessages > 0 ? "#fff7ed" : "#f7fbfc",
+          border: unreadMessages > 0 ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>Concierge Messages</h2>
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+              Send questions directly to your travel advisor and keep trip conversations in one place.
+            </p>
+          </div>
+
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              borderRadius: 999,
+              padding: "6px 12px",
+              background: unreadMessages > 0 ? "#fff" : "#ecfdf3",
+              color: unreadMessages > 0 ? "#c2410c" : "#027a48",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {unreadMessages > 0
+              ? `${unreadMessages} unread reply${unreadMessages === 1 ? "" : "ies"}`
+              : `${openMessageThreads} open thread${openMessageThreads === 1 ? "" : "s"}`}
+          </span>
+        </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <Link href="/messages" className="btn btn-primary">
+            Open Messages
+          </Link>
+          <Link href="/messages#new-message" className="btn btn-primary">
+            Ask a Question
+          </Link>
+        </div>
+      </div>
+
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Quick Actions</h2>
 
@@ -277,6 +350,10 @@ export default async function ClientDashboardPage() {
 
           <Link href="/travel-request" className="btn btn-primary">
             Request New Travel Quote
+          </Link>
+
+          <Link href="/messages" className="btn btn-primary">
+            Message My Advisor
           </Link>
 
           {nextTrip ? (
