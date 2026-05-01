@@ -1115,7 +1115,7 @@ async function addTripCompanion(formData: FormData) {
   if (clientError) throw new Error(clientError.message);
 
   if (existingClient?.id === tripRow.client_account_id) {
-    throw new Error("The primary client is already the trip owner.");
+    return;
   }
 
   const rolePermissions = {
