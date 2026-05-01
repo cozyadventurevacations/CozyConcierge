@@ -19,6 +19,24 @@ const allowedTripStatuses = [
 
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 
+const defaultTripMilestones = [
+  { title: "Quote requested", description: "Initial client request or inquiry has been received." },
+  { title: "Trip created", description: "Trip record has been created in Cozy Concierge." },
+  { title: "Deposit paid", description: "Client deposit has been paid or marked as not required." },
+  { title: "Travel insurance offered", description: "Travel protection has been offered and documented." },
+  { title: "Travel insurance accepted / declined", description: "Client decision about travel protection has been documented." },
+  { title: "Client documents collected", description: "Required client documents have been collected or reviewed." },
+  { title: "Supplier confirmations added", description: "Supplier confirmation numbers and booking details have been added." },
+  { title: "Final payment reminder sent", description: "Client has been reminded about the final payment due date." },
+  { title: "Final payment paid", description: "Trip is paid in full or balance has been resolved." },
+  { title: "Travel documents sent", description: "Final travel documents, confirmations, or vouchers have been sent." },
+  { title: "7-day pre-travel email sent", description: "Pre-travel readiness email has been sent to the client." },
+  { title: "Client returned", description: "Client has returned from travel." },
+  { title: "Post-trip follow-up sent", description: "Post-travel follow-up has been sent." },
+  { title: "Review requested", description: "Client has been asked to share feedback or leave a review." },
+  { title: "Trip complete", description: "All trip servicing, follow-up, and internal wrap-up items are complete." },
+];
+
 type SupplierOption = {
   id: string;
   supplier_name: string;
@@ -44,6 +62,18 @@ type CommissionRow = {
   commission_status: string | null;
   expected_payment_date: string | null;
   received_payment_date: string | null;
+};
+
+type TripMilestoneRow = {
+  id: string;
+  trip_id: string;
+  title: string;
+  description: string | null;
+  sort_order: number;
+  is_completed: boolean | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
@@ -335,6 +365,89 @@ function ComponentCommissionLink({
         Create Commission
       </Link>
     </div>
+  );
+}
+
+function TripMilestoneProgress({ milestones }: { milestones: TripMilestoneRow[] }) {
+  const total = milestones.length;
+  const completed = milestones.filter((milestone) => milestone.is_completed).length;
+  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  return (
+    <div className="card stack" style={{ background: "#f7fbfc" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <span className="label">Milestone Progress</span>
+          <p style={{ margin: "6px 0 0", fontSize: 24, fontWeight: 800 }}>
+            {completed} of {total} complete
+          </p>
+        </div>
+
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 999,
+            padding: "6px 12px",
+            background: percentage === 100 ? "#ecfdf3" : "#fff7ed",
+            color: percentage === 100 ? "#027a48" : "#c2410c",
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {percentage}% Complete
+        </span>
+      </div>
+
+      <div
+        aria-label="Trip milestone progress"
+        style={{
+          width: "100%",
+          height: 12,
+          borderRadius: 999,
+          background: "#e2e8f0",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: percentage + "%",
+            height: "100%",
+            borderRadius: 999,
+            background: percentage === 100 ? "#16a34a" : "var(--accent-dark)",
+            transition: "width 200ms ease",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MilestoneStatusBadge({ isCompleted }: { isCompleted: boolean | null }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: isCompleted ? "#ecfdf3" : "#fff7ed",
+        color: isCompleted ? "#027a48" : "#c2410c",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isCompleted ? "complete" : "open"}
+    </span>
   );
 }
 
@@ -1273,6 +1386,47 @@ async function markTripCommissionReceived(formData: FormData) {
   revalidatePath("/admin/commissions");
 }
 
+async function updateTripMilestoneStatus(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const milestoneId = String(formData.get("milestone_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!milestoneId) throw new Error("Missing milestone ID.");
+
+  const { data: milestone, error: loadError } = await supabase
+    .from("trip_milestones" as any)
+    .select("id, is_completed")
+    .eq("id", milestoneId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (loadError || !milestone) {
+    throw new Error(loadError?.message ?? "Milestone not found for this trip.");
+  }
+
+  const isCompleted = !milestone.is_completed;
+
+  const { error } = await supabase
+    .from("trip_milestones" as any)
+    .update({
+      is_completed: isCompleted,
+      completed_at: isCompleted ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", milestoneId)
+    .eq("trip_id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/trips/" + tripId);
+  revalidatePath("/trips/" + tripId);
+  revalidatePath("/admin/trips");
+}
+
 export default async function AdminTripEditorPage({
   params,
 }: {
@@ -1399,6 +1553,35 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 
+  const { data: existingMilestones, error: tripMilestonesError } = await supabase
+    .from("trip_milestones" as any)
+    .select("id, trip_id, title, description, sort_order, is_completed, completed_at, created_at, updated_at")
+    .eq("trip_id", tripId)
+    .order("sort_order", { ascending: true });
+
+  let milestoneRows = (existingMilestones ?? []) as TripMilestoneRow[];
+
+  if (!tripMilestonesError && milestoneRows.length === 0) {
+    const { data: createdMilestones, error: createMilestonesError } = await supabase
+      .from("trip_milestones" as any)
+      .insert(
+        defaultTripMilestones.map((milestone, index) => ({
+          trip_id: tripId,
+          title: milestone.title,
+          description: milestone.description,
+          sort_order: index + 1,
+          is_completed: index <= 1,
+          completed_at: index <= 1 ? new Date().toISOString() : null,
+        })),
+      )
+      .select("id, trip_id, title, description, sort_order, is_completed, completed_at, created_at, updated_at")
+      .order("sort_order", { ascending: true });
+
+    if (!createMilestonesError) {
+      milestoneRows = (createdMilestones ?? []) as TripMilestoneRow[];
+    }
+  }
+
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
 
   const commissionFullTotal = commissionRows.reduce(
@@ -1427,6 +1610,14 @@ export default async function AdminTripEditorPage({
       <form
         id="mark-trip-commission-received-form"
         action={markTripCommissionReceived}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="update-trip-milestone-status-form"
+        action={updateTripMilestoneStatus}
         style={{ display: "none" }}
       >
         <input type="hidden" name="trip_id" value={trip.id} />
@@ -1524,6 +1715,80 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
+
+        <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
+          {tripMilestonesError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading trip milestones:</strong>
+              </p>
+              <pre>{JSON.stringify(tripMilestonesError, null, 2)}</pre>
+            </div>
+          ) : milestoneRows.length === 0 ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                No milestones found for this trip yet. Refresh this page after running
+                the trip_milestones SQL setup if this message continues to appear.
+              </p>
+            </div>
+          ) : (
+            <>
+              <TripMilestoneProgress milestones={milestoneRows} />
+
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 980 }}>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Milestone</th>
+                      <th>Description</th>
+                      <th>Completed</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {milestoneRows.map((milestone) => (
+                      <tr key={milestone.id}>
+                        <td>
+                          <MilestoneStatusBadge isCompleted={milestone.is_completed} />
+                        </td>
+                        <td style={{ fontWeight: 800 }}>{milestone.title}</td>
+                        <td style={{ maxWidth: 420, lineHeight: 1.45 }}>
+                          {milestone.description ?? "Not provided"}
+                        </td>
+                        <td>{formatDate(milestone.completed_at, "")}</td>
+                        <td>
+                          <button
+                            type="submit"
+                            form="update-trip-milestone-status-form"
+                            name="milestone_id"
+                            value={milestone.id}
+                            className="btn btn-primary"
+                            style={{
+                              padding: "6px 10px",
+                              fontSize: 13,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {milestone.is_completed ? "Reopen" : "Mark Complete"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CollapsibleSection>
         <CollapsibleSection title="Trip Overview" defaultOpen>
           <div className="grid grid-2">
             <label>
