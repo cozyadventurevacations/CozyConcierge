@@ -90,6 +90,31 @@ type TripAttachedDocumentRow = {
   created_at: string | null;
 };
 
+type TripMemberClientAccount = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
+type TripMemberRow = {
+  id: string;
+  trip_id: string;
+  client_account_id: string | null;
+  invite_email: string | null;
+  invite_name: string | null;
+  role: "owner" | "contributor" | "viewer" | string;
+  invite_status: "active" | "invited" | "declined" | "removed" | string;
+  invited_by_type: string | null;
+  can_view_trip: boolean | null;
+  can_view_shared_documents: boolean | null;
+  can_join_group_messages: boolean | null;
+  can_upload_own_documents: boolean | null;
+  can_manage_companions: boolean | null;
+  created_at: string | null;
+  client_accounts: TripMemberClientAccount | TripMemberClientAccount[] | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -106,6 +131,46 @@ function getClientDisplayName(client: ClientInfo | null) {
     `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
     "Unnamed Client"
   );
+}
+
+function getTripMemberClient(member: TripMemberRow) {
+  if (Array.isArray(member.client_accounts)) {
+    return member.client_accounts[0] ?? null;
+  }
+
+  return member.client_accounts ?? null;
+}
+
+function getTripMemberDisplayName(member: TripMemberRow) {
+  const client = getTripMemberClient(member);
+
+  if (client) {
+    return (
+      `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
+      client.email ||
+      "Unnamed Companion"
+    );
+  }
+
+  return member.invite_name || member.invite_email || "Invited Companion";
+}
+
+function getTripMemberEmail(member: TripMemberRow) {
+  const client = getTripMemberClient(member);
+  return client?.email ?? member.invite_email ?? "Not provided";
+}
+
+function getTripMemberRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "owner":
+      return "Owner";
+    case "contributor":
+      return "Contributor";
+    case "viewer":
+      return "Viewer";
+    default:
+      return role ?? "Viewer";
+  }
 }
 
 function formatDate(value: string | null | undefined, fallback = "") {
@@ -662,6 +727,9 @@ function StickyTripActionBar({
         <a href="#document-readiness" style={sectionLinkStyle}>
           Documents
         </a>
+        <a href="#travel-companions" style={sectionLinkStyle}>
+          Companions
+        </a>
         <a href="#trip-overview" style={sectionLinkStyle}>
           Overview
         </a>
@@ -738,6 +806,83 @@ function CommandStatusBadge({
     >
       {children}
     </span>
+  );
+}
+
+function TripMemberRoleBadge({ role }: { role: string | null | undefined }) {
+  const tone = role === "owner" ? "good" : role === "contributor" ? "neutral" : "warning";
+
+  return <CommandStatusBadge tone={tone}>{getTripMemberRoleLabel(role)}</CommandStatusBadge>;
+}
+
+function TripCompanionCard({ member }: { member: TripMemberRow }) {
+  const isOwner = member.role === "owner";
+
+  return (
+    <div
+      style={{
+        padding: "14px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: isOwner ? "#f0fdf4" : "#ffffff",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
+        <div>
+          <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+            {getTripMemberDisplayName(member)}
+          </p>
+          <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.45 }}>
+            {getTripMemberEmail(member)}
+          </p>
+        </div>
+
+        <TripMemberRoleBadge role={member.role} />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <CommandStatusBadge tone={member.invite_status === "active" ? "good" : "warning"}>
+          {member.invite_status}
+        </CommandStatusBadge>
+        {member.can_join_group_messages ? (
+          <CommandStatusBadge tone="neutral">Group messages</CommandStatusBadge>
+        ) : null}
+        {member.can_view_shared_documents ? (
+          <CommandStatusBadge tone="neutral">Shared docs</CommandStatusBadge>
+        ) : null}
+      </div>
+
+      {!isOwner ? (
+        <button
+          type="submit"
+          form="remove-trip-companion-form"
+          name="trip_member_id"
+          value={member.id}
+          className="btn btn-primary"
+          style={{
+            justifySelf: "start",
+            padding: "7px 11px",
+            fontSize: 13,
+          }}
+        >
+          Remove Companion
+        </button>
+      ) : (
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.45 }}>
+          Primary trip owner. This access is tied to the lead client for the trip.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -932,6 +1077,143 @@ function DocumentReadinessCard({
       </a>
     </div>
   );
+}
+
+async function addTripCompanion(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const email = String(formData.get("companion_email") ?? "").trim().toLowerCase();
+  const inviteName = String(formData.get("companion_name") ?? "").trim() || null;
+  const role = requireAllowedValue(
+    String(formData.get("companion_role") ?? "viewer").trim(),
+    ["viewer", "contributor"],
+    "viewer",
+  );
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!email) throw new Error("Companion email is required.");
+
+  const { data: tripRow, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !tripRow) {
+    throw new Error(tripError?.message ?? "Trip not found.");
+  }
+
+  const { data: existingClient, error: clientError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .ilike("email", email)
+    .maybeSingle();
+
+  if (clientError) throw new Error(clientError.message);
+
+  if (existingClient?.id === tripRow.client_account_id) {
+    throw new Error("The primary client is already the trip owner.");
+  }
+
+  const rolePermissions = {
+    can_view_trip: true,
+    can_view_shared_documents: true,
+    can_join_group_messages: true,
+    can_upload_own_documents: role === "contributor",
+    can_manage_companions: false,
+  };
+
+  const payload = {
+    trip_id: tripId,
+    client_account_id: existingClient?.id ?? null,
+    invite_email: existingClient?.email ?? email,
+    invite_name:
+      inviteName ||
+      (existingClient
+        ? `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null
+        : null),
+    role,
+    invite_status: existingClient ? "active" : "invited",
+    invited_by_type: "admin",
+    ...rolePermissions,
+    updated_at: new Date().toISOString(),
+  };
+
+  let existingMemberQuery: any = supabase
+    .from("trip_members" as any)
+    .select("id")
+    .eq("trip_id", tripId)
+    .neq("invite_status", "removed");
+
+  if (existingClient?.id) {
+    existingMemberQuery = existingMemberQuery.eq("client_account_id", existingClient.id);
+  } else {
+    existingMemberQuery = existingMemberQuery.ilike("invite_email", email);
+  }
+
+  const { data: existingMember, error: existingMemberError } = await existingMemberQuery.maybeSingle();
+
+  if (existingMemberError) throw new Error(existingMemberError.message);
+
+  if (existingMember) {
+    const { error } = await supabase
+      .from("trip_members" as any)
+      .update(payload)
+      .eq("id", existingMember.id);
+
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from("trip_members" as any).insert(payload);
+
+    if (error) throw new Error(error.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
+}
+
+async function removeTripCompanion(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const tripMemberId = String(formData.get("trip_member_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!tripMemberId) throw new Error("Missing companion ID.");
+
+  const { data: member, error: loadError } = await supabase
+    .from("trip_members" as any)
+    .select("id, role")
+    .eq("id", tripMemberId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (loadError || !member) {
+    throw new Error(loadError?.message ?? "Travel companion not found.");
+  }
+
+  if (member.role === "owner") {
+    throw new Error("The trip owner cannot be removed from this section.");
+  }
+
+  const { error } = await supabase
+    .from("trip_members" as any)
+    .update({
+      invite_status: "removed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", tripMemberId)
+    .eq("trip_id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
 }
 
 async function updateTrip(formData: FormData) {
@@ -2048,6 +2330,13 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 
+  const { data: tripMembers, error: tripMembersError } = await supabase
+    .from("trip_members" as any)
+    .select("id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, invited_by_type, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at, client_accounts(id, first_name, last_name, email)")
+    .eq("trip_id", tripId)
+    .neq("invite_status", "removed")
+    .order("created_at", { ascending: true });
+
   const { data: existingMilestones, error: tripMilestonesError } = await supabase
     .from("trip_milestones" as any)
     .select("id, trip_id, title, description, sort_order, is_completed, completed_at, created_at, updated_at")
@@ -2080,6 +2369,13 @@ export default async function AdminTripEditorPage({
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
   const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
   const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
+  const tripMemberRows = (tripMembers ?? []) as TripMemberRow[];
+  const activeTripMemberRows = tripMemberRows.filter(
+    (member) => member.invite_status !== "removed",
+  );
+  const ownerTripMembers = activeTripMemberRows.filter((member) => member.role === "owner");
+  const invitedTripMembers = activeTripMemberRows.filter((member) => member.invite_status === "invited");
+  const activeCompanionRows = activeTripMemberRows.filter((member) => member.role !== "owner");
 
   const hasPassportDocument = clientDocumentRows.some(
     (document) => document.document_type === "passport",
@@ -2359,6 +2655,22 @@ export default async function AdminTripEditorPage({
         <input type="hidden" name="trip_id" value={trip.id} />
       </form>
 
+      <form
+        id="add-trip-companion-form"
+        action={addTripCompanion}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="remove-trip-companion-form"
+        action={removeTripCompanion}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
       <form action={updateTrip} className="stack">
         <input type="hidden" name="trip_id" value={trip.id} />
 
@@ -2475,6 +2787,24 @@ export default async function AdminTripEditorPage({
             />
           </div>
 
+          <div className="grid grid-3">
+            <CommandStatCard
+              label="Travel Companions"
+              value={tripMembersError ? "Review" : activeTripMemberRows.length}
+              helper={
+                tripMembersError
+                  ? "Could not load companions"
+                  : `${activeCompanionRows.length} companion${activeCompanionRows.length === 1 ? "" : "s"}, ${ownerTripMembers.length} owner${ownerTripMembers.length === 1 ? "" : "s"}`
+              }
+            />
+
+            <CommandStatCard
+              label="Pending Invites"
+              value={tripMembersError ? "Review" : invitedTripMembers.length}
+              helper="Travel Circle invitations not yet connected"
+            />
+          </div>
+
           <div
             className="card stack"
             style={{
@@ -2558,6 +2888,160 @@ export default async function AdminTripEditorPage({
               </p>
             )}
           </div>
+        </div>
+
+        <span id="travel-companions" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Travel Companions
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Your Travel Circle</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                Manage who can access shared details for this trip. Viewer access is read-only;
+                contributor access is ready for future shared uploads and group messaging.
+              </p>
+            </div>
+
+            <CommandStatusBadge tone={tripMembersError ? "warning" : activeTripMemberRows.length > 0 ? "good" : "warning"}>
+              {tripMembersError
+                ? "Review"
+                : `${activeTripMemberRows.length} member${activeTripMemberRows.length === 1 ? "" : "s"}`}
+            </CommandStatusBadge>
+          </div>
+
+          {tripMembersError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading Travel Companions:</strong>
+              </p>
+              <pre>{JSON.stringify(tripMembersError, null, 2)}</pre>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-3">
+                <CommandStatCard
+                  label="Owners"
+                  value={ownerTripMembers.length}
+                  helper="Lead client access"
+                />
+                <CommandStatCard
+                  label="Companions"
+                  value={activeCompanionRows.length}
+                  helper="Viewer or contributor access"
+                />
+                <CommandStatCard
+                  label="Pending Invites"
+                  value={invitedTripMembers.length}
+                  helper="Invited by email"
+                />
+              </div>
+
+              <div className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
+                <h3 style={{ margin: 0 }}>Add a Travel Companion</h3>
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  Add an existing client by email, or invite someone by email for later account setup.
+                  Owners are created automatically from the trip’s primary client.
+                </p>
+
+                <div className="grid grid-3">
+                  <label>
+                    <span className="label">Companion Email</span>
+                    <input
+                      className="input"
+                      form="add-trip-companion-form"
+                      name="companion_email"
+                      type="email"
+                      placeholder="traveler@example.com"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="label">Name / Label</span>
+                    <input
+                      className="input"
+                      form="add-trip-companion-form"
+                      name="companion_name"
+                      placeholder="Optional display name"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="label">Access Level</span>
+                    <select
+                      className="select"
+                      form="add-trip-companion-form"
+                      name="companion_role"
+                      defaultValue="viewer"
+                    >
+                      <option value="viewer">Viewer — read only</option>
+                      <option value="contributor">Contributor — shared participation</option>
+                    </select>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  form="add-trip-companion-form"
+                  className="btn btn-primary"
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  Add Travel Companion
+                </button>
+              </div>
+
+              {activeTripMemberRows.length === 0 ? (
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  No Travel Companions are linked yet. The SQL setup should automatically create an owner row for the primary client.
+                </p>
+              ) : (
+                <div className="grid grid-2">
+                  {activeTripMemberRows.map((member) => (
+                    <TripCompanionCard key={member.id} member={member} />
+                  ))}
+                </div>
+              )}
+
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  color: "#9a3412",
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Privacy note:</strong> Travel Companions are for shared trip visibility, shared trip documents,
+                and future group messaging. Personal client documents like passports, traveler numbers, and loyalty data
+                should remain private unless intentionally shared.
+              </div>
+            </>
+          )}
         </div>
 
         <span id="document-readiness" />
