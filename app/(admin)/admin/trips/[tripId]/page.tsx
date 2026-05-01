@@ -571,6 +571,86 @@ function WorkflowActionCard({
   );
 }
 
+function SnapshotCard({
+  title,
+  status,
+  href,
+  children,
+}: {
+  title: string;
+  status: ReactNode;
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="card stack"
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e6f0f2",
+        minHeight: 240,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          <div style={{ marginTop: 8 }}>{status}</div>
+        </div>
+
+        <a
+          href={href}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "7px 10px",
+            borderRadius: 10,
+            background: "var(--accent-dark)",
+            color: "white",
+            fontWeight: 800,
+            fontSize: 13,
+            textDecoration: "none",
+          }}
+        >
+          Edit
+        </a>
+      </div>
+
+      <div style={{ display: "grid", gap: 8 }}>{children}</div>
+    </div>
+  );
+}
+
+function SnapshotRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "120px 1fr",
+        gap: 10,
+        alignItems: "baseline",
+      }}
+    >
+      <span className="label">{label}</span>
+      <span style={{ lineHeight: 1.45 }}>{value === null || value === undefined || value === "" ? "Not provided" : value}</span>
+    </div>
+  );
+}
+
 async function updateTrip(formData: FormData) {
   "use server";
 
@@ -2068,6 +2148,185 @@ export default async function AdminTripEditorPage({
                 This trip is in good shape based on the details currently entered.
               </p>
             )}
+          </div>
+        </div>
+
+        <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Trip Snapshot
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Readable booking summary</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                A quick, read-only view of what is currently entered before you open the detailed edit sections.
+              </p>
+            </div>
+
+            <CommandStatusBadge tone={activeTripComponents.length > 0 ? "neutral" : "warning"}>
+              {activeTripComponents.length} active component{activeTripComponents.length === 1 ? "" : "s"}
+            </CommandStatusBadge>
+          </div>
+
+          <div className="grid grid-2">
+            <SnapshotCard
+              title="Hotel"
+              href="#hotel-component"
+              status={
+                <CommandStatusBadge tone={hotel.component ? "neutral" : "warning"}>
+                  {hotel.component ? hotel.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Hotel" value={hotel.details?.hotel_name ?? hotel.component?.display_name ?? "Not provided"} />
+              <SnapshotRow label="Check-in" value={formatDate(hotel.details?.check_in_date, "Not provided")} />
+              <SnapshotRow label="Check-out" value={formatDate(hotel.details?.check_out_date, "Not provided")} />
+              <SnapshotRow label="Room" value={hotel.details?.room_category ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={hotel.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Air"
+              href="#air-component"
+              status={
+                <CommandStatusBadge tone={air.component ? "neutral" : "warning"}>
+                  {air.component ? air.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Supplier" value={air.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow
+                label="Outbound"
+                value={
+                  outboundSegment
+                    ? `${outboundSegment.departure_airport_code ?? "???"} → ${outboundSegment.destination_airport_code ?? "???"}`
+                    : "Not provided"
+                }
+              />
+              <SnapshotRow
+                label="Return"
+                value={
+                  returnSegment
+                    ? `${returnSegment.departure_airport_code ?? "???"} → ${returnSegment.destination_airport_code ?? "???"}`
+                    : "Not provided"
+                }
+              />
+              <SnapshotRow label="Locator" value={air.details?.airline_locator ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={air.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Cruise"
+              href="#cruise-component"
+              status={
+                <CommandStatusBadge tone={cruise.component ? "neutral" : "warning"}>
+                  {cruise.component ? cruise.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Line" value={cruise.details?.cruise_line ?? cruise.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Ship" value={cruise.details?.ship_name ?? "Not provided"} />
+              <SnapshotRow label="Sailing" value={formatDate(cruise.details?.sailing_date, "Not provided")} />
+              <SnapshotRow label="Return" value={formatDate(cruise.details?.return_date, "Not provided")} />
+              <SnapshotRow label="Confirm #" value={cruise.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Transfer"
+              href="#transfer-component"
+              status={
+                <CommandStatusBadge tone={transfer.component ? "neutral" : "warning"}>
+                  {transfer.component ? transfer.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Supplier" value={transfer.details?.supplier_name ?? transfer.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Pickup" value={transfer.details?.pickup_location ?? "Not provided"} />
+              <SnapshotRow label="Drop-off" value={transfer.details?.dropoff_location ?? "Not provided"} />
+              <SnapshotRow label="Vehicle" value={transfer.details?.vehicle_type ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={transfer.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Activity"
+              href="#activity-component"
+              status={
+                <CommandStatusBadge tone={activity.component ? "neutral" : "warning"}>
+                  {activity.component ? activity.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Activity" value={activity.details?.activity_name ?? activity.component?.display_name ?? "Not provided"} />
+              <SnapshotRow label="Supplier" value={activity.details?.supplier_name ?? activity.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Date/Time" value={activity.details?.activity_datetime ? formatDate(activity.details.activity_datetime) : "Not provided"} />
+              <SnapshotRow label="Location" value={activity.details?.location ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={activity.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Insurance"
+              href="#insurance-component"
+              status={
+                <CommandStatusBadge tone={insurance.component ? "neutral" : "warning"}>
+                  {insurance.component ? insurance.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Provider" value={insurance.details?.provider_name ?? insurance.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Plan" value={insurance.details?.plan_name ?? "Not provided"} />
+              <SnapshotRow label="Policy #" value={insurance.details?.policy_number ?? insurance.component?.confirmation_number ?? "Missing"} />
+              <SnapshotRow label="Premium" value={insurance.details?.premium_amount ? formatMoney(Number(insurance.details.premium_amount)) : "Not provided"} />
+              <SnapshotRow label="Coverage" value={insurance.details?.coverage_start_date || insurance.details?.coverage_end_date ? `${formatDate(insurance.details?.coverage_start_date, "?")} to ${formatDate(insurance.details?.coverage_end_date, "?")}` : "Not provided"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Commissions"
+              href="#commissions"
+              status={
+                <CommandStatusBadge tone={commissionOutstandingTotal > 0 ? "warning" : "good"}>
+                  {commissionOutstandingTotal > 0 ? "outstanding" : "current"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Records" value={commissionRows.length} />
+              <SnapshotRow label="Full" value={formatMoney(commissionFullTotal)} />
+              <SnapshotRow label="Expected" value={formatMoney(commissionExpectedTotal)} />
+              <SnapshotRow label="Received" value={formatMoney(commissionReceivedTotal)} />
+              <SnapshotRow label="Outstanding" value={formatMoney(commissionOutstandingTotal)} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Notes"
+              href="#trip-notes"
+              status={
+                <CommandStatusBadge tone={internalNote || clientNote || clientReminder ? "neutral" : "warning"}>
+                  {internalNote || clientNote || clientReminder ? "started" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Internal" value={internalNote?.title ?? "Not provided"} />
+              <SnapshotRow label="Client Note" value={clientNote?.title ?? "Not provided"} />
+              <SnapshotRow label="Reminder" value={clientReminder?.title ?? "Not provided"} />
+              <SnapshotRow label="Client" value={getClientDisplayName(clientInfo)} />
+              <SnapshotRow label="Email" value={clientInfo?.email ?? "Not provided"} />
+            </SnapshotCard>
           </div>
         </div>
 
