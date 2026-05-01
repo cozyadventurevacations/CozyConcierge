@@ -1100,7 +1100,7 @@ export default async function AdminClientDetailPage({
           <div>
             <p>No trips linked to this client yet.</p>
             <p style={{ marginBottom: 0, color: "#64748b" }}>
-              Use the Add Trip button to create this client's first trip record.
+              Use the Add Trip button to create this client&apos;s first trip record.
             </p>
           </div>
         ) : (
