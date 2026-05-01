@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { encryptIfPresent, decryptIfPresent } from "@/lib/encryption";
 
 type ClientAccount = {
   id: string;
@@ -66,13 +67,8 @@ function createSupabaseAdminClient() {
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
-
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-US", {
     month: "long",
     day: "numeric",
@@ -87,7 +83,11 @@ function cleanText(formData: FormData, fieldName: string) {
   return value || null;
 }
 
-function buildName(firstName: string | null, middleName: string | null, lastName: string | null) {
+function buildName(
+  firstName: string | null,
+  middleName: string | null,
+  lastName: string | null,
+) {
   return `${firstName ?? ""} ${middleName ?? ""} ${lastName ?? ""}`
     .replace(/\s+/g, " ")
     .trim();
@@ -95,7 +95,6 @@ function buildName(firstName: string | null, middleName: string | null, lastName
 
 function getClientName(client: ClientAccount | null | undefined) {
   if (!client) return "Unknown Client";
-
   return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Unnamed Client";
 }
 
@@ -214,11 +213,9 @@ async function ensurePrimaryTravelerProfile(
       const firstMatches =
         (traveler.first_name ?? "").trim().toLowerCase() ===
         (clientAccount.first_name ?? "").trim().toLowerCase();
-
       const lastMatches =
         (traveler.last_name ?? "").trim().toLowerCase() ===
         (clientAccount.last_name ?? "").trim().toLowerCase();
-
       return firstMatches && lastMatches;
     }) ?? travelerRows[0];
 
@@ -294,7 +291,7 @@ async function updatePrimaryPassportDetails(formData: FormData) {
       middle_name: passportMiddleName,
       last_name: passportLastName,
       passport_full_name: passportFullName,
-      passport_number: cleanText(formData, "passport_number"),
+      passport_number: encryptIfPresent(cleanText(formData, "passport_number")),
       passport_country: cleanText(formData, "passport_country"),
       passport_expiration_date: cleanText(formData, "passport_expiration_date"),
       relationship_to_client: "Self",
@@ -464,11 +461,9 @@ export default async function PassportUploadPage({
           <Link href="/profile" className="btn btn-primary">
             Back to Profile
           </Link>
-
           <Link href="/profile/documents/upload" className="btn btn-primary">
             Upload Other Travel Documents
           </Link>
-
           <Link href="/trips" className="btn btn-primary">
             Back to My Trips
           </Link>
@@ -563,7 +558,7 @@ export default async function PassportUploadPage({
               <input
                 className="input"
                 name="passport_number"
-                defaultValue={primaryTraveler.passport_number ?? ""}
+                defaultValue={decryptIfPresent(primaryTraveler.passport_number) ?? ""}
               />
             </label>
 
@@ -673,7 +668,6 @@ export default async function PassportUploadPage({
             <button type="submit" className="btn btn-primary">
               Upload Passport Document
             </button>
-
             <Link href="/profile" className="btn btn-primary">
               Cancel
             </Link>
@@ -721,7 +715,6 @@ export default async function PassportUploadPage({
                   <th>Open</th>
                 </tr>
               </thead>
-
               <tbody>
                 {documentsWithUrls.map((document) => (
                   <tr key={document.id}>
@@ -731,7 +724,7 @@ export default async function PassportUploadPage({
                     <td>{document.notes ?? "Not provided"}</td>
                     <td>
                       {document.signedUrl ? (
-                        <a
+                        
                           href={document.signedUrl}
                           target="_blank"
                           rel="noreferrer"

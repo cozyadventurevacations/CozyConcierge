@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { encryptIfPresent, decryptIfPresent } from "@/lib/encryption";
 
 type ClientDetail = {
   id: string;
@@ -51,24 +52,19 @@ async function updateClient(clientId: string, formData: FormData) {
       email: cleanText(formData, "email"),
       phone_primary: cleanText(formData, "phone_primary"),
       phone_secondary: cleanText(formData, "phone_secondary"),
-
       address_line_1: cleanText(formData, "address_line_1"),
       address_line_2: cleanText(formData, "address_line_2"),
       city: cleanText(formData, "city"),
       state: cleanText(formData, "state"),
       postal_code: cleanText(formData, "postal_code"),
-
       date_of_birth: cleanText(formData, "date_of_birth"),
       preferred_airport: cleanText(formData, "preferred_airport"),
       travel_style: cleanText(formData, "travel_style"),
       accessibility_notes: cleanText(formData, "accessibility_notes"),
-
-      passport_number: cleanText(formData, "passport_number"),
+      passport_number: encryptIfPresent(cleanText(formData, "passport_number")),
       passport_expiration_date: cleanText(formData, "passport_expiration_date"),
-
       emergency_contact_name: cleanText(formData, "emergency_contact_name"),
       emergency_contact_phone: cleanText(formData, "emergency_contact_phone"),
-
       notes: cleanText(formData, "notes"),
     })
     .eq("id", clientId);
@@ -131,9 +127,7 @@ export default async function EditClientPage({
   }
 
   const clientRow = client as ClientDetail;
-
   const saveClient = updateClient.bind(null, clientRow.id);
-
   const clientName =
     `${clientRow.first_name ?? ""} ${clientRow.last_name ?? ""}`.trim() ||
     "Unnamed Client";
@@ -143,7 +137,6 @@ export default async function EditClientPage({
       <form action={saveClient} className="card stack" style={{ maxWidth: 900 }}>
         <section className="stack">
           <h2 style={{ margin: 0 }}>Basic Information</h2>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">First Name</span>
@@ -154,7 +147,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.first_name ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Last Name</span>
               <input
@@ -165,7 +157,6 @@ export default async function EditClientPage({
               />
             </label>
           </div>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Email</span>
@@ -176,7 +167,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.email ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Date of Birth</span>
               <input
@@ -191,7 +181,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Phone Numbers</h2>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Primary Phone</span>
@@ -202,7 +191,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.phone_primary ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Secondary Phone</span>
               <input
@@ -217,7 +205,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Address</h2>
-
           <label className="stack-sm">
             <span className="label">Address Line 1</span>
             <input
@@ -227,7 +214,6 @@ export default async function EditClientPage({
               defaultValue={clientRow.address_line_1 ?? ""}
             />
           </label>
-
           <label className="stack-sm">
             <span className="label">Address Line 2</span>
             <input
@@ -237,7 +223,6 @@ export default async function EditClientPage({
               defaultValue={clientRow.address_line_2 ?? ""}
             />
           </label>
-
           <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">City</span>
@@ -248,7 +233,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.city ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">State</span>
               <input
@@ -259,7 +243,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.state ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">ZIP / Postal Code</span>
               <input
@@ -274,7 +257,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Travel Preferences</h2>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Preferred Airport</span>
@@ -286,7 +268,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.preferred_airport ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Travel Style</span>
               <select
@@ -307,7 +288,6 @@ export default async function EditClientPage({
               </select>
             </label>
           </div>
-
           <label className="stack-sm">
             <span className="label">Accessibility / Mobility Notes</span>
             <textarea
@@ -321,7 +301,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Passport Information</h2>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Passport Number</span>
@@ -329,10 +308,9 @@ export default async function EditClientPage({
                 className="input"
                 name="passport_number"
                 type="text"
-                defaultValue={clientRow.passport_number ?? ""}
+                defaultValue={decryptIfPresent(clientRow.passport_number) ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Passport Expiration Date</span>
               <input
@@ -347,7 +325,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Emergency Contact</h2>
-
           <div className="grid grid-2">
             <label className="stack-sm">
               <span className="label">Emergency Contact Name</span>
@@ -358,7 +335,6 @@ export default async function EditClientPage({
                 defaultValue={clientRow.emergency_contact_name ?? ""}
               />
             </label>
-
             <label className="stack-sm">
               <span className="label">Emergency Contact Phone</span>
               <input
@@ -373,7 +349,6 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Internal Notes</h2>
-
           <label className="stack-sm">
             <span className="label">Notes</span>
             <textarea
@@ -389,7 +364,6 @@ export default async function EditClientPage({
           <button type="submit" className="btn btn-primary">
             Save Changes
           </button>
-
           <Link href={`/admin/clients/${clientRow.id}`} className="btn btn-primary">
             Cancel
           </Link>
