@@ -773,11 +773,14 @@ function ActionLink({
   rel?: string;
 }) {
   const sharedStyle = {
-    flex: "1 1 190px",
-    minWidth: 180,
+    display: "inline-flex",
+    flex: "0 0 auto",
+    width: "auto",
+    minWidth: "unset",
     textAlign: "center" as const,
     justifyContent: "center",
-    whiteSpace: "normal" as const,
+    alignItems: "center",
+    whiteSpace: "nowrap" as const,
     lineHeight: 1.25,
   };
 
@@ -1424,7 +1427,7 @@ export default async function TripDetailPage({
           subtitle="Quick links to the most useful trip actions."
         />
 
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <ActionLink href={`/trips/${tripRow.id}/documents`} className="btn btn-primary">
             View Documents
           </ActionLink>
@@ -1515,7 +1518,7 @@ export default async function TripDetailPage({
           </div>
         </div>
 
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <ActionLink href="/messages" className="btn btn-primary">
             Open Message Center
           </ActionLink>
