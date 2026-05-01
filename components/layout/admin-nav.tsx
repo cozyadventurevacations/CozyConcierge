@@ -1,5 +1,6 @@
 export const adminNav = [
   { href: "/admin/dashboard", label: "Dashboard" },
+  { href: "/admin/messages", label: "Messages" },
   { href: "/admin/trips", label: "Trips" },
   { href: "/admin/quote-requests", label: "Travel Requests" },
   { href: "/admin/payment-requests", label: "Payment Requests" },
