@@ -115,6 +115,20 @@ type TripMemberRow = {
   client_accounts: TripMemberClientAccount | TripMemberClientAccount[] | null;
 };
 
+type TripMessageThreadRow = {
+  id: string;
+  client_account_id: string;
+  trip_id: string | null;
+  subject: string;
+  status: string;
+  priority: string | null;
+  thread_type: "private" | "trip_group" | string | null;
+  admin_unread_count: number | null;
+  client_unread_count: number | null;
+  last_message_at: string | null;
+  created_at: string | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -730,6 +744,9 @@ function StickyTripActionBar({
         <a href="#travel-companions" style={sectionLinkStyle}>
           Companions
         </a>
+        <a href="#trip-messages" style={sectionLinkStyle}>
+          Messages
+        </a>
         <a href="#trip-overview" style={sectionLinkStyle}>
           Overview
         </a>
@@ -882,6 +899,60 @@ function TripCompanionCard({ member }: { member: TripMemberRow }) {
           Primary trip owner. This access is tied to the lead client for the trip.
         </p>
       )}
+    </div>
+  );
+}
+
+function TripMessageSummaryCard({
+  title,
+  value,
+  helper,
+  href,
+  cta,
+  tone = "neutral",
+}: {
+  title: string;
+  value: ReactNode;
+  helper: ReactNode;
+  href: string;
+  cta: string;
+  tone?: "good" | "warning" | "danger" | "neutral";
+}) {
+  return (
+    <div
+      style={{
+        padding: "14px",
+        borderRadius: 14,
+        border: "1px solid #e6f0f2",
+        background: "#ffffff",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>{title}</p>
+        <CommandStatusBadge tone={tone}>{value}</CommandStatusBadge>
+      </div>
+
+      <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>{helper}</p>
+
+      <Link
+        href={href}
+        style={{
+          justifySelf: "start",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "8px 12px",
+          borderRadius: 10,
+          background: "var(--accent-dark)",
+          color: "white",
+          fontWeight: 800,
+          textDecoration: "none",
+        }}
+      >
+        {cta}
+      </Link>
     </div>
   );
 }
@@ -2337,6 +2408,12 @@ export default async function AdminTripEditorPage({
     .neq("invite_status", "removed")
     .order("created_at", { ascending: true });
 
+  const { data: tripMessageThreads, error: tripMessageThreadsError } = await supabase
+    .from("message_threads" as any)
+    .select("id, client_account_id, trip_id, subject, status, priority, thread_type, admin_unread_count, client_unread_count, last_message_at, created_at")
+    .eq("trip_id", tripId)
+    .order("last_message_at", { ascending: false });
+
   const { data: existingMilestones, error: tripMilestonesError } = await supabase
     .from("trip_milestones" as any)
     .select("id, trip_id, title, description, sort_order, is_completed, completed_at, created_at, updated_at")
@@ -2376,6 +2453,30 @@ export default async function AdminTripEditorPage({
   const ownerTripMembers = activeTripMemberRows.filter((member) => member.role === "owner");
   const invitedTripMembers = activeTripMemberRows.filter((member) => member.invite_status === "invited");
   const activeCompanionRows = activeTripMemberRows.filter((member) => member.role !== "owner");
+
+  const tripMessageThreadRows = (tripMessageThreads ?? []) as TripMessageThreadRow[];
+  const privateTripMessageThreads = tripMessageThreadRows.filter(
+    (thread) => thread.thread_type !== "trip_group",
+  );
+  const travelCircleMessageThreads = tripMessageThreadRows.filter(
+    (thread) => thread.thread_type === "trip_group",
+  );
+  const tripMessageUnreadTotal = tripMessageThreadRows.reduce(
+    (total, thread) => total + Number(thread.admin_unread_count ?? 0),
+    0,
+  );
+  const mostRecentTripMessageThread = tripMessageThreadRows[0] ?? null;
+  const mostRecentPrivateTripMessageThread = privateTripMessageThreads[0] ?? null;
+  const mostRecentTravelCircleMessageThread = travelCircleMessageThreads[0] ?? null;
+  const tripMessagesHref = mostRecentTripMessageThread
+    ? `/admin/messages?threadId=${mostRecentTripMessageThread.id}`
+    : "/admin/messages";
+  const privateTripMessagesHref = mostRecentPrivateTripMessageThread
+    ? `/admin/messages?threadId=${mostRecentPrivateTripMessageThread.id}&type=private`
+    : "/admin/messages?type=private";
+  const travelCircleMessagesHref = mostRecentTravelCircleMessageThread
+    ? `/admin/messages?threadId=${mostRecentTravelCircleMessageThread.id}&type=trip_group`
+    : "/admin/messages?type=trip_group";
 
   const hasPassportDocument = clientDocumentRows.some(
     (document) => document.document_type === "passport",
@@ -2803,6 +2904,16 @@ export default async function AdminTripEditorPage({
               value={tripMembersError ? "Review" : invitedTripMembers.length}
               helper="Travel Circle invitations not yet connected"
             />
+
+            <CommandStatCard
+              label="Trip Messages"
+              value={tripMessageThreadsError ? "Review" : tripMessageThreadRows.length}
+              helper={
+                tripMessageThreadsError
+                  ? "Could not load message summary"
+                  : `${privateTripMessageThreads.length} private, ${travelCircleMessageThreads.length} Travel Circle, ${tripMessageUnreadTotal} unread`
+              }
+            />
           </div>
 
           <div
@@ -2888,6 +2999,108 @@ export default async function AdminTripEditorPage({
               </p>
             )}
           </div>
+        </div>
+
+        <span id="trip-messages" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Trip Messages
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Message activity for this trip</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                See private advisor threads and Travel Circle group conversations tied to this trip.
+              </p>
+            </div>
+
+            <Link href={tripMessagesHref} className="btn btn-primary">
+              Open Trip Messages
+            </Link>
+          </div>
+
+          {tripMessageThreadsError ? (
+            <div className="card" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+              <p style={{ margin: 0, fontWeight: 800, color: "#c2410c" }}>
+                Message summary needs review.
+              </p>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(tripMessageThreadsError, null, 2)}</pre>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-3">
+                <TripMessageSummaryCard
+                  title="Private Advisor Threads"
+                  value={privateTripMessageThreads.length}
+                  helper="One-on-one client/advisor conversations tied to this trip."
+                  href={privateTripMessagesHref}
+                  cta="Open Private Messages"
+                  tone={privateTripMessageThreads.length > 0 ? "neutral" : "warning"}
+                />
+
+                <TripMessageSummaryCard
+                  title="Travel Circle Threads"
+                  value={travelCircleMessageThreads.length}
+                  helper="Shared group conversations visible to approved companions."
+                  href={travelCircleMessagesHref}
+                  cta="Open Travel Circle"
+                  tone={travelCircleMessageThreads.length > 0 ? "good" : "warning"}
+                />
+
+                <TripMessageSummaryCard
+                  title="Unread for Admin"
+                  value={tripMessageUnreadTotal}
+                  helper="Client or companion messages waiting for your review."
+                  href={tripMessagesHref}
+                  cta="Review Inbox"
+                  tone={tripMessageUnreadTotal > 0 ? "warning" : "good"}
+                />
+              </div>
+
+              {mostRecentTripMessageThread ? (
+                <div
+                  style={{
+                    padding: "12px",
+                    borderRadius: 12,
+                    background: "#f7fbfc",
+                    border: "1px solid #e6f0f2",
+                    color: "#667085",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong style={{ color: "var(--accent-dark)" }}>Most recent:</strong>{" "}
+                  {mostRecentTripMessageThread.subject} • {mostRecentTripMessageThread.thread_type === "trip_group" ? "Travel Circle" : "Private"} • {mostRecentTripMessageThread.status}
+                </div>
+              ) : (
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  No messages are tied to this trip yet. Once clients use the private or Travel Circle buttons, activity will appear here.
+                </p>
+              )}
+            </>
+          )}
         </div>
 
         <span id="travel-companions" />
