@@ -722,25 +722,20 @@ export default async function PassportUploadPage({
                     <td>{document.file_name}</td>
                     <td>{formatDateTime(document.created_at)}</td>
                     <td>{document.notes ?? "Not provided"}</td>
-                    <td>
-                      {document.signedUrl ? (
-                        
-                          href={document.signedUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Open 5-Min Link
-                        </a>
-                      ) : (
-                        "Unavailable"
-                      )}
-                    </td>
+<td>
+  {document.signedUrl ? (
+    <a
+      href={document.signedUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="btn btn-primary"
+    >
+      Open
+    </a>
+  ) : (
+    <span style={{ color: "#64748b" }}>Unavailable</span>
+  )}
+</td>
                   </tr>
                 ))}
               </tbody>
