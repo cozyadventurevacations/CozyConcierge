@@ -1,8 +1,10 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { decryptIfPresent } from "@/lib/encryption";
+import { SensitiveField } from "@/components/security/sensitive-field";
 
 type ClientDetail = {
   id: string;
@@ -167,7 +169,7 @@ function safeDecrypt(value: string | null | undefined) {
   try {
     return decryptIfPresent(value);
   } catch (error) {
-    console.error("Unable to decrypt field:", error);
+    console.error("Unable to decrypt sensitive field:", error);
     return "Unable to decrypt";
   }
 }
@@ -235,8 +237,10 @@ function InfoItem({
   value,
 }: {
   label: string;
-  value: string | number | null | undefined;
+  value: ReactNode;
 }) {
+  const isEmpty = value === null || value === undefined || value === "";
+
   return (
     <div
       style={{
@@ -248,9 +252,7 @@ function InfoItem({
     >
       <span className="label">{label}</span>
       <p style={{ margin: "6px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
-        {value === null || value === undefined || value === ""
-          ? "Not provided"
-          : value}
+        {isEmpty ? "Not provided" : value}
       </p>
     </div>
   );
@@ -929,14 +931,20 @@ export default async function AdminClientDetailPage({
                     />
                     <InfoItem
                       label="Known Traveler Number / KTN"
-                      value={safeDecrypt(traveler.known_traveler_number)}
+                      value={<SensitiveField value={safeDecrypt(traveler.known_traveler_number)} />}
                     />
-                    <InfoItem label="Redress Number" value={safeDecrypt(traveler.redress_number)} />
+                    <InfoItem
+                      label="Redress Number"
+                      value={<SensitiveField value={safeDecrypt(traveler.redress_number)} />}
+                    />
                     <InfoItem
                       label="Global Entry PASSID"
-                      value={safeDecrypt(traveler.global_entry_passid)}
+                      value={<SensitiveField value={safeDecrypt(traveler.global_entry_passid)} />}
                     />
-                    <InfoItem label="Passport Number" value={safeDecrypt(traveler.passport_number)} />
+                    <InfoItem
+                      label="Passport Number"
+                      value={<SensitiveField value={safeDecrypt(traveler.passport_number)} />}
+                    />
                     <InfoItem label="Passport Country" value={traveler.passport_country} />
                     <InfoItem
                       label="Passport Expiration"
@@ -974,7 +982,9 @@ export default async function AdminClientDetailPage({
                                 </td>
                                 <td>{loyalty.company_name}</td>
                                 <td>{loyalty.program_name ?? "Not provided"}</td>
-                                <td>{safeDecrypt(loyalty.loyalty_number)}</td>
+                                <td>
+                                  <SensitiveField value={safeDecrypt(loyalty.loyalty_number)} />
+                                </td>
                                 <td>{loyalty.notes ?? "Not provided"}</td>
                                 <td>{formatDateTime(loyalty.created_at, "")}</td>
                               </tr>
@@ -1010,7 +1020,10 @@ export default async function AdminClientDetailPage({
         </div>
 
         <div className="grid grid-2">
-          <InfoItem label="Passport Number" value={safeDecrypt(clientRow.passport_number)} />
+          <InfoItem
+            label="Passport Number"
+            value={<SensitiveField value={safeDecrypt(clientRow.passport_number)} />}
+          />
           <InfoItem
             label="Passport Expiration"
             value={formatDate(clientRow.passport_expiration_date)}
