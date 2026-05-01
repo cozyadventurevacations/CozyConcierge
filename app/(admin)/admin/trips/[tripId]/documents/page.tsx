@@ -29,7 +29,11 @@ const allowedExtensions = [
 ];
 
 function validateVisibility(value: string) {
-  if (value !== "internal" && value !== "client") {
+  if (
+    value !== "internal" &&
+    value !== "client" &&
+    value !== "travel_circle"
+  ) {
     throw new Error("Invalid document visibility.");
   }
 
@@ -99,6 +103,13 @@ function formatDateTime(value: string | null | undefined, fallback = "") {
 
 function VisibilityBadge({ visibility }: { visibility: string | null | undefined }) {
   const isClient = visibility === "client";
+  const isTravelCircle = visibility === "travel_circle";
+
+  const label = isTravelCircle
+    ? "Shared With Travel Circle"
+    : isClient
+      ? "Visible to Lead Client"
+      : "Internal Only";
 
   return (
     <span
@@ -107,14 +118,14 @@ function VisibilityBadge({ visibility }: { visibility: string | null | undefined
         alignItems: "center",
         borderRadius: 999,
         padding: "5px 10px",
-        background: isClient ? "#ecfdf3" : "#fff7ed",
-        color: isClient ? "#027a48" : "#c2410c",
+        background: isTravelCircle ? "#eff6ff" : isClient ? "#ecfdf3" : "#fff7ed",
+        color: isTravelCircle ? "#1d4ed8" : isClient ? "#027a48" : "#c2410c",
         fontWeight: 700,
         fontSize: 13,
         whiteSpace: "nowrap",
       }}
     >
-      {isClient ? "Visible to Client" : "Internal Only"}
+      {label}
     </span>
   );
 }
@@ -327,6 +338,16 @@ export default async function AdminTripDocumentsPage({
     }),
   );
 
+  const internalOnlyCount = documentsWithUrls.filter(
+    (doc) => doc.visibility !== "client" && doc.visibility !== "travel_circle",
+  ).length;
+  const leadClientCount = documentsWithUrls.filter(
+    (doc) => doc.visibility === "client",
+  ).length;
+  const travelCircleCount = documentsWithUrls.filter(
+    (doc) => doc.visibility === "travel_circle",
+  ).length;
+
   return (
     <PageShell
       title="Trip Documents"
@@ -345,6 +366,72 @@ export default async function AdminTripDocumentsPage({
         <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary">
           Back to Trip
         </Link>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #e6f0f2",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Document Visibility
+        </p>
+
+        <h2 style={{ margin: 0 }}>Shared Document Control</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Keep private files internal, share client-facing documents with the lead
+          traveler, or make approved trip documents available to the full Travel Circle.
+        </p>
+
+        <div className="grid grid-3">
+          <div className="card">
+            <span className="label">Internal Only</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {internalOnlyCount}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Lead Client Visible</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {leadClientCount}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Travel Circle Shared</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {travelCircleCount}
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            color: "#9a3412",
+            lineHeight: 1.6,
+          }}
+        >
+          <strong>Privacy reminder:</strong> Do not share passports, traveler
+          numbers, medical documents, or personal client files with the Travel Circle
+          unless they are intentionally approved for the full travel party.
+        </div>
       </div>
 
       <form
@@ -387,7 +474,8 @@ export default async function AdminTripDocumentsPage({
           <span className="label">Visibility</span>
           <select className="select" name="visibility" defaultValue="internal">
             <option value="internal">Internal Only</option>
-            <option value="client">Visible to Client</option>
+            <option value="client">Visible to Lead Client</option>
+            <option value="travel_circle">Shared With Travel Circle</option>
           </select>
         </label>
 
@@ -403,6 +491,10 @@ export default async function AdminTripDocumentsPage({
         >
           <strong>Upload limits:</strong> PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, or XLSX.
           Maximum file size is 15MB.
+          <br />
+          <strong>Visibility:</strong> Use Internal Only for advisor-only files,
+          Visible to Lead Client for the primary traveler, and Shared With Travel Circle
+          for itineraries, vouchers, confirmations, or travel packets approved for companions.
         </div>
 
         <div className="row">
@@ -474,7 +566,8 @@ export default async function AdminTripDocumentsPage({
                           defaultValue={doc.visibility}
                         >
                           <option value="internal">Internal</option>
-                          <option value="client">Client</option>
+                          <option value="client">Lead Client</option>
+                          <option value="travel_circle">Travel Circle</option>
                         </select>
                         <button
                           type="submit"
