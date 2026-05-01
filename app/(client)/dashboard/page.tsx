@@ -15,6 +15,32 @@ type TripRow = {
   final_payment_due_date: string | null;
 };
 
+type TripInviteRow = {
+  id: string;
+  trip_id: string;
+  invite_email: string | null;
+  invite_name: string | null;
+  role: string | null;
+  invite_status: string | null;
+  created_at: string | null;
+  trips:
+    | {
+        id: string;
+        trip_name: string | null;
+        destinations: string | null;
+        departure_date: string | null;
+        return_date: string | null;
+      }
+    | Array<{
+        id: string;
+        trip_name: string | null;
+        destinations: string | null;
+        departure_date: string | null;
+        return_date: string | null;
+      }>
+    | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -68,6 +94,27 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
       {status ?? "draft"}
     </span>
   );
+}
+
+function getInviteTrip(invite: TripInviteRow) {
+  if (Array.isArray(invite.trips)) {
+    return invite.trips[0] ?? null;
+  }
+
+  return invite.trips ?? null;
+}
+
+function getRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "owner":
+      return "Owner";
+    case "contributor":
+      return "Contributor";
+    case "viewer":
+      return "Viewer";
+    default:
+      return role ?? "Viewer";
+  }
 }
 
 function SummaryCard({
@@ -192,6 +239,29 @@ export default async function ClientDashboardPage() {
     .eq("client_account_id", clientAccount.id)
     .order("last_message_at", { ascending: false });
 
+  const clientEmail = clientAccount.email?.trim().toLowerCase() ?? "";
+
+  const { data: pendingInvites } = clientEmail
+    ? await supabase
+        .from("trip_members" as any)
+        .select(
+          "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
+        )
+        .ilike("invite_email", clientEmail)
+        .eq("invite_status", "invited")
+        .order("created_at", { ascending: false })
+    : { data: [] as TripInviteRow[] };
+
+  const { data: sharedTripMemberships } = await supabase
+    .from("trip_members" as any)
+    .select(
+      "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
+    )
+    .eq("client_account_id", clientAccount.id)
+    .eq("invite_status", "active")
+    .neq("role", "owner")
+    .order("created_at", { ascending: false });
+
   if (error) {
     return (
       <PageShell title="Dashboard" subtitle="Your travel details, all in one place.">
@@ -241,6 +311,12 @@ export default async function ClientDashboardPage() {
     (thread: any) => thread.status === "open",
   ).length;
 
+  const pendingInviteRows = (pendingInvites ?? []) as TripInviteRow[];
+  const sharedTripRows = (sharedTripMemberships ?? []) as TripInviteRow[];
+  const nextInviteTrip = pendingInviteRows[0]
+    ? getInviteTrip(pendingInviteRows[0])
+    : null;
+
   return (
     <PageShell
       title="Dashboard"
@@ -277,6 +353,16 @@ export default async function ClientDashboardPage() {
           />
 
           <SummaryCard
+            label="Pending Invites"
+            value={pendingInviteRows.length}
+            helper={
+              pendingInviteRows.length > 0
+                ? "Review shared trip access."
+                : "No pending invitations."
+            }
+          />
+
+          <SummaryCard
             label="Next Final Payment"
             value={
               nextPaymentTrip
@@ -286,6 +372,69 @@ export default async function ClientDashboardPage() {
           />
 
           <SummaryCard label="Total Balance Due" value={formatMoney(totalBalanceDue)} />
+        </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: pendingInviteRows.length > 0 ? "#fff7ed" : "#ffffff",
+          border: pendingInviteRows.length > 0 ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>Travel Invitations</h2>
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+              Accept shared trip access from family, friends, and fellow travelers.
+            </p>
+            {nextInviteTrip ? (
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+                Next invite: <strong>{nextInviteTrip.trip_name ?? "Shared Trip"}</strong>
+                {nextInviteTrip.destinations ? ` — ${nextInviteTrip.destinations}` : ""}
+              </p>
+            ) : sharedTripRows.length > 0 ? (
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+                {sharedTripRows.length} shared trip{sharedTripRows.length === 1 ? "" : "s"} accepted.
+              </p>
+            ) : null}
+          </div>
+
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              borderRadius: 999,
+              padding: "6px 12px",
+              background: pendingInviteRows.length > 0 ? "#fff" : "#ecfdf3",
+              color: pendingInviteRows.length > 0 ? "#c2410c" : "#027a48",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {pendingInviteRows.length > 0
+              ? `${pendingInviteRows.length} pending invite${pendingInviteRows.length === 1 ? "" : "s"}`
+              : `${sharedTripRows.length} shared trip${sharedTripRows.length === 1 ? "" : "s"}`}
+          </span>
+        </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <Link href="/invites" className="btn btn-primary">
+            Review Invitations
+          </Link>
+          {nextInviteTrip ? (
+            <Link href="/invites" className="btn btn-primary">
+              Accept Shared Trip
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -354,6 +503,10 @@ export default async function ClientDashboardPage() {
 
           <Link href="/messages" className="btn btn-primary">
             Message My Advisor
+          </Link>
+
+          <Link href="/invites" className="btn btn-primary">
+            Travel Invitations
           </Link>
 
           {nextTrip ? (
