@@ -977,6 +977,10 @@ export default async function TripDetailPage({
     `Question about ${tripRow.trip_name ?? "my trip"}`,
   );
 
+  const travelCircleSubject = encodeURIComponent(
+    `${tripRow.trip_name ?? "Trip"} — Travel Circle`,
+  );
+
   const emailBody = encodeURIComponent(
     `Hi Jeremy,\n\nI have a question about my trip: ${tripRow.trip_name ?? ""}\n\n`,
   );
@@ -1429,7 +1433,14 @@ export default async function TripDetailPage({
             href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
             className="btn btn-primary"
           >
-            Message About This Trip
+            Message Advisor Privately
+          </ActionLink>
+
+          <ActionLink
+            href={`/messages?tripId=${tripRow.id}&scope=group&subject=${travelCircleSubject}`}
+            className="btn btn-primary"
+          >
+            Message Travel Circle
           </ActionLink>
 
           <ActionLink
@@ -1459,17 +1470,52 @@ export default async function TripDetailPage({
         <SectionHeader
           eyebrow="Concierge Messages"
           title="Have a Question About This Trip?"
-          subtitle="Send a secure trip-specific message directly from your Cozy Concierge portal. Your advisor will see the question connected to this trip."
+          subtitle="Choose whether your message should stay private with your advisor or be shared with the approved Travel Companions on this trip."
         />
 
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
-          <ActionLink
-            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
-            className="btn btn-primary"
+        <div className="grid grid-2">
+          <div
+            className="card stack"
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e6f0f2",
+            }}
           >
-            Message About This Trip
-          </ActionLink>
+            <h3 style={{ margin: 0 }}>Message Advisor Privately</h3>
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              Best for payments, personal details, document questions, or anything
+              that should stay between you and Cozy Adventure Vacations.
+            </p>
+            <ActionLink
+              href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
+              className="btn btn-primary"
+            >
+              Private Message
+            </ActionLink>
+          </div>
 
+          <div
+            className="card stack"
+            style={{
+              background: "#ffffff",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            <h3 style={{ margin: 0 }}>Message Travel Circle</h3>
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              Best for shared questions, planning details, meeting points, reminders,
+              and anything your approved companions should also see.
+            </p>
+            <ActionLink
+              href={`/messages?tripId=${tripRow.id}&scope=group&subject=${travelCircleSubject}`}
+              className="btn btn-primary"
+            >
+              Group Message
+            </ActionLink>
+          </div>
+        </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
           <ActionLink href="/messages" className="btn btn-primary">
             Open Message Center
           </ActionLink>
@@ -2394,7 +2440,14 @@ export default async function TripDetailPage({
             href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
             className="btn btn-primary"
           >
-            Message Your Advisor
+            Message Advisor Privately
+          </ActionLink>
+
+          <ActionLink
+            href={`/messages?tripId=${tripRow.id}&scope=group&subject=${travelCircleSubject}`}
+            className="btn btn-primary"
+          >
+            Message Travel Circle
           </ActionLink>
 
           <ActionLink
