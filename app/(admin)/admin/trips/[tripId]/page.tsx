@@ -5,6 +5,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { AirlinePicker } from "@/components/forms/airline-picker";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 
 const allowedTripStatuses = [
   "draft",
@@ -1224,7 +1225,7 @@ async function addTripCompanion(formData: FormData) {
 
   const { data: tripRow, error: tripError } = await supabase
     .from("trips")
-    .select("id, client_account_id")
+    .select("id, client_account_id, trip_name, destinations, departure_date")
     .eq("id", tripId)
     .single();
 
@@ -1295,6 +1296,17 @@ async function addTripCompanion(formData: FormData) {
     const { error } = await supabase.from("trip_members" as any).insert(payload);
 
     if (error) throw new Error(error.message);
+  }
+
+  if (!existingClient) {
+    await sendTravelCircleInviteEmail({
+      to: email,
+      inviteName,
+      role,
+      tripName: tripRow.trip_name ?? "Your Trip",
+      destinations: tripRow.destinations,
+      departureDate: tripRow.departure_date,
+    });
   }
 
   revalidatePath(`/admin/trips/${tripId}`);
