@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { sendNewClientMessageNotification } from "@/lib/email/message-notification";
 
 type ClientAccount = {
   id: string;
@@ -302,7 +303,7 @@ async function createClientMessageThread(formData: FormData) {
 
     const { data: trip } = await supabase
       .from("trips")
-      .select("trip_name")
+      .select("trip_name, destinations, departure_date")
       .eq("id", tripId)
       .maybeSingle();
 
@@ -347,6 +348,18 @@ async function createClientMessageThread(formData: FormData) {
 
       if (updateError) throw new Error(updateError.message);
 
+      await sendNewClientMessageNotification({
+        threadId,
+        threadType: "trip_group",
+        subject: groupSubject,
+        senderName: getClientDisplayName(clientAccount),
+        senderEmail: clientAccount.email,
+        tripName: trip?.trip_name ?? null,
+        destinations: trip?.destinations ?? null,
+        departureDate: trip?.departure_date ?? null,
+        bodyPreview: body,
+      });
+
       revalidatePath("/messages");
       redirect(`/messages?threadId=${threadId}`);
     }
@@ -386,14 +399,42 @@ async function createClientMessageThread(formData: FormData) {
 
     if (messageError) throw new Error(messageError.message);
 
+    await sendNewClientMessageNotification({
+      threadId: newThread.id,
+      threadType: "trip_group",
+      subject: groupSubject,
+      senderName: getClientDisplayName(clientAccount),
+      senderEmail: clientAccount.email,
+      tripName: trip?.trip_name ?? null,
+      destinations: trip?.destinations ?? null,
+      departureDate: trip?.departure_date ?? null,
+      bodyPreview: body,
+    });
+
     revalidatePath("/messages");
     redirect(`/messages?threadId=${newThread.id}`);
   }
 
   if (!subject) throw new Error("Subject is required.");
 
+  let privateTrip:
+    | {
+        trip_name: string | null;
+        destinations: string | null;
+        departure_date: string | null;
+      }
+    | null = null;
+
   if (tripId) {
     await assertCanUseTripMessages(supabase, clientAccount.id, tripId, false);
+
+    const { data: relatedTrip } = await supabase
+      .from("trips")
+      .select("trip_name, destinations, departure_date")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    privateTrip = relatedTrip ?? null;
   }
 
   const { data: thread, error: threadError } = await supabase
@@ -431,6 +472,18 @@ async function createClientMessageThread(formData: FormData) {
 
   if (messageError) throw new Error(messageError.message);
 
+  await sendNewClientMessageNotification({
+    threadId: thread.id,
+    threadType: "private",
+    subject,
+    senderName: getClientDisplayName(clientAccount),
+    senderEmail: clientAccount.email,
+    tripName: privateTrip?.trip_name ?? null,
+    destinations: privateTrip?.destinations ?? null,
+    departureDate: privateTrip?.departure_date ?? null,
+    bodyPreview: body,
+  });
+
   revalidatePath("/messages");
   redirect(`/messages?threadId=${thread.id}`);
 }
@@ -448,7 +501,7 @@ async function replyToClientThread(formData: FormData) {
 
   const { data: thread, error: threadError } = await supabase
     .from("message_threads" as any)
-    .select("id, client_account_id, trip_id, status, thread_type, admin_unread_count")
+    .select("id, client_account_id, trip_id, subject, status, thread_type, admin_unread_count")
     .eq("id", threadId)
     .single();
 
@@ -490,6 +543,36 @@ async function replyToClientThread(formData: FormData) {
     .eq("id", threadId);
 
   if (updateError) throw new Error(updateError.message);
+
+  let replyTrip:
+    | {
+        trip_name: string | null;
+        destinations: string | null;
+        departure_date: string | null;
+      }
+    | null = null;
+
+  if (thread.trip_id) {
+    const { data: relatedTrip } = await supabase
+      .from("trips")
+      .select("trip_name, destinations, departure_date")
+      .eq("id", thread.trip_id)
+      .maybeSingle();
+
+    replyTrip = relatedTrip ?? null;
+  }
+
+  await sendNewClientMessageNotification({
+    threadId,
+    threadType: isGroupThread ? "trip_group" : "private",
+    subject: thread.subject ?? "Message reply",
+    senderName: getClientDisplayName(clientAccount),
+    senderEmail: clientAccount.email,
+    tripName: replyTrip?.trip_name ?? null,
+    destinations: replyTrip?.destinations ?? null,
+    departureDate: replyTrip?.departure_date ?? null,
+    bodyPreview: body,
+  });
 
   revalidatePath("/messages");
   redirect(`/messages?threadId=${threadId}`);
