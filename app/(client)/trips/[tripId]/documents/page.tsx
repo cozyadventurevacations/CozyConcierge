@@ -33,6 +33,12 @@ type DocumentWithUrl = TripDocumentRow & {
   signedUrl: string | null;
 };
 
+type TripAccess = {
+  isLeadClient: boolean;
+  isTravelCompanion: boolean;
+  role: string | null;
+};
+
 function formatDate(value: string | null | undefined, fallback = "Not set") {
   if (!value) return fallback;
 
@@ -97,6 +103,41 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
       {label}
     </span>
   );
+}
+
+function VisibilityBadge({ visibility }: { visibility: string | null | undefined }) {
+  const isTravelCircle = visibility === "travel_circle";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: isTravelCircle ? "#eff6ff" : "#ecfdf3",
+        color: isTravelCircle ? "#1d4ed8" : "#027a48",
+        fontWeight: 700,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isTravelCircle ? "Travel Circle" : "Lead Client"}
+    </span>
+  );
+}
+
+function getRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "owner":
+      return "Owner";
+    case "contributor":
+      return "Contributor";
+    case "viewer":
+      return "Viewer";
+    default:
+      return role ?? "Travel Companion";
+  }
 }
 
 async function getCurrentClientAccount() {
@@ -184,7 +225,6 @@ export default async function ClientTripDocumentsPage({
       "id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status",
     )
     .eq("id", tripId)
-    .eq("client_account_id", clientAccount.id)
     .single();
 
   if (tripError || !trip) {
@@ -200,11 +240,68 @@ export default async function ClientTripDocumentsPage({
     );
   }
 
+  const tripRow = trip as TripRow;
+  const isLeadClient = tripRow.client_account_id === clientAccount.id;
+
+  let access: TripAccess = {
+    isLeadClient,
+    isTravelCompanion: false,
+    role: isLeadClient ? "owner" : null,
+  };
+
+  if (!isLeadClient) {
+    const { data: tripMember, error: tripMemberError } = await supabase
+      .from("trip_members" as any)
+      .select("id, role, can_view_trip, can_view_shared_documents, invite_status")
+      .eq("trip_id", tripId)
+      .eq("client_account_id", clientAccount.id)
+      .eq("invite_status", "active")
+      .eq("can_view_trip", true)
+      .eq("can_view_shared_documents", true)
+      .maybeSingle();
+
+    if (tripMemberError) {
+      return (
+        <PageShell title="Trip Documents" subtitle="We could not verify your trip access.">
+          <div className="card">
+            <p>
+              <strong>Error:</strong>
+            </p>
+            <pre>{JSON.stringify(tripMemberError, null, 2)}</pre>
+          </div>
+        </PageShell>
+      );
+    }
+
+    if (!tripMember) {
+      return (
+        <PageShell title="Trip Documents" subtitle="We could not load this trip.">
+          <div className="card">
+            <p>
+              <strong>Error:</strong>
+            </p>
+            <p>Trip not found or access denied.</p>
+          </div>
+        </PageShell>
+      );
+    }
+
+    access = {
+      isLeadClient: false,
+      isTravelCompanion: true,
+      role: tripMember.role ?? "viewer",
+    };
+  }
+
+  const allowedVisibility = access.isLeadClient
+    ? ["client", "travel_circle"]
+    : ["travel_circle"];
+
   const { data: documents, error: documentsError } = await supabase
     .from("trip_documents")
     .select("id, trip_id, file_name, storage_path, visibility, created_at")
     .eq("trip_id", tripId)
-    .eq("visibility", "client")
+    .in("visibility", allowedVisibility)
     .order("created_at", { ascending: false });
 
   if (documentsError) {
@@ -235,12 +332,21 @@ export default async function ClientTripDocumentsPage({
     }),
   );
 
-  const tripRow = trip as TripRow;
+  const leadClientDocumentCount = documentsWithUrls.filter(
+    (document) => document.visibility === "client",
+  ).length;
+  const travelCircleDocumentCount = documentsWithUrls.filter(
+    (document) => document.visibility === "travel_circle",
+  ).length;
 
   return (
     <PageShell
       title="Trip Documents"
-      subtitle="Client-visible files shared by Cozy Adventure Vacations."
+      subtitle={
+        access.isLeadClient
+          ? "Lead-client and Travel Circle files shared by Cozy Adventure Vacations."
+          : "Travel Circle files shared by Cozy Adventure Vacations."
+      }
     >
       <div
         className="card stack"
@@ -272,9 +378,30 @@ export default async function ClientTripDocumentsPage({
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <StatusBadge status={tripRow.trip_status} />
+          <StatusBadge
+            status={access.isLeadClient ? "Lead Client Access" : getRoleLabel(access.role)}
+          />
           <span style={{ color: "#667085", lineHeight: 1.5 }}>
             {formatDate(tripRow.departure_date)} → {formatDate(tripRow.return_date)}
           </span>
+        </div>
+
+        <div className="grid grid-2">
+          {access.isLeadClient ? (
+            <div className="card">
+              <span className="label">Lead Client Documents</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+                {leadClientDocumentCount}
+              </p>
+            </div>
+          ) : null}
+
+          <div className="card">
+            <span className="label">Travel Circle Documents</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {travelCircleDocumentCount}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -314,7 +441,8 @@ export default async function ClientTripDocumentsPage({
             <span className="label">Secure Access</span>
             <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
               Document links are temporary for security. Reopen this page if a link
-              expires and you need a fresh one.
+              expires and you need a fresh one. Your access level controls which files
+              appear here.
             </p>
           </div>
         </div>
@@ -333,7 +461,9 @@ export default async function ClientTripDocumentsPage({
           <div>
             <h2 style={{ margin: 0 }}>Shared Documents</h2>
             <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-              These are the files your advisor has made visible for this trip.
+              {access.isLeadClient
+                ? "These are the lead-client and Travel Circle files your advisor has made visible for this trip."
+                : "These are the Travel Circle files your advisor has shared with approved companions for this trip."}
             </p>
           </div>
 
@@ -352,8 +482,8 @@ export default async function ClientTripDocumentsPage({
             }}
           >
             <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              No client-visible documents have been shared for this trip yet.
-              When Cozy Adventure Vacations uploads documents for you, they will
+              No documents are currently visible for your access level on this trip.
+              When Cozy Adventure Vacations shares approved documents, they will
               appear here.
             </p>
           </div>
@@ -363,6 +493,7 @@ export default async function ClientTripDocumentsPage({
               <thead>
                 <tr>
                   <th>File Name</th>
+                  <th>Shared With</th>
                   <th>Uploaded</th>
                   <th>Open</th>
                 </tr>
@@ -372,6 +503,9 @@ export default async function ClientTripDocumentsPage({
                 {documentsWithUrls.map((doc) => (
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
+                    <td>
+                      <VisibilityBadge visibility={doc.visibility} />
+                    </td>
                     <td>{formatDateTime(doc.created_at)}</td>
                     <td>
                       {doc.signedUrl ? (
