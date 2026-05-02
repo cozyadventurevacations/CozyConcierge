@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { ClientLinkedDocuments } from "@/components/trips/client-linked-documents";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 
 function formatDate(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
@@ -365,7 +366,7 @@ async function requireTripCircleManager(tripId: string) {
 
   const { data: trip, error: tripError } = await supabase
     .from("trips")
-    .select("id, client_account_id")
+    .select("id, client_account_id, trip_name, destinations, departure_date")
     .eq("id", tripId)
     .single();
 
@@ -475,6 +476,17 @@ async function inviteTravelCompanion(formData: FormData) {
 
   if (insertError) {
     throw new Error(insertError.message);
+  }
+
+  if (!existingClient) {
+    await sendTravelCircleInviteEmail({
+      to: inviteEmail,
+      inviteName,
+      role,
+      tripName: trip.trip_name ?? "Your Trip",
+      destinations: trip.destinations,
+      departureDate: trip.departure_date,
+    });
   }
 
   revalidatePath(`/trips/${tripId}`);
