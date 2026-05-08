@@ -241,6 +241,25 @@ function getPassportStatus(expirationDate: string | null | undefined) {
   };
 }
 
+function getUpdatedMessageLabel(updated: string | undefined) {
+  switch (updated) {
+    case "personal":
+      return "Personal information saved successfully.";
+    case "address":
+      return "Address saved successfully.";
+    case "emergency":
+      return "Emergency contact saved successfully.";
+    case "identity":
+      return "Passport and identity details saved successfully.";
+    case "preferences":
+      return "Travel preferences saved successfully.";
+    case "allergies":
+      return "Food allergy notes saved successfully.";
+    default:
+      return "Profile updated successfully.";
+  }
+}
+
 function StatusPill({
   label,
   background,
@@ -345,6 +364,24 @@ function Section({
         {children}
       </div>
     </details>
+  );
+}
+
+function SaveButton({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-start",
+        gap: 10,
+        flexWrap: "wrap",
+        paddingTop: 4,
+      }}
+    >
+      <button type="submit" className="btn btn-primary">
+        {children}
+      </button>
+    </div>
   );
 }
 
@@ -604,6 +641,27 @@ async function getCurrentClientAccount() {
   };
 }
 
+async function loadPrimaryTravelerId({
+  supabase,
+  clientAccountId,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+}) {
+  const { data: existingPrimary, error: primaryError } = await supabase
+    .from("traveler_profiles")
+    .select("id")
+    .eq("client_account_id", clientAccountId)
+    .eq("is_primary_traveler", true)
+    .maybeSingle();
+
+  if (primaryError) {
+    throw new Error(primaryError.message);
+  }
+
+  return existingPrimary?.id ?? null;
+}
+
 async function syncPrimaryTravelerFromClientProfile({
   supabase,
   clientAccountId,
@@ -625,18 +683,9 @@ async function syncPrimaryTravelerFromClientProfile({
 }) {
   const passportFullName = buildName(firstName, middleName, lastName);
 
-  const { data: existingPrimary, error: primaryError } = await supabase
-    .from("traveler_profiles")
-    .select("id")
-    .eq("client_account_id", clientAccountId)
-    .eq("is_primary_traveler", true)
-    .maybeSingle();
+  const existingPrimaryId = await loadPrimaryTravelerId({ supabase, clientAccountId });
 
-  if (primaryError) {
-    throw new Error(primaryError.message);
-  }
-
-  if (existingPrimary) {
+  if (existingPrimaryId) {
     const { error } = await supabase
       .from("traveler_profiles")
       .update({
@@ -651,7 +700,7 @@ async function syncPrimaryTravelerFromClientProfile({
         is_primary_traveler: true,
         is_minor: false,
       })
-      .eq("id", existingPrimary.id)
+      .eq("id", existingPrimaryId)
       .eq("client_account_id", clientAccountId);
 
     if (error) {
@@ -680,7 +729,66 @@ async function syncPrimaryTravelerFromClientProfile({
   }
 }
 
-async function updateClientProfile(formData: FormData) {
+async function updatePrimaryTravelerPersonalInfo({
+  supabase,
+  clientAccountId,
+  firstName,
+  middleName,
+  lastName,
+  dateOfBirth,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  dateOfBirth: string | null;
+}) {
+  const existingPrimaryId = await loadPrimaryTravelerId({ supabase, clientAccountId });
+
+  if (!existingPrimaryId) {
+    const { error } = await supabase.from("traveler_profiles").insert({
+      client_account_id: clientAccountId,
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      date_of_birth: dateOfBirth,
+      passport_full_name: buildName(firstName, middleName, lastName) || null,
+      relationship_to_client: "Self",
+      is_primary_traveler: true,
+      is_minor: false,
+    });
+
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("traveler_profiles")
+    .update({
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      date_of_birth: dateOfBirth,
+      passport_full_name: buildName(firstName, middleName, lastName) || null,
+      relationship_to_client: "Self",
+      is_primary_traveler: true,
+      is_minor: false,
+    })
+    .eq("id", existingPrimaryId)
+    .eq("client_account_id", clientAccountId);
+
+  if (error) throw new Error(error.message);
+}
+
+async function revalidateProfilePaths() {
+  revalidatePath("/profile");
+  revalidatePath("/profile/passport-upload");
+  revalidatePath("/profile/traveler-numbers");
+  revalidatePath("/trips");
+}
+
+async function updatePersonalInformation(formData: FormData) {
   "use server";
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
@@ -689,68 +797,151 @@ async function updateClientProfile(formData: FormData) {
   const middleName = cleanText(formData, "middle_name");
   const lastName = cleanText(formData, "last_name");
   const dateOfBirth = cleanText(formData, "date_of_birth");
-  const passportNumber = cleanText(formData, "passport_number");
-  const passportExpirationDate = cleanText(formData, "passport_expiration_date");
-
-  const profileUpdates = {
-    first_name: firstName,
-    middle_name: middleName,
-    last_name: lastName,
-    preferred_name: cleanText(formData, "preferred_name"),
-    phone_primary: normalizePhoneForSave(cleanText(formData, "phone_primary")),
-    phone_secondary: normalizePhoneForSave(cleanText(formData, "phone_secondary")),
-    address_line_1: cleanText(formData, "address_line_1"),
-    address_line_2: cleanText(formData, "address_line_2"),
-    city: cleanText(formData, "city"),
-    state: cleanText(formData, "state"),
-    postal_code: cleanText(formData, "postal_code"),
-    date_of_birth: dateOfBirth,
-    anniversary_date: cleanText(formData, "anniversary_date"),
-    preferred_airport: cleanText(formData, "preferred_airport"),
-    travel_style: cleanText(formData, "travel_style"),
-    airline_seating_preference: cleanText(formData, "airline_seating_preference"),
-    airline_class_preference: cleanText(formData, "airline_class_preference"),
-    cruise_cabin_preference: cleanText(formData, "cruise_cabin_preference"),
-    travel_preference_notes: cleanText(formData, "travel_preference_notes"),
-    accessibility_notes: cleanText(formData, "accessibility_notes"),
-    food_allergies: buildFoodAllergiesValue(formData),
-    passport_number: passportNumber,
-    passport_expiration_date: passportExpirationDate,
-    emergency_contact_name: cleanText(formData, "emergency_contact_name"),
-    emergency_contact_relationship: cleanText(
-      formData,
-      "emergency_contact_relationship",
-    ),
-    emergency_contact_phone: normalizePhoneForSave(
-      cleanText(formData, "emergency_contact_phone"),
-    ),
-  };
 
   const { error } = await supabase
     .from("client_accounts")
-    .update(profileUpdates)
+    .update({
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      preferred_name: cleanText(formData, "preferred_name"),
+      date_of_birth: dateOfBirth,
+      anniversary_date: cleanText(formData, "anniversary_date"),
+      phone_primary: normalizePhoneForSave(cleanText(formData, "phone_primary")),
+      phone_secondary: normalizePhoneForSave(cleanText(formData, "phone_secondary")),
+    })
     .eq("id", clientAccount.id);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
-  await syncPrimaryTravelerFromClientProfile({
+  await updatePrimaryTravelerPersonalInfo({
     supabase,
     clientAccountId: clientAccount.id,
     firstName,
     middleName,
     lastName,
     dateOfBirth,
+  });
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=personal");
+}
+
+async function updateAddress(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      address_line_1: cleanText(formData, "address_line_1"),
+      address_line_2: cleanText(formData, "address_line_2"),
+      city: cleanText(formData, "city"),
+      state: cleanText(formData, "state"),
+      postal_code: cleanText(formData, "postal_code"),
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=address");
+}
+
+async function updateEmergencyContact(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      emergency_contact_name: cleanText(formData, "emergency_contact_name"),
+      emergency_contact_relationship: cleanText(formData, "emergency_contact_relationship"),
+      emergency_contact_phone: normalizePhoneForSave(cleanText(formData, "emergency_contact_phone")),
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=emergency");
+}
+
+async function updatePassportIdentity(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const passportNumber = cleanText(formData, "passport_number");
+  const passportExpirationDate = cleanText(formData, "passport_expiration_date");
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      passport_number: passportNumber,
+      passport_expiration_date: passportExpirationDate,
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await syncPrimaryTravelerFromClientProfile({
+    supabase,
+    clientAccountId: clientAccount.id,
+    firstName: clientAccount.first_name,
+    middleName: clientAccount.middle_name,
+    lastName: clientAccount.last_name,
+    dateOfBirth: clientAccount.date_of_birth,
     passportNumber,
     passportExpirationDate,
   });
 
-  revalidatePath("/profile");
-  revalidatePath("/profile/passport-upload");
-  revalidatePath("/profile/traveler-numbers");
-  revalidatePath("/trips");
-  redirect("/profile?updated=profile");
+  await revalidateProfilePaths();
+  redirect("/profile?updated=identity");
+}
+
+async function updateTravelPreferences(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      preferred_airport: cleanText(formData, "preferred_airport"),
+      travel_style: cleanText(formData, "travel_style"),
+      airline_seating_preference: cleanText(formData, "airline_seating_preference"),
+      airline_class_preference: cleanText(formData, "airline_class_preference"),
+      cruise_cabin_preference: cleanText(formData, "cruise_cabin_preference"),
+      travel_preference_notes: cleanText(formData, "travel_preference_notes"),
+      accessibility_notes: cleanText(formData, "accessibility_notes"),
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=preferences");
+}
+
+async function updateFoodAllergies(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      food_allergies: buildFoodAllergiesValue(formData),
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=allergies");
 }
 
 export default async function ClientProfilePage({
@@ -811,18 +1002,12 @@ export default async function ClientProfilePage({
         ) : null}
 
         <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Update your contact details, emergency contact, passport reference
-          information, travel preferences, accessibility notes, food allergies,
-          traveler numbers, rewards memberships, and supporting travel documents.
+          Update one profile category at a time. Each section has its own save button, so you do not have to hunt for one large save action at the bottom.
         </p>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/trips" className="btn btn-primary">
-            View My Trips
-          </Link>
-
           <Link href="/profile/passport-upload" className="btn btn-primary">
-            Passport Details & Upload
+            Passport Upload
           </Link>
 
           <Link href="/profile/traveler-numbers" className="btn btn-primary">
@@ -832,17 +1017,10 @@ export default async function ClientProfilePage({
           <Link href="/profile/documents/upload" className="btn btn-primary">
             Upload Travel Document
           </Link>
-
-          <a
-            href="mailto:jeremyb@cozyadventurevacations.com?subject=Profile%20Question"
-            className="btn btn-primary"
-          >
-            Email Advisor
-          </a>
         </div>
       </div>
 
-      {updated === "profile" ? (
+      {updated ? (
         <div
           className="card"
           style={{
@@ -851,7 +1029,7 @@ export default async function ClientProfilePage({
             color: "#166534",
           }}
         >
-          <strong>Profile updated successfully.</strong>
+          <strong>{getUpdatedMessageLabel(updated)}</strong>
         </div>
       ) : null}
 
@@ -882,7 +1060,7 @@ export default async function ClientProfilePage({
         </div>
       </div>
 
-      <form action={updateClientProfile} className="stack">
+      <form action={updatePersonalInformation}>
         <Section
           title="Personal Information"
           defaultOpen
@@ -966,8 +1144,12 @@ export default async function ClientProfilePage({
               placeholder="1 (555) 123-4567"
             />
           </div>
-        </Section>
 
+          <SaveButton>Save Personal Information</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updateAddress}>
         <Section
           title="Address"
           intro="Start typing your street address and choose the best match. Please review the filled-in city, state, and postal code before saving."
@@ -979,8 +1161,12 @@ export default async function ClientProfilePage({
             stateDefault={clientAccount.state}
             postalCodeDefault={clientAccount.postal_code}
           />
-        </Section>
 
+          <SaveButton>Save Address</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updateEmergencyContact}>
         <Section
           title="Emergency Contact"
           tone={hasEmergencyContact ? "success" : "warning"}
@@ -1009,8 +1195,12 @@ export default async function ClientProfilePage({
               placeholder="1 (555) 123-4567"
             />
           </div>
-        </Section>
 
+          <SaveButton>Save Emergency Contact</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updatePassportIdentity}>
         <Section title="Passport & Identity Details">
           <div
             style={{
@@ -1027,8 +1217,8 @@ export default async function ClientProfilePage({
 
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
             Your name from the Personal Information section will automatically sync
-            to your primary passport profile. Use the Passport Details & Upload page
-            for a dedicated passport upload area.
+            to your primary passport profile. Use the Passport Upload page for a
+            dedicated passport document upload area.
           </p>
 
           <div className="grid grid-2">
@@ -1048,15 +1238,19 @@ export default async function ClientProfilePage({
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/profile/passport-upload" className="btn btn-primary">
-              Passport Details & Upload
+              Passport Upload
             </Link>
 
             <Link href="/profile/traveler-numbers" className="btn btn-primary">
               Traveler Numbers & Rewards
             </Link>
           </div>
-        </Section>
 
+          <SaveButton>Save Passport & Identity Details</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updateTravelPreferences}>
         <Section
           title="Travel Preferences"
           intro="These details help your advisor plan trips that better fit how you like to travel."
@@ -1113,8 +1307,12 @@ export default async function ClientProfilePage({
             defaultValue={clientAccount.accessibility_notes}
             placeholder="e.g. Accessible room needed, limited walking, scooter use."
           />
-        </Section>
 
+          <SaveButton>Save Travel Preferences</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updateFoodAllergies}>
         <Section
           title="Food Allergies"
           tone={hasFoodAllergies ? "success" : "warning"}
@@ -1136,32 +1334,9 @@ export default async function ClientProfilePage({
             notify airlines, resorts, restaurants, cruise lines, tour operators,
             or medical professionals directly when required.
           </div>
+
+          <SaveButton>Save Food Allergies</SaveButton>
         </Section>
-
-        <div
-          className="card stack"
-          style={{
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Save Profile Updates</h2>
-
-          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            Review your updates carefully before saving. This information may be
-            used by Cozy Adventure Vacations when planning or supporting your travel.
-          </p>
-
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <button type="submit" className="btn btn-primary">
-              Save Profile
-            </button>
-
-            <Link href="/trips" className="btn btn-primary">
-              Back to My Trips
-            </Link>
-          </div>
-        </div>
       </form>
 
       <Section
@@ -1183,7 +1358,7 @@ export default async function ClientProfilePage({
             </p>
 
             <Link href="/profile/passport-upload" className="btn btn-primary">
-              Passport Details & Upload
+              Passport Upload
             </Link>
           </div>
 
