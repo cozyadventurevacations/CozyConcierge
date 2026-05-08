@@ -104,18 +104,6 @@ function getInviteTrip(invite: TripInviteRow) {
   return invite.trips ?? null;
 }
 
-function getRoleLabel(role: string | null | undefined) {
-  switch (role) {
-    case "owner":
-      return "Owner";
-    case "contributor":
-      return "Contributor";
-    case "viewer":
-      return "Viewer";
-    default:
-      return role ?? "Viewer";
-  }
-}
 
 function SummaryCard({
   label,
