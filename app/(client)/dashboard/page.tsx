@@ -162,16 +162,12 @@ function ActionCard({
   href,
   cta,
   tone = "neutral",
-  secondaryHref,
-  secondaryCta,
 }: {
   title: string;
   description: string;
   href: string;
   cta: string;
   tone?: "neutral" | "warning" | "good";
-  secondaryHref?: string;
-  secondaryCta?: string;
 }) {
   const styles = {
     neutral: { background: "#ffffff", border: "1px solid #e6f0f2" },
@@ -197,12 +193,6 @@ function ActionCard({
         <Link href={href} className="btn btn-primary">
           {cta}
         </Link>
-
-        {secondaryHref && secondaryCta ? (
-          <Link href={secondaryHref} className="btn btn-primary">
-            {secondaryCta}
-          </Link>
-        ) : null}
       </div>
     </div>
   );
@@ -469,11 +459,13 @@ export default async function ClientDashboardPage() {
           title="Travel Invitations"
           description={
             nextInviteTrip
-              ? `Next invite: ${nextInviteTrip.trip_name ?? "Shared Trip"}${
+              ? `You have a pending invite for ${
+                  nextInviteTrip.trip_name ?? "a shared trip"
+                }${
                   nextInviteTrip.destinations
                     ? ` — ${nextInviteTrip.destinations}`
                     : ""
-                }`
+                }.`
               : sharedTripRows.length > 0
                 ? `${sharedTripRows.length} shared trip${
                     sharedTripRows.length === 1 ? "" : "s"
@@ -481,19 +473,29 @@ export default async function ClientDashboardPage() {
                 : "Accept shared trip access from family, friends, and fellow travelers."
           }
           href="/invites"
-          cta="Review Invitations"
-          secondaryHref={nextInviteTrip ? "/invites" : undefined}
-          secondaryCta={nextInviteTrip ? "Accept Shared Trip" : undefined}
+          cta={
+            pendingInviteRows.length > 0
+              ? `Review ${pendingInviteRows.length} Invitation${
+                  pendingInviteRows.length === 1 ? "" : "s"
+                }`
+              : "Open Invitations"
+          }
           tone={pendingInviteRows.length > 0 ? "warning" : "good"}
         />
 
         <ActionCard
           title="Concierge Messages"
-          description="Send questions directly to your travel advisor and keep trip conversations in one place."
+          description={
+            unreadMessages > 0
+              ? `You have ${unreadMessages} unread advisor ${
+                  unreadMessages === 1 ? "reply" : "replies"
+                }.`
+              : `You have ${openMessageThreads} open message ${
+                  openMessageThreads === 1 ? "thread" : "threads"
+                }.`
+          }
           href="/messages"
-          cta="Open Messages"
-          secondaryHref="/messages"
-          secondaryCta="Ask a Question"
+          cta={unreadMessages > 0 ? "Read Messages" : "Open Messages"}
           tone={unreadMessages > 0 ? "warning" : "good"}
         />
       </div>
@@ -510,10 +512,6 @@ export default async function ClientDashboardPage() {
             Request New Travel Quote
           </Link>
 
-          <Link href="/messages" className="btn btn-primary">
-            Message My Advisor
-          </Link>
-
           <Link href="/invites" className="btn btn-primary">
             Travel Invitations
           </Link>
@@ -524,6 +522,10 @@ export default async function ClientDashboardPage() {
             </Link>
           ) : null}
         </div>
+
+        <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+          Need to reach your advisor? Use the Concierge Messages card above so the conversation stays connected to your client account.
+        </p>
       </div>
 
       <div className="card stack">
