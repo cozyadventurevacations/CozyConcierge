@@ -35,11 +35,33 @@ export function AddressAutocomplete({
   const [city, setCity] = useState(cityDefault ?? "");
   const [state, setState] = useState(stateDefault ?? "");
   const [postalCode, setPostalCode] = useState(postalCodeDefault ?? "");
+
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasUserTyped, setHasUserTyped] = useState(false);
   const [hasSelectedSuggestion, setHasSelectedSuggestion] = useState(false);
+  const [isSuggestionBoxOpen, setIsSuggestionBoxOpen] = useState(false);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleDocumentMouseDown(event: MouseEvent) {
+      if (!wrapperRef.current) return;
+
+      if (!wrapperRef.current.contains(event.target as Node)) {
+        setIsSuggestionBoxOpen(false);
+        setSuggestions([]);
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) {
@@ -48,7 +70,7 @@ export function AddressAutocomplete({
 
     const input = addressLine1.trim();
 
-    if (hasSelectedSuggestion) {
+    if (!hasUserTyped || hasSelectedSuggestion) {
       setSuggestions([]);
       setIsSearching(false);
       return;
@@ -57,6 +79,7 @@ export function AddressAutocomplete({
     if (input.length < 3) {
       setSuggestions([]);
       setIsSearching(false);
+      setIsSuggestionBoxOpen(false);
       return;
     }
 
@@ -76,6 +99,7 @@ export function AddressAutocomplete({
 
         if (!response.ok) {
           setSuggestions([]);
+          setIsSuggestionBoxOpen(false);
           setStatusMessage(
             data.error ??
               "Address suggestions could not be loaded. You can still enter your address manually.",
@@ -83,10 +107,14 @@ export function AddressAutocomplete({
           return;
         }
 
-        setSuggestions(data.suggestions ?? []);
+        const nextSuggestions = (data.suggestions ?? []) as Suggestion[];
+
+        setSuggestions(nextSuggestions);
+        setIsSuggestionBoxOpen(nextSuggestions.length > 0);
         setStatusMessage(null);
       } catch {
         setSuggestions([]);
+        setIsSuggestionBoxOpen(false);
         setStatusMessage(
           "Address suggestions could not be loaded. You can still enter your address manually.",
         );
@@ -100,12 +128,14 @@ export function AddressAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [addressLine1, hasSelectedSuggestion]);
+  }, [addressLine1, hasUserTyped, hasSelectedSuggestion]);
 
   async function handleSelectSuggestion(suggestion: Suggestion) {
     setHasSelectedSuggestion(true);
+    setHasUserTyped(false);
     setAddressLine1(suggestion.text);
     setSuggestions([]);
+    setIsSuggestionBoxOpen(false);
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -127,8 +157,7 @@ export function AddressAutocomplete({
 
       if (!response.ok) {
         setStatusMessage(
-          data.error ??
-            "Address details could not be loaded. Please review the address manually.",
+          data.error ?? "Address details could not be loaded. Please review the address manually.",
         );
         return;
       }
@@ -152,66 +181,78 @@ export function AddressAutocomplete({
       }
 
       setSuggestions([]);
+      setIsSuggestionBoxOpen(false);
       setIsSearching(false);
-      setStatusMessage(
-        "Address details filled in. Please review them before saving.",
-      );
+      setStatusMessage("Address details filled in. Please review them before saving.");
     } catch {
       setSuggestions([]);
+      setIsSuggestionBoxOpen(false);
       setIsSearching(false);
-      setStatusMessage(
-        "Address details could not be loaded. Please review the address manually.",
-      );
+      setStatusMessage("Address details could not be loaded. Please review the address manually.");
     }
   }
 
   function handleAddressLine1Change(value: string) {
+    setHasUserTyped(true);
     setHasSelectedSuggestion(false);
     setAddressLine1(value);
 
     if (value.trim().length < 3) {
       setSuggestions([]);
       setIsSearching(false);
+      setIsSuggestionBoxOpen(false);
+    }
+  }
+
+  function handleAddressLine1Focus() {
+    if (suggestions.length > 0 && hasUserTyped && !hasSelectedSuggestion) {
+      setIsSuggestionBoxOpen(true);
+    }
+  }
+
+  function handleAddressLine1KeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setIsSuggestionBoxOpen(false);
+      setSuggestions([]);
     }
   }
 
   return (
-    <div className="stack">
-      <div style={{ position: "relative" }}>
-        <label className="stack-sm">
-          <span className="label">Address Line 1</span>
-          <input
-            className="input"
-            name="address_line_1"
-            value={addressLine1}
-            onChange={(event) => handleAddressLine1Change(event.target.value)}
-            onBlur={() => {
-              setTimeout(() => {
-                setSuggestions([]);
-              }, 150);
-            }}
-            placeholder="Start typing your street address"
-            autoComplete="address-line1"
-          />
-          <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
-            Start typing your address, then choose the best match from the list.
-          </span>
+    <div ref={wrapperRef} className="stack">
+      <div className="stack-sm" style={{ position: "relative" }}>
+        <label className="label" htmlFor="address_line_1">
+          Address Line 1
         </label>
 
-        {suggestions.length > 0 ? (
+        <input
+          id="address_line_1"
+          className="input"
+          name="address_line_1"
+          value={addressLine1}
+          onChange={(event) => handleAddressLine1Change(event.target.value)}
+          onFocus={handleAddressLine1Focus}
+          onKeyDown={handleAddressLine1KeyDown}
+          placeholder="Start typing your street address"
+          autoComplete="address-line1"
+        />
+
+        <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>
+          Start typing your address, then choose the best match from the list.
+        </p>
+
+        {isSuggestionBoxOpen && suggestions.length > 0 ? (
           <div
             style={{
               position: "absolute",
-              top: "100%",
+              top: "calc(100% + 4px)",
               left: 0,
               right: 0,
-              zIndex: 20,
-              background: "#ffffff",
-              border: "1px solid #d0d5dd",
+              zIndex: 50,
+              border: "1px solid #d9e6ea",
               borderRadius: 12,
-              boxShadow: "0 12px 30px rgba(16, 24, 40, 0.12)",
+              background: "#ffffff",
+              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.14)",
               overflow: "hidden",
-              marginTop: 6,
             }}
           >
             {suggestions.map((suggestion) => (
@@ -251,7 +292,7 @@ export function AddressAutocomplete({
           placeholder="Apartment, suite, unit, etc."
           autoComplete="address-line2"
         />
-        <span style={{ color: "#667085", lineHeight: 1.45, fontSize: 13 }}>
+        <span style={{ color: "#64748b", fontSize: 13 }}>
           Apartment/unit details may not auto-fill. Please add them manually.
         </span>
       </label>
@@ -292,33 +333,15 @@ export function AddressAutocomplete({
       </div>
 
       {isSearching ? (
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-            color: "#667085",
-            lineHeight: 1.6,
-          }}
-        >
+        <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
           Searching for address matches...
-        </div>
+        </p>
       ) : null}
 
       {statusMessage ? (
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-            color: "#667085",
-            lineHeight: 1.6,
-          }}
-        >
+        <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
           {statusMessage}
-        </div>
+        </p>
       ) : null}
     </div>
   );
