@@ -370,7 +370,7 @@ export default async function ClientInvitationsPage() {
   return (
     <PageShell
       title="Travel Invitations"
-      subtitle="Accept shared trip access from family, friends, and fellow travelers."
+      subtitle="Review shared trip invitations and accepted Travel Circle access."
     >
       <div
         className="card stack"
@@ -391,21 +391,37 @@ export default async function ClientInvitationsPage() {
         >
           Cozy Concierge
         </p>
-        <h2 style={{ margin: 0 }}>Your Travel Circle Invitations</h2>
+        <h2 style={{ margin: 0 }}>Travel Circle Invitations</h2>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Invitations are matched to the email address on your Cozy Concierge account:
           <strong> {clientEmail}</strong>
         </p>
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn btn-primary">
-            Back to Dashboard
-          </Link>
-          <Link href="/trips" className="btn btn-primary">
-            View My Trips
-          </Link>
-          <Link href="/messages" className="btn btn-primary">
-            Open Messages
-          </Link>
+        <div className="grid grid-2">
+          <div
+            className="card"
+            style={{
+              border: "1px solid #fed7aa",
+              background: pendingRows.length > 0 ? "#fff7ed" : "#ffffff",
+            }}
+          >
+            <span className="label">Pending Invitations</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
+              {pendingRows.length}
+            </p>
+          </div>
+
+          <div
+            className="card"
+            style={{
+              border: "1px solid #e6f0f2",
+              background: "#ffffff",
+            }}
+          >
+            <span className="label">Shared Trips Accepted</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
+              {activeRows.length}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -465,7 +481,15 @@ export default async function ClientInvitationsPage() {
 
                     <form action={declineTravelCompanionInvite}>
                       <input type="hidden" name="invite_id" value={invite.id} />
-                      <button type="submit" className="btn btn-primary">
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        style={{
+                          background: "#ffffff",
+                          color: "#9a3412",
+                          border: "1px solid #fed7aa",
+                        }}
+                      >
                         Decline
                       </button>
                     </form>
@@ -513,6 +537,9 @@ export default async function ClientInvitationsPage() {
                     </p>
                     <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.45 }}>
                       {trip?.destinations ?? "Destination not provided"} • {getRoleLabel(membership.role)}
+                    </p>
+                    <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.45 }}>
+                      {formatDate(trip?.departure_date)} → {formatDate(trip?.return_date)}
                     </p>
                   </div>
 
