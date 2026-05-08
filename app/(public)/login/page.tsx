@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
@@ -17,6 +18,33 @@ function getRedirectPath(role: string | null | undefined) {
   }
 
   return "/dashboard";
+}
+
+function LoginBrandHeader() {
+  return (
+    <div style={{ display: "grid", justifyItems: "center", gap: 10 }}>
+      <Image
+        src="/cozy-logo.png"
+        alt="Cozy Adventure Vacations"
+        width={200}
+        height={120}
+        priority
+      />
+
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "var(--accent-dark)",
+          fontWeight: 800,
+        }}
+      >
+        Cozy Concierge
+      </p>
+    </div>
+  );
 }
 
 function LoginPageContent() {
@@ -99,73 +127,32 @@ function LoginPageContent() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        padding: 24,
-        background:
-          "linear-gradient(135deg, rgba(240,247,248,1) 0%, rgba(255,255,255,1) 70%)",
+        padding: "24px",
+        background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 70%)",
       }}
     >
-      <div
+      <section
         className="card stack"
         style={{
           width: "100%",
-          maxWidth: 460,
+          maxWidth: 520,
           border: "1px solid #e6f0f2",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginBottom: 20,
-          }}
-        >
-          <img
-            src="/cozy-logo.png"
-            alt="Cozy Adventure Vacations logo"
-            style={{
-              width: 220,
-              height: "auto",
-              maxWidth: "100%",
-              objectFit: "contain",
-              display: "block",
-            }}
-          />
-        </div>
+        <LoginBrandHeader />
 
-        <div>
-          <p
-            style={{
-              margin: "0 0 4px",
-              fontSize: 13,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "var(--accent-dark)",
-              fontWeight: 800,
-              textAlign: "center",
-            }}
-          >
-            Cozy Concierge
-          </p>
+        <div style={{ textAlign: "center" }}>
+          <h1 style={{ margin: 0 }}>Sign In</h1>
 
-          <h1 style={{ margin: 0, textAlign: "center" }}>Sign In</h1>
-
-          <p
-            style={{
-              margin: "8px 0 0",
-              color: "#667085",
-              lineHeight: 1.6,
-              textAlign: "center",
-            }}
-          >
-            Sign in to access your dashboard, trip details, documents, and travel
-            planning tools.
+          <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>
+            Sign in to access your dashboard, trip details, documents, and travel planning tools.
           </p>
         </div>
 
         {message ? (
           <div
             style={{
-              padding: 12,
+              padding: "12px",
               borderRadius: 12,
               background: "#f0fdf4",
               border: "1px solid #bbf7d0",
@@ -180,7 +167,7 @@ function LoginPageContent() {
         {errorMessage ? (
           <div
             style={{
-              padding: 12,
+              padding: "12px",
               borderRadius: 12,
               background: "#fff1f2",
               border: "1px solid #fecdd3",
@@ -202,6 +189,7 @@ function LoginPageContent() {
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
               placeholder="you@example.com"
+              required
             />
           </label>
 
@@ -214,18 +202,11 @@ function LoginPageContent() {
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
               placeholder="Enter your password"
+              required
             />
           </label>
 
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={isSubmitting}
-            style={{
-              opacity: isSubmitting ? 0.75 : 1,
-              cursor: isSubmitting ? "not-allowed" : "pointer",
-            }}
-          >
+          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
             {isSubmitting ? "Signing in..." : "Sign In"}
           </button>
         </form>
@@ -233,46 +214,17 @@ function LoginPageContent() {
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "center",
             gap: 12,
             flexWrap: "wrap",
             fontSize: 14,
           }}
         >
-          <Link
-            href="/forgot-password"
-            style={{
-              color: "var(--accent-dark)",
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Forgot password?
-          </Link>
-
-          <Link
-            href="/register"
-            style={{
-              color: "var(--accent-dark)",
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Create client account
-          </Link>
-
-          <Link
-            href="/travel-request"
-            style={{
-              color: "var(--accent-dark)",
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Request a trip
-          </Link>
+          <Link href="/forgot-password">Forgot password?</Link>
+          <Link href="/register">Create client account</Link>
+          <Link href="/travel-request">Request a trip</Link>
         </div>
-      </div>
+      </section>
     </main>
   );
 }
@@ -284,48 +236,22 @@ function LoginPageFallback() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        padding: 24,
-        background:
-          "linear-gradient(135deg, rgba(240,247,248,1) 0%, rgba(255,255,255,1) 70%)",
+        padding: "24px",
+        background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 70%)",
       }}
     >
-      <div
+      <section
         className="card stack"
         style={{
           width: "100%",
-          maxWidth: 460,
-          border: "1px solid #e6f0f2",
+          maxWidth: 520,
           textAlign: "center",
+          border: "1px solid #e6f0f2",
         }}
       >
-        <img
-          src="/cozy-logo.png"
-          alt="Cozy Adventure Vacations logo"
-          style={{
-            width: 180,
-            height: "auto",
-            maxWidth: "100%",
-            objectFit: "contain",
-            margin: "0 auto",
-            display: "block",
-          }}
-        />
-
-        <p
-          style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
-          }}
-        >
-          Cozy Concierge
-        </p>
-
+        <LoginBrandHeader />
         <h1 style={{ margin: 0 }}>Loading Sign In...</h1>
-      </div>
+      </section>
     </main>
   );
 }
