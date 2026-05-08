@@ -661,9 +661,6 @@ export default async function AdminClientDetailPage({
 
   const travelCircleAccessRows = Array.from(travelCircleAccessMap.values());
   const ownedTripIds = new Set(tripRows.map((trip) => trip.id));
-  const ownedTravelCircleRows = travelCircleAccessRows.filter(
-    (access) => access.role === "owner" || ownedTripIds.has(access.trip_id),
-  );
   const sharedTravelCircleRows = travelCircleAccessRows.filter(
     (access) =>
       access.role !== "owner" &&
