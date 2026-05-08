@@ -369,17 +369,14 @@ export default async function ClientDocumentUploadPage({
           Supporting Travel Documents
         </h1>
 
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Upload non-passport travel documents such as insurance files, minor travel consent forms,
+          accessibility documentation, supplier-required paperwork, or general supporting files.
+        </p>
+
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <Link href="/profile" className="btn btn-primary">
             Back to Profile
-          </Link>
-
-          <Link href="/profile/passport-upload" className="btn btn-primary">
-            Upload Passport Image
-          </Link>
-
-          <Link href="/trips" className="btn btn-primary">
-            Back to My Trips
           </Link>
         </div>
       </div>
@@ -410,8 +407,53 @@ export default async function ClientDocumentUploadPage({
         for travel planning, supplier documentation, or trip support.
       </div>
 
+      <div className="grid grid-3">
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Uploaded Documents</span>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
+            {documentsWithUrls.length}
+          </p>
+        </div>
+
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Allowed File Types</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 900 }}>
+            JPG, PNG, WEBP, PDF, DOC, DOCX
+          </p>
+        </div>
+
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Max File Size</span>
+          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
+            15MB
+          </p>
+        </div>
+      </div>
+
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Upload Document</h2>
+        <h2 style={{ margin: 0 }}>Upload Supporting Travel Document</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Choose the document type, add a clear title, and include notes that help your advisor understand how the file should be used.
+        </p>
 
         <form action={uploadClientDocument} className="stack">
           <div className="grid grid-2">
@@ -506,10 +548,6 @@ export default async function ClientDocumentUploadPage({
             <button type="submit" className="btn btn-primary">
               Upload Travel Document
             </button>
-
-            <Link href="/profile" className="btn btn-primary">
-              Cancel
-            </Link>
           </div>
         </form>
       </div>
@@ -579,7 +617,7 @@ export default async function ClientDocumentUploadPage({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Open 5-Min Link
+                          Open Secure Link
                         </a>
                       ) : (
                         "Unavailable"
