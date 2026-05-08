@@ -403,6 +403,10 @@ export default async function ClientTripDocumentsPage({
             </p>
           </div>
         </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+
+        </div>
       </div>
 
       <div
@@ -465,11 +469,12 @@ export default async function ClientTripDocumentsPage({
                 ? "These are the lead-client and Travel Circle files your advisor has made visible for this trip."
                 : "These are the Travel Circle files your advisor has shared with approved companions for this trip."}
             </p>
+            <p style={{ margin: "6px 0 0", color: "var(--accent-dark)", fontWeight: 800 }}>
+              {documentsWithUrls.length} document{documentsWithUrls.length === 1 ? "" : "s"} available
+            </p>
           </div>
 
-          <Link href={`/trips/${tripId}`} className="btn btn-primary">
-            Back to Trip
-          </Link>
+
         </div>
 
         {documentsWithUrls.length === 0 ? (
@@ -520,7 +525,7 @@ export default async function ClientTripDocumentsPage({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Open Document
+                          Open Secure Link
                         </a>
                       ) : (
                         "Unavailable"
@@ -534,15 +539,6 @@ export default async function ClientTripDocumentsPage({
         )}
       </div>
 
-      <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-        <Link href={`/trips/${tripId}`} className="btn btn-primary">
-          Back to Trip
-        </Link>
-
-        <Link href="/trips" className="btn btn-primary">
-          Back to My Trips
-        </Link>
-      </div>
     </PageShell>
   );
 }
