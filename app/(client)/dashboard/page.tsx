@@ -3,6 +3,13 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+type ClientAccountRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
 type TripRow = {
   trip_id: string;
   client_account_id: string;
@@ -41,6 +48,13 @@ type TripInviteRow = {
     | null;
 };
 
+type MessageThreadRow = {
+  id: string;
+  status: string | null;
+  client_unread_count: number | null;
+  last_message_at: string | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -76,7 +90,27 @@ function formatDate(value: string | null | undefined, fallback = "Not set") {
   });
 }
 
+function getClientDisplayName(client: ClientAccountRow | null) {
+  if (!client) return "Traveler";
+
+  return (
+    `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
+    client.email ||
+    "Traveler"
+  );
+}
+
+function getInviteTrip(invite: TripInviteRow) {
+  if (Array.isArray(invite.trips)) {
+    return invite.trips[0] ?? null;
+  }
+
+  return invite.trips ?? null;
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }) {
+  const label = status ?? "draft";
+
   return (
     <span
       style={{
@@ -91,19 +125,10 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
         whiteSpace: "nowrap",
       }}
     >
-      {status ?? "draft"}
+      {label}
     </span>
   );
 }
-
-function getInviteTrip(invite: TripInviteRow) {
-  if (Array.isArray(invite.trips)) {
-    return invite.trips[0] ?? null;
-  }
-
-  return invite.trips ?? null;
-}
-
 
 function SummaryCard({
   label,
@@ -115,16 +140,70 @@ function SummaryCard({
   helper?: string;
 }) {
   return (
-    <div className="card">
+    <div
+      className="card stack"
+      style={{
+        border: "1px solid #e6f0f2",
+        background: "#ffffff",
+      }}
+    >
       <span className="label">{label}</span>
-      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-        {value}
-      </p>
+      <strong style={{ fontSize: "2rem", lineHeight: 1 }}>{value}</strong>
       {helper ? (
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.45 }}>
-          {helper}
-        </p>
+        <span style={{ color: "#64748b", lineHeight: 1.45 }}>{helper}</span>
       ) : null}
+    </div>
+  );
+}
+
+function ActionCard({
+  title,
+  description,
+  href,
+  cta,
+  tone = "neutral",
+  secondaryHref,
+  secondaryCta,
+}: {
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+  tone?: "neutral" | "warning" | "good";
+  secondaryHref?: string;
+  secondaryCta?: string;
+}) {
+  const styles = {
+    neutral: { background: "#ffffff", border: "1px solid #e6f0f2" },
+    warning: { background: "#fff7ed", border: "1px solid #fed7aa" },
+    good: { background: "#f0fdf4", border: "1px solid #bbf7d0" },
+  }[tone];
+
+  return (
+    <div
+      className="card stack"
+      style={{
+        background: styles.background,
+        border: styles.border,
+      }}
+    >
+      <h2 style={{ margin: 0 }}>{title}</h2>
+
+      <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+        {description}
+      </p>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Link href={href} className="btn btn-primary">
+          {cta}
+        </Link>
+
+        {secondaryHref && secondaryCta ? (
+          <Link href={secondaryHref} className="btn btn-primary">
+            {secondaryCta}
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -158,7 +237,11 @@ async function getCurrentClientAccount() {
   }
 
   if (clientAccountByEmail) {
-    return { supabase, user, clientAccount: clientAccountByEmail };
+    return {
+      supabase,
+      user,
+      clientAccount: clientAccountByEmail as ClientAccountRow,
+    };
   }
 
   const { data: userProfile, error: profileError } = await supabase
@@ -175,12 +258,11 @@ async function getCurrentClientAccount() {
     throw new Error("User profile not found.");
   }
 
-  const { data: clientAccountByProfile, error: clientProfileError } =
-    await supabase
-      .from("client_accounts")
-      .select("id, first_name, last_name, email")
-      .eq("user_profile_id", userProfile.id)
-      .maybeSingle();
+  const { data: clientAccountByProfile, error: clientProfileError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .eq("user_profile_id", userProfile.id)
+    .maybeSingle();
 
   if (clientProfileError) {
     throw new Error(clientProfileError.message);
@@ -190,7 +272,11 @@ async function getCurrentClientAccount() {
     throw new Error("Client account not found.");
   }
 
-  return { supabase, user, clientAccount: clientAccountByProfile };
+  return {
+    supabase,
+    user,
+    clientAccount: clientAccountByProfile as ClientAccountRow,
+  };
 }
 
 export default async function ClientDashboardPage() {
@@ -200,12 +286,15 @@ export default async function ClientDashboardPage() {
     clientContext = await getCurrentClientAccount();
   } catch (error) {
     return (
-      <PageShell title="Dashboard" subtitle="We could not load your account.">
+      <PageShell
+        title="Client Dashboard"
+        subtitle="We could not load your Cozy Concierge dashboard."
+      >
         <div className="card">
           <p>
-            <strong>Error:</strong>
+            <strong>Error:</strong>{" "}
+            {error instanceof Error ? error.message : "Client account not found."}
           </p>
-          <p>{error instanceof Error ? error.message : "Client account not found."}</p>
         </div>
       </PageShell>
     );
@@ -222,7 +311,7 @@ export default async function ClientDashboardPage() {
     .order("departure_date", { ascending: true });
 
   const { data: messageThreads } = await supabase
-    .from("message_threads" as any)
+    .from("message_threads")
     .select("id, status, client_unread_count, last_message_at")
     .eq("client_account_id", clientAccount.id)
     .order("last_message_at", { ascending: false });
@@ -231,7 +320,7 @@ export default async function ClientDashboardPage() {
 
   const { data: pendingInvites } = clientEmail
     ? await supabase
-        .from("trip_members" as any)
+        .from("trip_members")
         .select(
           "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
         )
@@ -241,7 +330,7 @@ export default async function ClientDashboardPage() {
     : { data: [] as TripInviteRow[] };
 
   const { data: sharedTripMemberships } = await supabase
-    .from("trip_members" as any)
+    .from("trip_members")
     .select(
       "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
     )
@@ -252,7 +341,10 @@ export default async function ClientDashboardPage() {
 
   if (error) {
     return (
-      <PageShell title="Dashboard" subtitle="Your travel details, all in one place.">
+      <PageShell
+        title="Client Dashboard"
+        subtitle="We could not load your trip dashboard."
+      >
         <div className="card">
           <p>
             <strong>Error loading dashboard:</strong>
@@ -264,12 +356,15 @@ export default async function ClientDashboardPage() {
   }
 
   const rows = (trips ?? []) as TripRow[];
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const upcomingTrips = rows.filter((trip) => {
     if (!trip.departure_date) return false;
+
     const departureDate = new Date(`${trip.departure_date}T00:00:00`);
+
     return departureDate >= today;
   });
 
@@ -283,20 +378,22 @@ export default async function ClientDashboardPage() {
     rows
       .filter((trip) => trip.final_payment_due_date)
       .sort((a, b) =>
-        String(a.final_payment_due_date).localeCompare(String(b.final_payment_due_date)),
+        String(a.final_payment_due_date).localeCompare(
+          String(b.final_payment_due_date),
+        ),
       )[0] ?? null;
 
-  const clientName =
-    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-    "Traveler";
+  const clientName = getClientDisplayName(clientAccount);
 
-  const unreadMessages = (messageThreads ?? []).reduce(
-    (sum, thread: any) => sum + Number(thread.client_unread_count ?? 0),
+  const messageThreadRows = (messageThreads ?? []) as MessageThreadRow[];
+
+  const unreadMessages = messageThreadRows.reduce(
+    (sum, thread) => sum + Number(thread.client_unread_count ?? 0),
     0,
   );
 
-  const openMessageThreads = (messageThreads ?? []).filter(
-    (thread: any) => thread.status === "open",
+  const openMessageThreads = messageThreadRows.filter(
+    (thread) => thread.status === "open",
   ).length;
 
   const pendingInviteRows = (pendingInvites ?? []) as TripInviteRow[];
@@ -307,14 +404,14 @@ export default async function ClientDashboardPage() {
 
   return (
     <PageShell
-      title="Dashboard"
-      subtitle={`Welcome back, ${clientName}. Here’s your travel snapshot.`}
+      title={`Welcome back, ${clientName}`}
+      subtitle="Your Cozy Concierge dashboard for trips, messages, invitations, payments, and travel details."
     >
       <div
         className="card stack"
         style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
           border: "1px solid #e6f0f2",
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
         }}
       >
         <p
@@ -332,155 +429,79 @@ export default async function ClientDashboardPage() {
 
         <h2 style={{ margin: 0 }}>Travel Snapshot</h2>
 
-        <div className="grid grid-4">
-          <SummaryCard label="Upcoming Trips" value={upcomingTrips.length} />
-
+        <div className="grid grid-3">
           <SummaryCard
-            label="Next Trip"
-            value={nextTrip ? nextTrip.trip_name ?? "Upcoming Trip" : "No upcoming trips"}
+            label="Upcoming Trips"
+            value={upcomingTrips.length}
+            helper={
+              nextTrip
+                ? `Next trip: ${nextTrip.trip_name ?? nextTrip.destinations ?? "Trip"}`
+                : "No upcoming trips yet."
+            }
           />
 
           <SummaryCard
-            label="Pending Invites"
+            label="Balance Due"
+            value={formatMoney(totalBalanceDue)}
+            helper={
+              nextPaymentTrip
+                ? `Next final payment: ${formatDate(nextPaymentTrip.final_payment_due_date)}`
+                : "No final payment due date on file."
+            }
+          />
+
+          <SummaryCard
+            label="Travel Invitations"
             value={pendingInviteRows.length}
             helper={
               pendingInviteRows.length > 0
                 ? "Review shared trip access."
-                : "No pending invitations."
+                : sharedTripRows.length > 0
+                  ? `${sharedTripRows.length} shared trip${sharedTripRows.length === 1 ? "" : "s"} accepted.`
+                  : "No pending invitations."
             }
           />
-
-          <SummaryCard
-            label="Next Final Payment"
-            value={
-              nextPaymentTrip
-                ? formatDate(nextPaymentTrip.final_payment_due_date)
-                : "Not set"
-            }
-          />
-
-          <SummaryCard label="Total Balance Due" value={formatMoney(totalBalanceDue)} />
         </div>
       </div>
 
-      <div
-        className="card stack"
-        style={{
-          background: pendingInviteRows.length > 0 ? "#fff7ed" : "#ffffff",
-          border: pendingInviteRows.length > 0 ? "1px solid #fed7aa" : "1px solid #e6f0f2",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2 style={{ margin: 0 }}>Travel Invitations</h2>
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-              Accept shared trip access from family, friends, and fellow travelers.
-            </p>
-            {nextInviteTrip ? (
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                Next invite: <strong>{nextInviteTrip.trip_name ?? "Shared Trip"}</strong>
-                {nextInviteTrip.destinations ? ` — ${nextInviteTrip.destinations}` : ""}
-              </p>
-            ) : sharedTripRows.length > 0 ? (
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                {sharedTripRows.length} shared trip{sharedTripRows.length === 1 ? "" : "s"} accepted.
-              </p>
-            ) : null}
-          </div>
+      <div className="grid grid-2">
+        <ActionCard
+          title="Travel Invitations"
+          description={
+            nextInviteTrip
+              ? `Next invite: ${nextInviteTrip.trip_name ?? "Shared Trip"}${
+                  nextInviteTrip.destinations
+                    ? ` — ${nextInviteTrip.destinations}`
+                    : ""
+                }`
+              : sharedTripRows.length > 0
+                ? `${sharedTripRows.length} shared trip${
+                    sharedTripRows.length === 1 ? "" : "s"
+                  } accepted.`
+                : "Accept shared trip access from family, friends, and fellow travelers."
+          }
+          href="/invites"
+          cta="Review Invitations"
+          secondaryHref={nextInviteTrip ? "/invites" : undefined}
+          secondaryCta={nextInviteTrip ? "Accept Shared Trip" : undefined}
+          tone={pendingInviteRows.length > 0 ? "warning" : "good"}
+        />
 
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              borderRadius: 999,
-              padding: "6px 12px",
-              background: pendingInviteRows.length > 0 ? "#fff" : "#ecfdf3",
-              color: pendingInviteRows.length > 0 ? "#c2410c" : "#027a48",
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {pendingInviteRows.length > 0
-              ? `${pendingInviteRows.length} pending invite${pendingInviteRows.length === 1 ? "" : "s"}`
-              : `${sharedTripRows.length} shared trip${sharedTripRows.length === 1 ? "" : "s"}`}
-          </span>
-        </div>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/invites" className="btn btn-primary">
-            Review Invitations
-          </Link>
-          {nextInviteTrip ? (
-            <Link href="/invites" className="btn btn-primary">
-              Accept Shared Trip
-            </Link>
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        className="card stack"
-        style={{
-          background: unreadMessages > 0 ? "#fff7ed" : "#f7fbfc",
-          border: unreadMessages > 0 ? "1px solid #fed7aa" : "1px solid #e6f0f2",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2 style={{ margin: 0 }}>Concierge Messages</h2>
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-              Send questions directly to your travel advisor and keep trip conversations in one place.
-            </p>
-          </div>
-
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              borderRadius: 999,
-              padding: "6px 12px",
-              background: unreadMessages > 0 ? "#fff" : "#ecfdf3",
-              color: unreadMessages > 0 ? "#c2410c" : "#027a48",
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {unreadMessages > 0
-              ? `${unreadMessages} unread reply${unreadMessages === 1 ? "" : "ies"}`
-              : `${openMessageThreads} open thread${openMessageThreads === 1 ? "" : "s"}`}
-          </span>
-        </div>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/messages" className="btn btn-primary">
-            Open Messages
-          </Link>
-          <Link href="/messages#new-message" className="btn btn-primary">
-            Ask a Question
-          </Link>
-        </div>
+        <ActionCard
+          title="Concierge Messages"
+          description="Send questions directly to your travel advisor and keep trip conversations in one place."
+          href="/messages"
+          cta="Open Messages"
+          secondaryHref="/messages"
+          secondaryCta="Ask a Question"
+          tone={unreadMessages > 0 ? "warning" : "good"}
+        />
       </div>
 
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Quick Actions</h2>
 
-        <div className="row">
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <Link href="/trips" className="btn btn-primary">
             View My Trips
           </Link>
@@ -509,10 +530,12 @@ export default async function ClientDashboardPage() {
         <h2 style={{ margin: 0 }}>Upcoming Trips</h2>
 
         {upcomingTrips.length === 0 ? (
-          <p style={{ margin: 0, color: "#667085" }}>No upcoming trips found yet.</p>
+          <p style={{ margin: 0, color: "#64748b" }}>
+            No upcoming trips found yet.
+          </p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 760 }}>
+            <table className="table" style={{ minWidth: 860 }}>
               <thead>
                 <tr>
                   <th>Trip</th>
@@ -535,17 +558,7 @@ export default async function ClientDashboardPage() {
                       <StatusBadge status={trip.trip_status} />
                     </td>
                     <td>
-                      <Link
-                        href={`/trips/${trip.trip_id}`}
-                        className="btn btn-primary"
-                        style={{
-                          padding: "6px 10px",
-                          fontSize: 13,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Open
-                      </Link>
+                      <Link href={`/trips/${trip.trip_id}`}>Open</Link>
                     </td>
                   </tr>
                 ))}
