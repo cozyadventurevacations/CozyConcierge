@@ -198,6 +198,71 @@ function ActionCard({
   );
 }
 
+function AskCozyDashboardCard() {
+  return (
+    <div
+      className="card stack"
+      style={{
+        border: "1px solid #e6f0f2",
+        background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+      }}
+    >
+      <div>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Ask Cozy
+        </p>
+
+        <h2 style={{ margin: "4px 0 0" }}>Need a quick travel answer?</h2>
+
+        <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.6 }}>
+          Ask Cozy can help with general travel questions, packing reminders, trip
+          prep, and what to ask your advisor next.
+        </p>
+      </div>
+
+      <form action="/ask-cozy" method="get" className="stack">
+        <label className="stack-sm">
+          <span className="label">Ask a general travel question</span>
+          <textarea
+            className="textarea"
+            name="question"
+            rows={3}
+            placeholder="Example: What should I double-check 30 days before travel?"
+          />
+        </label>
+
+        <button type="submit" className="btn btn-primary">
+          Ask Cozy
+        </button>
+      </form>
+
+      <div
+        style={{
+          padding: "12px",
+          borderRadius: 12,
+          background: "#fff7ed",
+          border: "1px solid #fed7aa",
+          color: "#9a3412",
+          lineHeight: 1.6,
+        }}
+      >
+        <strong>Quick note:</strong> Ask Cozy cannot see private trip records,
+        payments, passport uploads, or documents. Use Concierge Messages for
+        booking-specific questions.
+      </div>
+    </div>
+  );
+}
+
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
@@ -456,6 +521,8 @@ export default async function ClientDashboardPage() {
         </div>
       </div>
 
+      <AskCozyDashboardCard />
+
       <div className="grid grid-2">
         <ActionCard
           title="Travel Invitations"
@@ -512,10 +579,6 @@ export default async function ClientDashboardPage() {
 
           <Link href="/travel-request" className="btn btn-primary">
             Request New Travel Quote
-          </Link>
-
-          <Link href="/ask-cozy" className="btn btn-primary">
-            Ask Cozy
           </Link>
 
           <Link href="/invites" className="btn btn-primary">
