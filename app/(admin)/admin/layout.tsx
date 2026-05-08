@@ -7,11 +7,30 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireAdmin();
+  const { supabase } = await requireAdmin();
+
+  const { count: unreadMessageThreads } = await supabase
+    .from("message_threads")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "open")
+    .gt("admin_unread_count", 0);
+
+  const navItems = adminNav.map((item) =>
+    item.href === "/admin/messages"
+      ? {
+          ...item,
+          badge: unreadMessageThreads ?? 0,
+        }
+      : item,
+  );
 
   return (
     <>
-      <AppHeader navItems={adminNav} />
+      <AppHeader
+        navItems={navItems}
+        homeHref="/admin/dashboard"
+      />
+
       {children}
     </>
   );

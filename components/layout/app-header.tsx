@@ -1,10 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 
+type NavItem = {
+  href: string;
+  label: string;
+  badge?: number;
+};
+
 type AppHeaderProps = {
   title?: string;
   subtitle?: string;
-  navItems?: Array<{ href: string; label: string }>;
+  navItems?: NavItem[];
   homeHref?: string;
 };
 
@@ -15,13 +21,24 @@ export function AppHeader({
   homeHref = "/trips",
 }: AppHeaderProps) {
   return (
-    <header style={{ borderBottom: "1px solid var(--border)", background: "white" }}>
+    <header
+      style={{
+        borderBottom: "1px solid #e6f0f2",
+        background: "#ffffff",
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+      }}
+    >
       <div
-        className="container row"
         style={{
-          justifyContent: "space-between",
+          maxWidth: 1180,
+          margin: "0 auto",
+          padding: "14px 20px",
+          display: "flex",
           alignItems: "center",
-          gap: 24,
+          justifyContent: "space-between",
+          gap: 16,
           flexWrap: "wrap",
         }}
       >
@@ -31,50 +48,82 @@ export function AppHeader({
             display: "flex",
             alignItems: "center",
             gap: 12,
-            color: "inherit",
             textDecoration: "none",
+            color: "inherit",
           }}
-          aria-label="Cozy Concierge home"
         >
           <Image
-            src="/cozy-logo.png"
+            src="/cozy-adventure-vacations-logo.png"
             alt="Cozy Adventure Vacations"
-            width={160}
-            height={54}
-            style={{
-              height: 54,
-              width: "auto",
-              display: "block",
-              objectFit: "contain",
-            }}
+            width={48}
+            height={48}
             priority
           />
 
           <div>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{title}</div>
-            <div style={{ color: "var(--muted)", fontSize: "0.95rem" }}>
+            <strong style={{ display: "block", fontSize: 18 }}>{title}</strong>
+            <span style={{ display: "block", fontSize: 13, color: "#667085" }}>
               {subtitle}
-            </div>
+            </span>
           </div>
         </Link>
 
         <nav
-          className="row"
-          aria-label="Primary navigation"
           style={{
-            gap: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 8,
             flexWrap: "wrap",
           }}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{ color: "var(--muted)", fontWeight: 600 }}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const badge = Number(item.badge ?? 0);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  textDecoration: "none",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  background: "#f7fbfc",
+                  border: "1px solid #e6f0f2",
+                }}
+              >
+                <span>{item.label}</span>
+
+                {badge > 0 ? (
+                  <span
+                    aria-label={`${badge} unread`}
+                    style={{
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: 999,
+                      padding: "0 6px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#c2410c",
+                      color: "#ffffff",
+                      fontSize: 12,
+                      fontWeight: 900,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
         </nav>
       </div>
     </header>
