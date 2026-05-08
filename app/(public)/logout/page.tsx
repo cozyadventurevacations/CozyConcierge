@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -32,44 +33,31 @@ export default function LogoutPage() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        padding: 24,
-        background:
-          "linear-gradient(135deg, rgba(240,247,248,1) 0%, rgba(255,255,255,1) 70%)",
+        padding: "24px",
+        background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 70%)",
       }}
     >
-      <div
+      <section
         className="card stack"
         style={{
           width: "100%",
-          maxWidth: 460,
-          border: "1px solid #e6f0f2",
+          maxWidth: 520,
           textAlign: "center",
+          border: "1px solid #e6f0f2",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginBottom: 20,
-          }}
-        >
-          <img
+        <div style={{ display: "grid", justifyItems: "center", gap: 10 }}>
+          <Image
             src="/cozy-logo.png"
-            alt="Cozy Adventure Vacations logo"
-            style={{
-              width: 220,
-              height: "auto",
-              maxWidth: "100%",
-              objectFit: "contain",
-              display: "block",
-            }}
+            alt="Cozy Adventure Vacations"
+            width={200}
+            height={120}
+            priority
           />
-        </div>
 
-        <div>
           <p
             style={{
-              margin: "0 0 4px",
+              margin: 0,
               fontSize: 13,
               letterSpacing: "0.1em",
               textTransform: "uppercase",
@@ -79,31 +67,31 @@ export default function LogoutPage() {
           >
             Cozy Concierge
           </p>
-
-          <h1 style={{ margin: 0 }}>
-            {isSigningOut ? "Signing You Out..." : "Signed Out"}
-          </h1>
-
-          <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>
-            {isSigningOut
-              ? "One quick moment while we close your session."
-              : "You have been signed out successfully."}
-          </p>
         </div>
+
+        <h1 style={{ margin: 0 }}>
+          {isSigningOut ? "Signing You Out..." : "Signed Out"}
+        </h1>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          {isSigningOut
+            ? "One quick moment while we close your session."
+            : "You have been signed out successfully."}
+        </p>
 
         {errorMessage ? (
           <div
             style={{
-              padding: 12,
+              padding: "12px",
               borderRadius: 12,
               background: "#fff1f2",
               border: "1px solid #fecdd3",
               color: "#be123c",
-              lineHeight: 1.5,
               textAlign: "left",
+              lineHeight: 1.5,
             }}
           >
-            {errorMessage}
+            <strong>Sign-out notice:</strong> {errorMessage}
           </div>
         ) : null}
 
@@ -125,7 +113,7 @@ export default function LogoutPage() {
             </Link>
           </div>
         ) : null}
-      </div>
+      </section>
     </main>
   );
 }
