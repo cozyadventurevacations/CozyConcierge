@@ -132,6 +132,37 @@ function ThreadTypePill({ threadType }: { threadType: string | null | undefined 
   );
 }
 
+function MessageHelpCard({
+  title,
+  description,
+  tone = "neutral",
+}: {
+  title: string;
+  description: string;
+  tone?: "warning" | "neutral";
+}) {
+  const styles = {
+    warning: { background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" },
+    neutral: { background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#667085" },
+  }[tone];
+
+  return (
+    <div
+      style={{
+        padding: "12px",
+        borderRadius: 12,
+        background: styles.background,
+        border: styles.border,
+        color: styles.color,
+        lineHeight: 1.55,
+      }}
+    >
+      <strong>{title}</strong>
+      <p style={{ margin: "4px 0 0" }}>{description}</p>
+    </div>
+  );
+}
+
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
@@ -278,6 +309,7 @@ async function assertCanUseTripMessages(
     await memberQuery.maybeSingle();
 
   if (memberAccessError) throw new Error(memberAccessError.message);
+
   if (!memberAccess) {
     throw new Error("Trip not found or access denied.");
   }
@@ -307,8 +339,7 @@ async function createClientMessageThread(formData: FormData) {
       .eq("id", tripId)
       .maybeSingle();
 
-    const groupSubject =
-      subject || `${trip?.trip_name ?? "Trip"} — Travel Circle`;
+    const groupSubject = subject || `${trip?.trip_name ?? "Trip"} — Travel Circle`;
 
     const { data: existingGroupThread, error: existingGroupThreadError } = await supabase
       .from("message_threads" as any)
@@ -603,7 +634,7 @@ export default async function ClientMessagesPage({
     tripRows = await loadAccessibleTrips(supabase, clientAccount.id);
   } catch (error) {
     return (
-      <PageShell title="Messages" subtitle="Ask your travel advisor a question.">
+      <PageShell title="Messages" subtitle="We could not load your message center.">
         <div className="card">
           <p>
             <strong>Error loading available trips:</strong>
@@ -625,7 +656,7 @@ export default async function ClientMessagesPage({
 
   if (privateThreadsError) {
     return (
-      <PageShell title="Messages" subtitle="Ask your travel advisor a question.">
+      <PageShell title="Messages" subtitle="We could not load your message threads.">
         <div className="card">
           <p>
             <strong>Error loading messages:</strong>
@@ -648,7 +679,7 @@ export default async function ClientMessagesPage({
 
     if (groupThreadsError) {
       return (
-        <PageShell title="Messages" subtitle="Ask your travel advisor a question.">
+        <PageShell title="Messages" subtitle="We could not load your Travel Circle messages.">
           <div className="card">
             <p>
               <strong>Error loading Travel Circle messages:</strong>
@@ -681,8 +712,10 @@ export default async function ClientMessagesPage({
     requestedTripId && tripRows.some((trip) => trip.trip_id === requestedTripId)
       ? requestedTripId
       : "";
+
   const defaultSubject = requestedSubject ? decodeURIComponent(requestedSubject) : "";
   const defaultThreadType = scope === "group" ? "trip_group" : "private";
+
   const selectedThread =
     threadRows.find((thread) => thread.id === threadId) ?? threadRows[0] ?? null;
 
@@ -695,7 +728,7 @@ export default async function ClientMessagesPage({
       await assertCanUseTripMessages(supabase, clientAccount.id, selectedThread.trip_id, true);
     } else if (!isGroupThread && selectedThread.client_account_id !== clientAccount.id) {
       return (
-        <PageShell title="Messages" subtitle="Ask your travel advisor a question.">
+        <PageShell title="Messages" subtitle="We could not load this thread.">
           <div className="card">
             <p>
               <strong>Error loading thread:</strong>
@@ -714,7 +747,7 @@ export default async function ClientMessagesPage({
 
     if (messagesError) {
       return (
-        <PageShell title="Messages" subtitle="Ask your travel advisor a question.">
+        <PageShell title="Messages" subtitle="We could not load this thread.">
           <div className="card">
             <p>
               <strong>Error loading thread:</strong>
@@ -761,13 +794,19 @@ export default async function ClientMessagesPage({
   );
 
   const tripMap = new Map(tripRows.map((trip) => [trip.trip_id, trip]));
-
   const clientName = getClientDisplayName(clientAccount);
+
+  const privateThreadCount = threadRows.filter((thread) => thread.thread_type !== "trip_group").length;
+  const groupThreadCount = threadRows.filter((thread) => thread.thread_type === "trip_group").length;
+  const unreadReplyCount = threadRows.reduce(
+    (sum, thread) => sum + Number(thread.client_unread_count ?? 0),
+    0,
+  );
 
   return (
     <PageShell
       title="Concierge Messages"
-      subtitle={`Send questions directly to your Cozy Adventure Vacations advisor, ${clientName}.`}
+      subtitle={`Your secure message center, ${clientName}.`}
     >
       <div
         className="card stack"
@@ -788,24 +827,40 @@ export default async function ClientMessagesPage({
         >
           Cozy Concierge
         </p>
-        <h2 style={{ margin: 0 }}>Ask Your Travel Advisor</h2>
+
+        <h2 style={{ margin: 0 }}>Message Center</h2>
+
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Use this secure message center for private advisor questions or shared
-          Travel Circle conversations tied to a trip.
+          Send a private message to your advisor or use Travel Circle messages for approved companions on a shared trip.
         </p>
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn btn-primary">
-            Back to Dashboard
-          </Link>
-          <Link href="/trips" className="btn btn-primary">
-            View My Trips
-          </Link>
+
+        <div className="grid grid-3">
+          <MessageHelpCard
+            title={`${privateThreadCount} Private`}
+            description="Advisor-only conversations."
+          />
+          <MessageHelpCard
+            title={`${groupThreadCount} Travel Circle`}
+            description="Shared trip conversations."
+            tone={groupThreadCount > 0 ? "warning" : "neutral"}
+          />
+          <MessageHelpCard
+            title={`${unreadReplyCount} Unread`}
+            description="Replies waiting for you."
+            tone={unreadReplyCount > 0 ? "warning" : "neutral"}
+          />
         </div>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         <div className="card stack">
           <h2 style={{ margin: 0 }}>Start a New Message</h2>
+
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            Choose the message type carefully. Private messages stay between you and your advisor.
+            Travel Circle messages are visible to approved companions on the selected trip.
+          </p>
+
           <form action={createClientMessageThread} className="stack">
             <label>
               <span className="label">Message Type</span>
@@ -813,9 +868,6 @@ export default async function ClientMessagesPage({
                 <option value="private">Private Advisor Message</option>
                 <option value="trip_group">Travel Circle Group Message</option>
               </select>
-              <span style={{ display: "block", color: "#667085", fontSize: 13, marginTop: 6, lineHeight: 1.45 }}>
-                Private messages are between you and your advisor. Travel Circle messages are shared with approved companions on the selected trip.
-              </span>
             </label>
 
             <label>
@@ -860,12 +912,14 @@ export default async function ClientMessagesPage({
 
         <div className="card stack">
           <h2 style={{ margin: 0 }}>Message Threads</h2>
+
           {threadRows.length === 0 ? (
             <p style={{ margin: 0, color: "#667085" }}>No messages yet.</p>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {threadRows.map((thread) => {
                 const trip = thread.trip_id ? tripMap.get(thread.trip_id) : null;
+                const unreadCount = Number(thread.client_unread_count ?? 0);
 
                 return (
                   <Link
@@ -885,21 +939,33 @@ export default async function ClientMessagesPage({
                         selectedThread?.id === thread.id ? "#f7fbfc" : "#ffffff",
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <strong>{thread.subject}</strong>
-                      <ThreadTypePill threadType={thread.thread_type} />
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <ThreadTypePill threadType={thread.thread_type} />
+                        {unreadCount > 0 ? (
+                          <StatusPill
+                            label={`${unreadCount} unread`}
+                            tone="warning"
+                          />
+                        ) : null}
+                      </div>
                     </div>
+
                     <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13 }}>
                       {trip ? trip.trip_name ?? "Trip" : "General message"} • {thread.status}
                     </p>
+
                     <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13 }}>
                       Last activity: {formatDateTime(thread.last_message_at)}
                     </p>
-                    {(thread.client_unread_count ?? 0) > 0 ? (
-                      <p style={{ margin: "6px 0 0", color: "#c2410c", fontWeight: 800 }}>
-                        {thread.client_unread_count} unread reply{thread.client_unread_count === 1 ? "" : "ies"}
-                      </p>
-                    ) : null}
                   </Link>
                 );
               })}
@@ -909,7 +975,15 @@ export default async function ClientMessagesPage({
       </div>
 
       <div className="card stack">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <div>
             <h2 style={{ margin: 0 }}>{selectedThread ? selectedThread.subject : "Conversation"}</h2>
             {selectedThread?.trip_id ? (
@@ -918,16 +992,22 @@ export default async function ClientMessagesPage({
               </p>
             ) : null}
           </div>
+
           {selectedThread ? (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <ThreadTypePill threadType={selectedThread.thread_type} />
-              <StatusPill label={selectedThread.status} tone={selectedThread.status === "resolved" ? "good" : "neutral"} />
+              <StatusPill
+                label={selectedThread.status}
+                tone={selectedThread.status === "resolved" ? "good" : "neutral"}
+              />
             </div>
           ) : null}
         </div>
 
         {!selectedThread ? (
-          <p style={{ margin: 0, color: "#667085" }}>Choose a message thread or start a new message.</p>
+          <p style={{ margin: 0, color: "#667085" }}>
+            Choose a message thread or start a new message.
+          </p>
         ) : (
           <>
             {selectedThread.thread_type === "trip_group" ? (
@@ -941,20 +1021,34 @@ export default async function ClientMessagesPage({
                   lineHeight: 1.5,
                 }}
               >
-                <strong>Travel Circle conversation:</strong> Messages here are shared
-                with approved companions who have access to this trip.
+                <strong>Travel Circle conversation:</strong> Messages here are shared with approved companions who have access to this trip.
               </div>
-            ) : null}
+            ) : (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #e6f0f2",
+                  background: "#f7fbfc",
+                  color: "#667085",
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong>Private advisor conversation:</strong> Messages here stay between you and Cozy Adventure Vacations.
+              </div>
+            )}
 
             <div style={{ display: "grid", gap: 12 }}>
               {messageRows.map((message) => {
                 const isCurrentClient =
                   message.sender_type === "client" &&
                   (message.sender_client_account_id ?? message.client_account_id) === clientAccount.id;
+
                 const senderClient =
                   message.sender_type === "client"
                     ? senderClientMap.get(message.sender_client_account_id ?? message.client_account_id)
                     : null;
+
                 const senderLabel = isCurrentClient
                   ? "You"
                   : message.sender_type === "admin"
@@ -978,9 +1072,11 @@ export default async function ClientMessagesPage({
                     <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
                       {senderLabel}
                     </p>
+
                     <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
                       {message.body}
                     </p>
+
                     <p style={{ margin: "8px 0 0", color: "#667085", fontSize: 13 }}>
                       {formatDateTime(message.created_at)}
                     </p>
@@ -991,10 +1087,17 @@ export default async function ClientMessagesPage({
 
             <form action={replyToClientThread} className="stack">
               <input type="hidden" name="thread_id" value={selectedThread.id} />
+
               <label>
                 <span className="label">Reply</span>
-                <textarea className="textarea" name="body" rows={5} placeholder="Type your reply..." />
+                <textarea
+                  className="textarea"
+                  name="body"
+                  rows={5}
+                  placeholder="Type your reply..."
+                />
               </label>
+
               <button type="submit" className="btn btn-primary">
                 Send Reply
               </button>
