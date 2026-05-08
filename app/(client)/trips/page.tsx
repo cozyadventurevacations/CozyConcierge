@@ -162,17 +162,37 @@ function StatusBadge({
   );
 }
 
+function TripInfoItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "10px",
+        borderRadius: 12,
+        background: "#f7fbfc",
+        border: "1px solid #e6f0f2",
+      }}
+    >
+      <span className="label">{label}</span>
+      <p style={{ margin: "4px 0 0", fontWeight: 800 }}>{value}</p>
+    </div>
+  );
+}
+
 function TripCard({ trip }: { trip: DisplayTrip }) {
   const isShared = trip.accessType === "shared";
 
   return (
-    <div
+    <article
       className="card stack"
       style={{
-        border: "1px solid #e6f0f2",
-        background: isShared
-          ? "linear-gradient(135deg, #fff7ed 0%, #ffffff 72%)"
-          : "#ffffff",
+        border: isShared ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+        background: isShared ? "#fff7ed" : "#ffffff",
       }}
     >
       <div
@@ -185,105 +205,34 @@ function TripCard({ trip }: { trip: DisplayTrip }) {
         }}
       >
         <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--accent-dark)",
-              fontWeight: 800,
-            }}
-          >
-            {isShared ? "Shared Trip" : "My Trip"}
-          </p>
+          <StatusBadge
+            label={isShared ? `Shared Trip • ${trip.accessLabel}` : "My Trip"}
+            tone={isShared ? "warning" : "good"}
+          />
 
-          <h2 style={{ margin: "6px 0 0" }}>{trip.trip_name ?? "Trip"}</h2>
+          <h2 style={{ margin: "10px 0 0" }}>{trip.trip_name ?? "Trip"}</h2>
 
-          <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+          <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
             {trip.destinations ?? "Destination not provided"}
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <StatusBadge label={trip.trip_status ?? "draft"} />
-          <StatusBadge
-            label={trip.accessLabel}
-            tone={isShared ? "warning" : "neutral"}
-          />
-        </div>
+        <StatusBadge label={trip.trip_status ?? "draft"} />
       </div>
 
-      <div className="grid grid-3">
-        <div>
-          <span className="label">Departure</span>
-          <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-            {formatDate(trip.departure_date)}
-          </p>
-        </div>
-
-        <div>
-          <span className="label">Return</span>
-          <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-            {formatDate(trip.return_date)}
-          </p>
-        </div>
-
-        <div>
-          <span className="label">Final Payment</span>
-          <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-            {formatDate(trip.final_payment_due_date)}
-          </p>
-        </div>
+      <div className="grid grid-2">
+        <TripInfoItem label="Departure" value={formatDate(trip.departure_date)} />
+        <TripInfoItem label="Return" value={formatDate(trip.return_date)} />
+        <TripInfoItem label="Final Payment" value={formatDate(trip.final_payment_due_date)} />
+        <TripInfoItem label="Balance Due" value={formatMoney(trip.balance_due)} />
       </div>
 
-      <div
-        style={{
-          padding: "12px",
-          borderRadius: 12,
-          background: "#f7fbfc",
-          border: "1px solid #e6f0f2",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <span className="label">Balance Due</span>
-          <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 900 }}>
-            {formatMoney(trip.balance_due)}
-          </p>
-        </div>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href={`/trips/${trip.trip_id}`} className="btn btn-primary">
-            Open Trip
-          </Link>
-
-          <Link
-            href={`/messages?tripId=${trip.trip_id}&subject=${encodeURIComponent(
-              `Question about ${trip.trip_name ?? "my trip"}`,
-            )}`}
-            className="btn btn-primary"
-          >
-            Message Advisor
-          </Link>
-
-          {isShared ? (
-            <Link
-              href={`/messages?tripId=${trip.trip_id}&scope=group&subject=${encodeURIComponent(
-                `${trip.trip_name ?? "Trip"} — Travel Circle`,
-              )}`}
-              className="btn btn-primary"
-            >
-              Message Travel Circle
-            </Link>
-          ) : null}
-        </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Link href={`/trips/${trip.trip_id}`} className="btn btn-primary">
+          Open Trip
+        </Link>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -365,12 +314,15 @@ export default async function TripsPage() {
     clientContext = await getCurrentClientAccount();
   } catch (error) {
     return (
-      <PageShell title="My Trips" subtitle="We could not load your account.">
+      <PageShell
+        title="My Trips"
+        subtitle="We could not load your trips."
+      >
         <div className="card">
           <p>
-            <strong>Error:</strong>
+            <strong>Error:</strong>{" "}
+            {error instanceof Error ? error.message : "Client account not found."}
           </p>
-          <p>{error instanceof Error ? error.message : "Client account not found."}</p>
         </div>
       </PageShell>
     );
@@ -388,7 +340,10 @@ export default async function TripsPage() {
 
   if (ownedTripsError) {
     return (
-      <PageShell title="My Trips" subtitle="Your travel details, all in one place.">
+      <PageShell
+        title="My Trips"
+        subtitle="We could not load your primary trips."
+      >
         <div className="card">
           <p>
             <strong>Error loading trips:</strong>
@@ -412,7 +367,10 @@ export default async function TripsPage() {
 
   if (sharedTripsError) {
     return (
-      <PageShell title="My Trips" subtitle="Your travel details, all in one place.">
+      <PageShell
+        title="My Trips"
+        subtitle="We could not load your shared trips."
+      >
         <div className="card">
           <p>
             <strong>Error loading shared trips:</strong>
@@ -474,19 +432,20 @@ export default async function TripsPage() {
     today.setHours(0, 0, 0, 0);
 
     const departure = new Date(`${trip.departure_date}T00:00:00`);
+
     return departure >= today;
   }).length;
 
   return (
     <PageShell
       title="My Trips"
-      subtitle={`Welcome back, ${clientName}. View your trips and shared Travel Circle access.`}
+      subtitle={`${clientName}, review your primary trips and shared Travel Circle trips.`}
     >
       <div
         className="card stack"
         style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
           border: "1px solid #e6f0f2",
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
         }}
       >
         <p
@@ -505,31 +464,13 @@ export default async function TripsPage() {
         <h2 style={{ margin: 0 }}>Your Trip Library</h2>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Review trips booked for you directly, plus any trips shared with you
-          through a Travel Circle invitation.
+          Review trips booked for you directly, plus any trips shared with you through a Travel Circle invitation.
         </p>
 
         <div className="grid grid-3">
-          <div className="card">
-            <span className="label">My Trips</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
-              {myTrips.length}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Shared With Me</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
-              {sharedTrips.length}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Upcoming Trips</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
-              {upcomingCount}
-            </p>
-          </div>
+          <TripInfoItem label="My Trips" value={String(myTrips.length)} />
+          <TripInfoItem label="Shared With Me" value={String(sharedTrips.length)} />
+          <TripInfoItem label="Upcoming Trips" value={String(upcomingCount)} />
         </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -547,7 +488,7 @@ export default async function TripsPage() {
         </div>
       </div>
 
-      <div className="card stack">
+      <section className="stack">
         <div
           style={{
             display: "flex",
@@ -558,50 +499,27 @@ export default async function TripsPage() {
           }}
         >
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--accent-dark)",
-                fontWeight: 800,
-              }}
-            >
-              Primary Travel
-            </p>
-            <h2 style={{ margin: "4px 0 0" }}>My Trips</h2>
+            <StatusBadge label="Primary Travel" tone="good" />
+            <h2 style={{ margin: "8px 0 0" }}>My Trips</h2>
           </div>
-
-          <StatusBadge label={`${myTrips.length} trip${myTrips.length === 1 ? "" : "s"}`} />
         </div>
 
         {myTrips.length === 0 ? (
-          <div
-            style={{
-              padding: "14px",
-              borderRadius: 14,
-              border: "1px solid #e6f0f2",
-              background: "#f7fbfc",
-              color: "#667085",
-              lineHeight: 1.6,
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              You do not have any primary trips showing yet. Once your advisor
-              creates or confirms a trip, it will appear here.
+          <div className="card">
+            <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+              You do not have any primary trips showing yet. Once your advisor creates or confirms a trip, it will appear here.
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="grid grid-2">
             {myTrips.map((trip) => (
               <TripCard key={trip.trip_id} trip={trip} />
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="card stack">
+      <section className="stack">
         <div
           style={{
             display: "flex",
@@ -612,51 +530,28 @@ export default async function TripsPage() {
           }}
         >
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--accent-dark)",
-                fontWeight: 800,
-              }}
-            >
-              Travel Circle
-            </p>
-            <h2 style={{ margin: "4px 0 0" }}>Shared With Me</h2>
+            <StatusBadge
+              label="Travel Circle"
+              tone={sharedTrips.length > 0 ? "warning" : "neutral"}
+            />
+            <h2 style={{ margin: "8px 0 0" }}>Shared With Me</h2>
           </div>
-
-          <StatusBadge
-            label={`${sharedTrips.length} shared trip${sharedTrips.length === 1 ? "" : "s"}`}
-            tone={sharedTrips.length > 0 ? "warning" : "neutral"}
-          />
         </div>
 
         {sharedTrips.length === 0 ? (
-          <div
-            style={{
-              padding: "14px",
-              borderRadius: 14,
-              border: "1px solid #e6f0f2",
-              background: "#f7fbfc",
-              color: "#667085",
-              lineHeight: 1.6,
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              No shared Travel Circle trips yet. If someone invites you to a trip,
-              you can accept the invitation from your Travel Invitations page.
+          <div className="card">
+            <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+              No shared Travel Circle trips yet. If someone invites you to a trip, you can accept the invitation from your Travel Invitations page.
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="grid grid-2">
             {sharedTrips.map((trip) => (
               <TripCard key={trip.trip_id} trip={trip} />
             ))}
           </div>
         )}
-      </div>
+      </section>
     </PageShell>
   );
 }
