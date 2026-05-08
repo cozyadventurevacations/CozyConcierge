@@ -862,7 +862,7 @@ function PrimaryTravelerNumbersForm({ traveler }: { traveler: TravelerProfile })
       </label>
 
       <button type="submit" className="btn btn-primary">
-        Save Traveler Numbers
+        Save Primary Traveler Numbers
       </button>
     </form>
   );
@@ -918,7 +918,7 @@ function AdditionalTravelerForm({
               whiteSpace: "nowrap",
             }}
           >
-            Edit Traveler
+            Open Traveler Details
           </span>
         </div>
       </summary>
@@ -1112,7 +1112,7 @@ function AdditionalTravelerForm({
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <button type="submit" className="btn btn-primary">
-            Save Additional Traveler
+            Save Traveler Details
           </button>
         </div>
       </form>
@@ -1126,7 +1126,7 @@ function AdditionalTravelerForm({
           background: "#ffffff",
         }}
       >
-        <h4 style={{ margin: 0 }}>Passport Photo / Document Upload</h4>
+        <h4 style={{ margin: 0 }}>Passport Upload</h4>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Upload a passport image or PDF for this additional traveler. The file stays
@@ -1208,7 +1208,7 @@ function AdditionalTravelerForm({
           </div>
 
           <button type="submit" className="btn btn-primary">
-            Upload Passport for This Traveler
+            Upload Traveler Passport
           </button>
         </form>
 
@@ -1247,7 +1247,7 @@ function AdditionalTravelerForm({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Open 5-Min Link
+                          Open Secure Link
                         </a>
                       ) : (
                         "Unavailable"
@@ -1264,7 +1264,7 @@ function AdditionalTravelerForm({
       <form action={deleteTravelerProfile}>
         <input type="hidden" name="traveler_id" value={traveler.id} />
         <button type="submit" className="btn btn-primary">
-          Delete Additional Traveler
+          Delete Traveler
         </button>
       </form>
     </details>
@@ -1359,6 +1359,78 @@ export default async function TravelerNumbersPage({
       <div
         className="card stack"
         style={{
+          border: "1px solid #e6f0f2",
+          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Traveler Profile
+        </p>
+
+        <h2 style={{ margin: 0 }}>Traveler Numbers & Rewards</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Keep trusted traveler numbers, rewards memberships, additional travelers,
+          and supporting passport files organized in one place.
+        </p>
+
+        <div className="grid grid-3">
+          <div
+            style={{
+              padding: "12px",
+              border: "1px solid #e6f0f2",
+              borderRadius: 12,
+              background: "#ffffff",
+            }}
+          >
+            <span className="label">Travelers</span>
+            <p style={{ margin: "6px 0 0", fontSize: 24, fontWeight: 900 }}>
+              {travelerRows.length}
+            </p>
+          </div>
+
+          <div
+            style={{
+              padding: "12px",
+              border: "1px solid #e6f0f2",
+              borderRadius: 12,
+              background: "#ffffff",
+            }}
+          >
+            <span className="label">Rewards Memberships</span>
+            <p style={{ margin: "6px 0 0", fontSize: 24, fontWeight: 900 }}>
+              {loyaltyRows.length}
+            </p>
+          </div>
+
+          <div
+            style={{
+              padding: "12px",
+              border: "1px solid #e6f0f2",
+              borderRadius: 12,
+              background: "#ffffff",
+            }}
+          >
+            <span className="label">Passport Uploads</span>
+            <p style={{ margin: "6px 0 0", fontSize: 24, fontWeight: 900 }}>
+              {passportDocumentsWithUrls.length}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
           border: "1px solid #fed7aa",
           background: "#fff7ed",
           color: "#9a3412",
@@ -1392,7 +1464,7 @@ export default async function TravelerNumbersPage({
               }}
             >
               <div>
-                <h2 style={{ margin: 0 }}>Your Traveler Numbers</h2>
+                <h2 style={{ margin: 0 }}>Primary Traveler Numbers</h2>
                 <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
                   These numbers are connected to your primary client profile. Your
                   name, date of birth, and passport details are managed from your
@@ -1412,6 +1484,10 @@ export default async function TravelerNumbersPage({
 
           <div className="card stack">
             <h2 style={{ margin: 0 }}>Rewards Memberships</h2>
+
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              Add airline, hotel, cruise, rental car, theme park, credit card travel, and other rewards accounts for each traveler.
+            </p>
 
             {loyaltyError ? (
               <div>
@@ -1678,11 +1754,10 @@ export default async function TravelerNumbersPage({
           </div>
 
           <div className="card stack">
-            <h2 style={{ margin: 0 }}>Additional Travelers & Minor Children</h2>
+            <h2 style={{ margin: 0 }}>Additional Travelers</h2>
 
             <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              Use this section for a spouse, child, minor traveler, grandparent, or
-              anyone else connected to your trip.
+              Use this section for a spouse, child, minor traveler, grandparent, friend, or anyone else connected to your trip.
             </p>
 
             <details
@@ -1703,7 +1778,7 @@ export default async function TravelerNumbersPage({
                   color: "var(--accent-dark)",
                 }}
               >
-                Add Additional Traveler
+                Add Traveler
               </summary>
 
               <form action={addAdditionalTravelerProfile} className="stack" style={{ padding: 16 }}>
@@ -1839,7 +1914,7 @@ export default async function TravelerNumbersPage({
                 </label>
 
                 <button type="submit" className="btn btn-primary">
-                  Add Additional Traveler
+                  Add Traveler
                 </button>
               </form>
             </details>
