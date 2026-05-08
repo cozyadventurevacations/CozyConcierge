@@ -1444,25 +1444,8 @@ export default async function TripDetailPage({
             View Documents
           </ActionLink>
 
-          <ActionLink
-            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
-            className="btn btn-primary"
-          >
-            Message Advisor Privately
-          </ActionLink>
-
-          <ActionLink
-            href={`/messages?tripId=${tripRow.id}&scope=group&subject=${travelCircleSubject}`}
-            className="btn btn-primary"
-          >
-            Message Travel Circle
-          </ActionLink>
-
-          <ActionLink
-            href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`}
-            className="btn btn-primary"
-          >
-            Email Advisor
+          <ActionLink href="/messages" className="btn btn-primary">
+            Open Message Center
           </ActionLink>
 
           <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-primary">
@@ -2451,37 +2434,8 @@ export default async function TripDetailPage({
             alignItems: "stretch",
           }}
         >
-          <ActionLink
-            href={`/messages?tripId=${tripRow.id}&subject=${emailSubject}`}
-            className="btn btn-primary"
-          >
-            Message Advisor Privately
-          </ActionLink>
-
-          <ActionLink
-            href={`/messages?tripId=${tripRow.id}&scope=group&subject=${travelCircleSubject}`}
-            className="btn btn-primary"
-          >
-            Message Travel Circle
-          </ActionLink>
-
-          <ActionLink
-            href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`}
-            className="btn btn-primary"
-          >
-            Email Your Advisor
-          </ActionLink>
-
-          <ActionLink href={`/trips/${tripRow.id}/documents`} className="btn btn-primary">
-            View Documents
-          </ActionLink>
-
-          <ActionLink href={`/trips/${tripRow.id}/request-payment`} className="btn btn-primary">
-            Request Payment Link
-          </ActionLink>
-
-          <ActionLink href="/trips" className="btn btn-primary">
-            Back to My Trips
+          <ActionLink href="/messages" className="btn btn-primary">
+            Open Message Center
           </ActionLink>
         </div>
       </CollapsibleSection>
