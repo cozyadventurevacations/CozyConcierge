@@ -461,12 +461,6 @@ export default async function PassportUploadPage({
           <Link href="/profile" className="btn btn-primary">
             Back to Profile
           </Link>
-          <Link href="/profile/documents/upload" className="btn btn-primary">
-            Upload Other Travel Documents
-          </Link>
-          <Link href="/trips" className="btn btn-primary">
-            Back to My Trips
-          </Link>
         </div>
       </div>
 
@@ -510,12 +504,57 @@ export default async function PassportUploadPage({
         necessary for travel planning, supplier documentation, or trip support.
       </div>
 
+      <div className="grid grid-3">
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Primary Traveler</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 900 }}>
+            {buildName(
+              primaryTraveler.first_name,
+              primaryTraveler.middle_name,
+              primaryTraveler.last_name,
+            ) || getClientName(clientAccount)}
+          </p>
+        </div>
+
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Passport Country</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 900 }}>
+            {primaryTraveler.passport_country ?? "Not provided"}
+          </p>
+        </div>
+
+        <div
+          className="card"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "#ffffff",
+          }}
+        >
+          <span className="label">Uploaded Passport Files</span>
+          <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 900 }}>
+            {documentsWithUrls.length}
+          </p>
+        </div>
+      </div>
+
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Primary Passport Details</h2>
+        <h2 style={{ margin: 0 }}>Save Passport Details</h2>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Enter your name exactly as it appears on your passport or travel document.
-          These details are connected to your primary traveler profile.
+          These details save to your primary traveler profile.
         </p>
 
         <form action={updatePrimaryPassportDetails} className="stack">
@@ -590,7 +629,11 @@ export default async function PassportUploadPage({
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Upload Passport Document</h2>
+        <h2 style={{ margin: 0 }}>Upload Passport File</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Upload a passport image or PDF when your advisor needs a document on file for travel planning or supplier support.
+        </p>
 
         <form action={uploadPassportDocument} className="stack">
           <label className="stack-sm">
@@ -668,9 +711,6 @@ export default async function PassportUploadPage({
             <button type="submit" className="btn btn-primary">
               Upload Passport Document
             </button>
-            <Link href="/profile" className="btn btn-primary">
-              Cancel
-            </Link>
           </div>
         </form>
       </div>
@@ -722,20 +762,20 @@ export default async function PassportUploadPage({
                     <td>{document.file_name}</td>
                     <td>{formatDateTime(document.created_at)}</td>
                     <td>{document.notes ?? "Not provided"}</td>
-<td>
-  {document.signedUrl ? (
-    <a
-      href={document.signedUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="btn btn-primary"
-    >
-      Open
-    </a>
-  ) : (
-    <span style={{ color: "#64748b" }}>Unavailable</span>
-  )}
-</td>
+                    <td>
+                      {document.signedUrl ? (
+                        <a
+                          href={document.signedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-primary"
+                        >
+                          Open Secure Link
+                        </a>
+                      ) : (
+                        <span style={{ color: "#64748b" }}>Unavailable</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
