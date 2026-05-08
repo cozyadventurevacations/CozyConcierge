@@ -343,9 +343,9 @@ export default async function RequestPaymentPage({
         </h1>
 
         <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Hi {clientName}, use this page to request a secure payment link for
-          your trip. Cozy Adventure Vacations will review the request and send the
-          appropriate payment link.
+          Hi {clientName}, use this page to request a secure payment link for your trip.
+          Cozy Adventure Vacations will review the amount and send the appropriate supplier
+          or secure payment link.
         </p>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -353,6 +353,12 @@ export default async function RequestPaymentPage({
           <span style={{ color: "#667085", lineHeight: 1.5 }}>
             {formatDate(tripRow.departure_date)} → {formatDate(tripRow.return_date)}
           </span>
+        </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <Link href={`/trips/${tripId}`} className="btn btn-primary">
+            Back to Trip
+          </Link>
         </div>
       </div>
 
@@ -370,15 +376,7 @@ export default async function RequestPaymentPage({
             will review it and send the proper secure payment link.
           </p>
 
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Link href={`/trips/${tripId}`} className="btn btn-primary">
-              Back to Trip
-            </Link>
 
-            <Link href="/trips" className="btn btn-primary">
-              Back to My Trips
-            </Link>
-          </div>
         </div>
       ) : null}
 
@@ -407,7 +405,7 @@ export default async function RequestPaymentPage({
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Enter the amount you would like a payment link for. If you are unsure,
-          request the current balance due.
+          use the current balance due shown above.
         </p>
 
         <form action={savePaymentRequest} className="stack">
@@ -460,20 +458,16 @@ export default async function RequestPaymentPage({
             <button type="submit" className="btn btn-primary">
               Submit Payment Link Request
             </button>
-
-            <Link href={`/trips/${tripId}`} className="btn btn-primary">
-              Back to Trip
-            </Link>
-
-            <Link href="/trips" className="btn btn-primary">
-              Back to My Trips
-            </Link>
           </div>
         </form>
       </div>
 
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Recent Payment Link Requests</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          You can review the most recent requests for this trip below.
+        </p>
 
         {paymentRequestsError ? (
           <div>
