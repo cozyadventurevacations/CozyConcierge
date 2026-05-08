@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -32,6 +33,12 @@ type SupplierDetail = {
   contact_phone: string | null;
   website_url: string | null;
   booking_portal_url: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
   preferred_supplier: boolean | null;
   commission_notes: string | null;
   internal_notes: string | null;
@@ -148,6 +155,12 @@ async function updateSupplier(supplierId: string, formData: FormData) {
       contact_phone: cleanText(formData, "contact_phone"),
       website_url: cleanText(formData, "website_url"),
       booking_portal_url: cleanText(formData, "booking_portal_url"),
+      address_line_1: cleanText(formData, "address_line_1"),
+      address_line_2: cleanText(formData, "address_line_2"),
+      city: cleanText(formData, "city"),
+      state: cleanText(formData, "state"),
+      postal_code: cleanText(formData, "postal_code"),
+      country: cleanText(formData, "country"),
       preferred_supplier,
       commission_notes: cleanText(formData, "commission_notes"),
       internal_notes: cleanText(formData, "internal_notes"),
@@ -194,7 +207,7 @@ export default async function EditSupplierPage({
   return (
     <PageShell
       title={`Edit ${supplierRow.supplier_name}`}
-      subtitle="Update supplier contact details, booking links, and internal notes."
+      subtitle="Update supplier contact details, booking links, address, and internal notes."
     >
       <form action={saveSupplier} className="stack" style={{ maxWidth: 1100 }}>
         <div
@@ -252,6 +265,7 @@ export default async function EditSupplierPage({
               type="checkbox"
               defaultChecked={Boolean(supplierRow.preferred_supplier)}
             />
+
             <span style={{ lineHeight: 1.45 }}>
               <strong>Preferred supplier</strong>
             </span>
@@ -304,6 +318,33 @@ export default async function EditSupplierPage({
         </div>
 
         <div className="card stack">
+          <h2 style={{ margin: 0 }}>Supplier Address</h2>
+
+          <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+            Start typing the supplier address and choose the best match. You can still edit the fields manually before saving.
+          </p>
+
+          <AddressAutocomplete
+            addressLine1Default={supplierRow.address_line_1}
+            addressLine2Default={supplierRow.address_line_2}
+            cityDefault={supplierRow.city}
+            stateDefault={supplierRow.state}
+            postalCodeDefault={supplierRow.postal_code}
+          />
+
+          <label className="stack-sm">
+            <span className="label">Country</span>
+            <input
+              className="input"
+              name="country"
+              defaultValue={supplierRow.country ?? ""}
+              placeholder="United States"
+              autoComplete="country-name"
+            />
+          </label>
+        </div>
+
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Internal Notes</h2>
 
           <TextAreaField
@@ -332,9 +373,7 @@ export default async function EditSupplierPage({
               lineHeight: 1.6,
             }}
           >
-            <strong>Internal use reminder:</strong> Do not store supplier portal passwords,
-            full credit card numbers, or sensitive client payment information in supplier
-            notes.
+            <strong>Internal use reminder:</strong> Do not store supplier portal passwords, full credit card numbers, or sensitive client payment information in supplier notes.
           </div>
         </div>
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { AirlinePicker } from "@/components/forms/airline-picker";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 
@@ -253,6 +254,30 @@ function requireAllowedValue(
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function buildSubmittedAddress(formData: FormData, prefix: string) {
+  const addressLine1 = cleanText(formData, `${prefix}_address_line_1`);
+  const addressLine2 = cleanText(formData, `${prefix}_address_line_2`);
+  const city = cleanText(formData, `${prefix}_city`);
+  const state = cleanText(formData, `${prefix}_state`);
+  const postalCode = cleanText(formData, `${prefix}_postal_code`);
+  const country = cleanText(formData, `${prefix}_country`);
+
+  const cityStatePostal = [city, state, postalCode].filter(Boolean).join(", ");
+  const formattedAddress = [addressLine1, addressLine2, cityStatePostal, country]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    postalCode,
+    country,
+    formattedAddress: formattedAddress || null,
+  };
 }
 
 function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
@@ -1206,6 +1231,22 @@ function DocumentReadinessCard({
   );
 }
 
+function SectionSaveButton({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        paddingTop: 8,
+      }}
+    >
+      <button type="submit" className="btn btn-primary">
+        Save {label}
+      </button>
+    </div>
+  );
+}
+
 async function addTripCompanion(formData: FormData) {
   "use server";
 
@@ -1552,10 +1593,11 @@ async function updateTrip(formData: FormData) {
     String(formData.get("hotel_terms_and_conditions") ?? "").trim() || null;
   const hotelCancellation =
     String(formData.get("hotel_cancellation_policy") ?? "").trim() || null;
+  const hotelAddress = buildSubmittedAddress(formData, "hotel");
 
   const hotelDetailPayload = {
     hotel_name: hotelName || null,
-    hotel_address: String(formData.get("hotel_address") ?? "").trim() || null,
+    hotel_address: hotelAddress.formattedAddress,
     hotel_star_rating: toOptionalNumber(formData.get("hotel_star_rating")),
     check_in_date: String(formData.get("hotel_check_in_date") ?? "").trim() || null,
     check_out_date: String(formData.get("hotel_check_out_date") ?? "").trim() || null,
@@ -1570,7 +1612,7 @@ async function updateTrip(formData: FormData) {
   const hasAnyHotelValue =
     hotelSupplierId ||
     hotelName ||
-    hotelDetailPayload.hotel_address ||
+    hotelAddress.addressLine1 ||
     hotelDetailPayload.check_in_date ||
     hotelDetailPayload.check_out_date ||
     hotelDetailPayload.room_category ||
@@ -1589,6 +1631,12 @@ async function updateTrip(formData: FormData) {
       deposit_due_date: hotelDepositDueDate,
       final_payment_due_date: hotelFinalPaymentDueDate,
       confirmation_number: hotelConfirmationNumber,
+      address_line_1: hotelAddress.addressLine1,
+      address_line_2: hotelAddress.addressLine2,
+      city: hotelAddress.city,
+      state: hotelAddress.state,
+      postal_code: hotelAddress.postalCode,
+      country: hotelAddress.country,
       terms_and_conditions: hotelTerms,
       cancellation_policy: hotelCancellation,
     },
@@ -1915,8 +1963,11 @@ async function updateTrip(formData: FormData) {
   ).trim();
   const transferPickupDatetime =
     String(formData.get("transfer_pickup_datetime") ?? "").trim() || null;
+  const transferAddress = buildSubmittedAddress(formData, "transfer");
   const transferPickupLocation =
-    String(formData.get("transfer_pickup_location") ?? "").trim() || null;
+    transferAddress.formattedAddress ||
+    String(formData.get("transfer_pickup_location") ?? "").trim() ||
+    null;
   const transferDropoffLocation =
     String(formData.get("transfer_dropoff_location") ?? "").trim() || null;
   const transferPassengerCountRaw = String(
@@ -1990,6 +2041,12 @@ async function updateTrip(formData: FormData) {
       deposit_due_date: transferDepositDueDate,
       final_payment_due_date: transferFinalPaymentDueDate,
       confirmation_number: transferConfirmationNumber,
+      address_line_1: transferAddress.addressLine1,
+      address_line_2: transferAddress.addressLine2,
+      city: transferAddress.city,
+      state: transferAddress.state,
+      postal_code: transferAddress.postalCode,
+      country: transferAddress.country,
       terms_and_conditions: transferTerms,
       cancellation_policy: transferCancellation,
     },
@@ -2006,8 +2063,11 @@ async function updateTrip(formData: FormData) {
   ).trim();
   const activityDatetime =
     String(formData.get("activity_datetime") ?? "").trim() || null;
+  const activityAddress = buildSubmittedAddress(formData, "activity");
   const activityLocation =
-    String(formData.get("activity_location") ?? "").trim() || null;
+    activityAddress.formattedAddress ||
+    String(formData.get("activity_location") ?? "").trim() ||
+    null;
   const activityParticipantCountRaw = String(
     formData.get("activity_participant_count") ?? "",
   ).trim();
@@ -2076,6 +2136,12 @@ async function updateTrip(formData: FormData) {
       deposit_due_date: activityDepositDueDate,
       final_payment_due_date: activityFinalPaymentDueDate,
       confirmation_number: activityConfirmationNumber,
+      address_line_1: activityAddress.addressLine1,
+      address_line_2: activityAddress.addressLine2,
+      city: activityAddress.city,
+      state: activityAddress.state,
+      postal_code: activityAddress.postalCode,
+      country: activityAddress.country,
       terms_and_conditions: activityTerms,
       cancellation_policy: activityCancellation,
     },
@@ -3735,6 +3801,9 @@ export default async function AdminTripEditorPage({
               />
             </label>
           </div>
+        
+
+          <SectionSaveButton label="Trip Overview" />
         </CollapsibleSection>
 
         <span id="proposal" />
@@ -3789,6 +3858,9 @@ export default async function AdminTripEditorPage({
               defaultValue={proposal?.proposal_closing_text ?? ""}
             />
           </label>
+        
+
+          <SectionSaveButton label="Proposal" />
         </CollapsibleSection>
 
         <span id="commissions" />
@@ -3994,14 +4066,34 @@ export default async function AdminTripEditorPage({
               </select>
             </label>
 
-            <label>
-              <span className="label">Hotel Address</span>
-              <input
-                className="input"
-                name="hotel_address"
-                defaultValue={hotel.details?.hotel_address ?? ""}
+            <div className="stack" style={{ gridColumn: "1 / -1" }}>
+              <h3 style={{ margin: 0 }}>Hotel Address</h3>
+              <AddressAutocomplete
+                addressLine1Default={hotel.component?.address_line_1 ?? hotel.details?.hotel_address ?? ""}
+                addressLine2Default={hotel.component?.address_line_2 ?? ""}
+                cityDefault={hotel.component?.city ?? ""}
+                stateDefault={hotel.component?.state ?? ""}
+                postalCodeDefault={hotel.component?.postal_code ?? ""}
+                fieldNames={{
+                  addressLine1: "hotel_address_line_1",
+                  addressLine2: "hotel_address_line_2",
+                  city: "hotel_city",
+                  state: "hotel_state",
+                  postalCode: "hotel_postal_code",
+                }}
+                addressLine1Label="Hotel Address Line 1"
               />
-            </label>
+              <label className="stack-sm">
+                <span className="label">Country</span>
+                <input
+                  className="input"
+                  name="hotel_country"
+                  defaultValue={hotel.component?.country ?? ""}
+                  placeholder="United States"
+                  autoComplete="country-name"
+                />
+              </label>
+            </div>
 
             <label>
               <span className="label">Stars</span>
@@ -4130,6 +4222,9 @@ export default async function AdminTripEditorPage({
               defaultValue={hotel.component?.cancellation_policy ?? ""}
             />
           </label>
+        
+
+          <SectionSaveButton label="Hotel Component" />
         </CollapsibleSection>
 
         <span id="air-component" />
@@ -4428,6 +4523,9 @@ export default async function AdminTripEditorPage({
               </label>
             </div>
           </div>
+        
+
+          <SectionSaveButton label="Air Component" />
         </CollapsibleSection>
 
         <span id="cruise-component" />
@@ -4615,6 +4713,9 @@ export default async function AdminTripEditorPage({
               defaultValue={cruise.component?.cancellation_policy ?? ""}
             />
           </label>
+        
+
+          <SectionSaveButton label="Cruise Component" />
         </CollapsibleSection>
 
         <span id="transfer-component" />
@@ -4691,14 +4792,35 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Pickup Location</span>
-              <input
-                className="input"
-                name="transfer_pickup_location"
-                defaultValue={transfer.details?.pickup_location ?? ""}
+            <div className="stack" style={{ gridColumn: "1 / -1" }}>
+              <h3 style={{ margin: 0 }}>Pickup Address / Location</h3>
+              <AddressAutocomplete
+                addressLine1Default={transfer.component?.address_line_1 ?? transfer.details?.pickup_location ?? ""}
+                addressLine2Default={transfer.component?.address_line_2 ?? ""}
+                cityDefault={transfer.component?.city ?? ""}
+                stateDefault={transfer.component?.state ?? ""}
+                postalCodeDefault={transfer.component?.postal_code ?? ""}
+                fieldNames={{
+                  addressLine1: "transfer_address_line_1",
+                  addressLine2: "transfer_address_line_2",
+                  city: "transfer_city",
+                  state: "transfer_state",
+                  postalCode: "transfer_postal_code",
+                }}
+                addressLine1Label="Pickup Address Line 1"
+                helperText="Start typing the pickup address or location, then choose the best match."
               />
-            </label>
+              <label className="stack-sm">
+                <span className="label">Pickup Country</span>
+                <input
+                  className="input"
+                  name="transfer_country"
+                  defaultValue={transfer.component?.country ?? ""}
+                  placeholder="United States"
+                  autoComplete="country-name"
+                />
+              </label>
+            </div>
 
             <label>
               <span className="label">Dropoff Location</span>
@@ -4820,6 +4942,9 @@ export default async function AdminTripEditorPage({
               />
             </label>
           </div>
+        
+
+          <SectionSaveButton label="Transfer Component" />
         </CollapsibleSection>
 
         <span id="activity-component" />
@@ -4903,14 +5028,35 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Location</span>
-              <input
-                className="input"
-                name="activity_location"
-                defaultValue={activity.details?.location ?? ""}
+            <div className="stack" style={{ gridColumn: "1 / -1" }}>
+              <h3 style={{ margin: 0 }}>Activity Address / Location</h3>
+              <AddressAutocomplete
+                addressLine1Default={activity.component?.address_line_1 ?? activity.details?.location ?? ""}
+                addressLine2Default={activity.component?.address_line_2 ?? ""}
+                cityDefault={activity.component?.city ?? ""}
+                stateDefault={activity.component?.state ?? ""}
+                postalCodeDefault={activity.component?.postal_code ?? ""}
+                fieldNames={{
+                  addressLine1: "activity_address_line_1",
+                  addressLine2: "activity_address_line_2",
+                  city: "activity_city",
+                  state: "activity_state",
+                  postalCode: "activity_postal_code",
+                }}
+                addressLine1Label="Activity Address Line 1"
+                helperText="Start typing the activity address or location, then choose the best match."
               />
-            </label>
+              <label className="stack-sm">
+                <span className="label">Activity Country</span>
+                <input
+                  className="input"
+                  name="activity_country"
+                  defaultValue={activity.component?.country ?? ""}
+                  placeholder="United States"
+                  autoComplete="country-name"
+                />
+              </label>
+            </div>
 
             <label>
               <span className="label">Participant Count</span>
@@ -5016,6 +5162,9 @@ export default async function AdminTripEditorPage({
               />
             </label>
           </div>
+        
+
+          <SectionSaveButton label="Activity Component" />
         </CollapsibleSection>
 
         <span id="insurance-component" />
@@ -5201,6 +5350,9 @@ export default async function AdminTripEditorPage({
               />
             </label>
           </div>
+        
+
+          <SectionSaveButton label="Insurance Component" />
         </CollapsibleSection>
 
         <span id="trip-notes" />
@@ -5279,6 +5431,9 @@ export default async function AdminTripEditorPage({
               />
             </label>
           </div>
+        
+
+          <SectionSaveButton label="Notes" />
         </CollapsibleSection>
 
         <div className="row">

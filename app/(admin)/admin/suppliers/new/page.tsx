@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -126,6 +127,12 @@ async function createSupplier(formData: FormData) {
       contact_phone: cleanText(formData, "contact_phone"),
       website_url: cleanText(formData, "website_url"),
       booking_portal_url: cleanText(formData, "booking_portal_url"),
+      address_line_1: cleanText(formData, "address_line_1"),
+      address_line_2: cleanText(formData, "address_line_2"),
+      city: cleanText(formData, "city"),
+      state: cleanText(formData, "state"),
+      postal_code: cleanText(formData, "postal_code"),
+      country: cleanText(formData, "country"),
       preferred_supplier,
       commission_notes: cleanText(formData, "commission_notes"),
       internal_notes: cleanText(formData, "internal_notes"),
@@ -246,6 +253,26 @@ export default async function NewSupplierPage() {
         </div>
 
         <div className="card stack">
+          <h2 style={{ margin: 0 }}>Supplier Address</h2>
+
+          <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+            Start typing the supplier address and choose the best match. You can still edit the fields manually before saving.
+          </p>
+
+          <AddressAutocomplete />
+
+          <label className="stack-sm">
+            <span className="label">Country</span>
+            <input
+              className="input"
+              name="country"
+              placeholder="United States"
+              autoComplete="country-name"
+            />
+          </label>
+        </div>
+
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Commission & Internal Notes</h2>
 
           <TextAreaField
@@ -272,9 +299,7 @@ export default async function NewSupplierPage() {
               lineHeight: 1.6,
             }}
           >
-            <strong>Internal use reminder:</strong> Do not store supplier portal passwords,
-            full credit card numbers, or sensitive client payment information in supplier
-            notes.
+            <strong>Internal use reminder:</strong> Do not store supplier portal passwords, full credit card numbers, or sensitive client payment information in supplier notes.
           </div>
         </div>
 

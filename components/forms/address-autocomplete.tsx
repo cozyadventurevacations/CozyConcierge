@@ -15,12 +15,23 @@ type AddressDetails = {
   formattedAddress: string;
 };
 
+type AddressFieldNames = {
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+};
+
 type AddressAutocompleteProps = {
   addressLine1Default?: string | null;
   addressLine2Default?: string | null;
   cityDefault?: string | null;
   stateDefault?: string | null;
   postalCodeDefault?: string | null;
+  fieldNames?: AddressFieldNames;
+  addressLine1Label?: string;
+  helperText?: string;
 };
 
 export function AddressAutocomplete({
@@ -29,7 +40,18 @@ export function AddressAutocomplete({
   cityDefault,
   stateDefault,
   postalCodeDefault,
+  fieldNames,
+  addressLine1Label = "Address Line 1",
+  helperText = "Start typing your address, then choose the best match from the list.",
 }: AddressAutocompleteProps) {
+  const names = {
+    addressLine1: fieldNames?.addressLine1 ?? "address_line_1",
+    addressLine2: fieldNames?.addressLine2 ?? "address_line_2",
+    city: fieldNames?.city ?? "city",
+    state: fieldNames?.state ?? "state",
+    postalCode: fieldNames?.postalCode ?? "postal_code",
+  };
+
   const [addressLine1, setAddressLine1] = useState(addressLine1Default ?? "");
   const [addressLine2, setAddressLine2] = useState(addressLine2Default ?? "");
   const [city, setCity] = useState(cityDefault ?? "");
@@ -220,14 +242,14 @@ export function AddressAutocomplete({
   return (
     <div ref={wrapperRef} className="stack">
       <div className="stack-sm" style={{ position: "relative" }}>
-        <label className="label" htmlFor="address_line_1">
-          Address Line 1
+        <label className="label" htmlFor={names.addressLine1}>
+          {addressLine1Label}
         </label>
 
         <input
-          id="address_line_1"
+          id={names.addressLine1}
           className="input"
-          name="address_line_1"
+          name={names.addressLine1}
           value={addressLine1}
           onChange={(event) => handleAddressLine1Change(event.target.value)}
           onFocus={handleAddressLine1Focus}
@@ -237,7 +259,7 @@ export function AddressAutocomplete({
         />
 
         <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>
-          Start typing your address, then choose the best match from the list.
+          {helperText}
         </p>
 
         {isSuggestionBoxOpen && suggestions.length > 0 ? (
@@ -286,7 +308,7 @@ export function AddressAutocomplete({
         <span className="label">Address Line 2</span>
         <input
           className="input"
-          name="address_line_2"
+          name={names.addressLine2}
           value={addressLine2}
           onChange={(event) => setAddressLine2(event.target.value)}
           placeholder="Apartment, suite, unit, etc."
@@ -302,7 +324,7 @@ export function AddressAutocomplete({
           <span className="label">City</span>
           <input
             className="input"
-            name="city"
+            name={names.city}
             value={city}
             onChange={(event) => setCity(event.target.value)}
             autoComplete="address-level2"
@@ -313,7 +335,7 @@ export function AddressAutocomplete({
           <span className="label">State</span>
           <input
             className="input"
-            name="state"
+            name={names.state}
             value={state}
             onChange={(event) => setState(event.target.value)}
             autoComplete="address-level1"
@@ -324,7 +346,7 @@ export function AddressAutocomplete({
           <span className="label">Postal Code</span>
           <input
             className="input"
-            name="postal_code"
+            name={names.postalCode}
             value={postalCode}
             onChange={(event) => setPostalCode(event.target.value)}
             autoComplete="postal-code"

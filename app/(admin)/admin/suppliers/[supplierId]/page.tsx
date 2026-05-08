@@ -11,6 +11,12 @@ type SupplierDetail = {
   contact_phone: string | null;
   website_url: string | null;
   booking_portal_url: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
   preferred_supplier: boolean | null;
   commission_notes: string | null;
   internal_notes: string | null;
@@ -129,10 +135,7 @@ function calculateExpectedCommission(
 function getExpectedCommission(row: CommissionRow) {
   return (
     Number(row.expected_commission_amount ?? 0) ||
-    calculateExpectedCommission(
-      row.full_commission_amount,
-      row.agency_commission_percent,
-    )
+    calculateExpectedCommission(row.full_commission_amount, row.agency_commission_percent)
   );
 }
 
@@ -142,6 +145,20 @@ function getTripFromComponent(row: TripComponentRow) {
   }
 
   return row.trips ?? null;
+}
+
+function buildAddressLines(supplier: SupplierDetail) {
+  const cityStatePostal = [supplier.city, supplier.state, supplier.postal_code]
+    .filter(Boolean)
+    .join(", ")
+    .replace(", ", supplier.city && supplier.state ? ", " : " ");
+
+  return [
+    supplier.address_line_1,
+    supplier.address_line_2,
+    cityStatePostal || null,
+    supplier.country,
+  ].filter(Boolean);
 }
 
 function InfoItem({
@@ -155,16 +172,17 @@ function InfoItem({
     <div
       style={{
         padding: "12px",
-        border: "1px solid #eef2f5",
         borderRadius: 12,
-        background: "#fbfdfe",
+        background: "#f7fbfc",
+        border: "1px solid #e6f0f2",
       }}
     >
-      <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
-        {value === null || value === undefined || value === ""
-          ? "Not provided"
-          : value}
+      <p className="label" style={{ margin: 0 }}>
+        {label}
+      </p>
+
+      <p style={{ margin: "4px 0 0", fontWeight: 700, lineHeight: 1.5 }}>
+        {value === null || value === undefined || value === "" ? "Not provided" : value}
       </p>
     </div>
   );
@@ -182,18 +200,7 @@ function ActionButton({
   rel?: string;
 }) {
   return (
-    <Link
-      href={href}
-      target={target}
-      rel={rel}
-      className="btn btn-primary"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        textDecoration: "none",
-      }}
-    >
+    <Link href={href} className="btn btn-primary" target={target} rel={rel}>
       {children}
     </Link>
   );
@@ -289,43 +296,28 @@ export default async function SupplierDetailPage({
     0,
   );
 
-  const outstandingCommissionTotal =
-    expectedCommissionTotal - receivedCommissionTotal;
+  const outstandingCommissionTotal = expectedCommissionTotal - receivedCommissionTotal;
+  const addressLines = buildAddressLines(supplierRow);
 
   return (
     <PageShell
       title={supplierRow.supplier_name}
-      subtitle="Supplier contact details, booking links, related trips, and commission tracking."
+      subtitle="Supplier details, related trip components, commissions, and internal notes."
     >
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-        }}
-      >
-        <ActionButton href="/admin/suppliers">Back to Suppliers</ActionButton>
-
+      <div className="stack">
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href="/admin/suppliers" className="btn btn-primary">
+            Back to Suppliers
+          </Link>
+
           {supplierRow.website_url ? (
-            <ActionButton
-              href={supplierRow.website_url}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <ActionButton href={supplierRow.website_url} target="_blank" rel="noreferrer">
               Open Website
             </ActionButton>
           ) : null}
 
           {supplierRow.booking_portal_url ? (
-            <ActionButton
-              href={supplierRow.booking_portal_url}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <ActionButton href={supplierRow.booking_portal_url} target="_blank" rel="noreferrer">
               Open Booking Portal
             </ActionButton>
           ) : null}
@@ -338,277 +330,209 @@ export default async function SupplierDetailPage({
             Edit Supplier
           </ActionButton>
         </div>
-      </div>
 
-      <div
-        className="card stack"
-        style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-          border: "1px solid #e6f0f2",
-        }}
-      >
-        <p
+        <div
+          className="card stack"
           style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
+            background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+            border: "1px solid #e6f0f2",
           }}
         >
-          Supplier Detail
-        </p>
-
-        <h2 style={{ margin: 0 }}>{supplierRow.supplier_name}</h2>
-
-        <div className="grid grid-3">
-          <div className="card">
-            <span className="label">Related Trip Components</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {componentRows.length}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Related Component Value</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {formatMoney(componentTotal)}
-            </p>
-          </div>
-
-          <div className="card">
-            <span className="label">Preferred Supplier</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-              {supplierRow.preferred_supplier ? "Yes" : "No"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-3">
-        <div className="card">
-          <span className="label">Full Commission</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(fullCommissionTotal)}
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--accent-dark)",
+              fontWeight: 800,
+            }}
+          >
+            Supplier Detail
           </p>
+
+          <h2 style={{ margin: 0 }}>{supplierRow.supplier_name}</h2>
+
+          <div className="grid grid-3">
+            <InfoItem label="Related Trip Components" value={componentRows.length} />
+            <InfoItem label="Related Component Value" value={formatMoney(componentTotal)} />
+            <InfoItem label="Preferred Supplier" value={supplierRow.preferred_supplier ? "Yes" : "No"} />
+            <InfoItem label="Full Commission" value={formatMoney(fullCommissionTotal)} />
+            <InfoItem label="Your Expected Commission" value={formatMoney(expectedCommissionTotal)} />
+            <InfoItem label="Received Commission" value={formatMoney(receivedCommissionTotal)} />
+            <InfoItem label="Outstanding Commission" value={formatMoney(outstandingCommissionTotal)} />
+            <InfoItem label="Created" value={formatDateTime(supplierRow.created_at)} />
+          </div>
         </div>
-
-        <div className="card">
-          <span className="label">Your Expected Commission</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(expectedCommissionTotal)}
-          </p>
-        </div>
-
-        <div className="card">
-          <span className="label">Received Commission</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-            {formatMoney(receivedCommissionTotal)}
-          </p>
-        </div>
-      </div>
-
-      <div className="card">
-        <span className="label">Outstanding Commission</span>
-        <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
-          {formatMoney(outstandingCommissionTotal)}
-        </p>
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Supplier Information</h2>
 
         <div className="grid grid-2">
-          <InfoItem label="Supplier Name" value={supplierRow.supplier_name} />
-          <InfoItem label="Supplier Type" value={supplierRow.supplier_type} />
-          <InfoItem
-            label="Preferred Supplier"
-            value={supplierRow.preferred_supplier ? "Yes" : "No"}
-          />
-          <InfoItem label="Created" value={formatDateTime(supplierRow.created_at)} />
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Supplier Information</h2>
+
+            <InfoItem label="Supplier Type" value={supplierRow.supplier_type} />
+            <InfoItem label="Preferred Supplier" value={supplierRow.preferred_supplier ? "Yes" : "No"} />
+          </div>
+
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Contact Details</h2>
+
+            <InfoItem label="Contact Name" value={supplierRow.contact_name} />
+            <InfoItem label="Contact Email" value={supplierRow.contact_email} />
+            <InfoItem label="Contact Phone" value={supplierRow.contact_phone} />
+            <InfoItem label="Website URL" value={supplierRow.website_url} />
+            <InfoItem label="Booking Portal URL" value={supplierRow.booking_portal_url} />
+          </div>
         </div>
-      </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Contact Details</h2>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Supplier Address</h2>
 
-        <div className="grid grid-2">
-          <InfoItem label="Contact Name" value={supplierRow.contact_name} />
-          <InfoItem label="Contact Email" value={supplierRow.contact_email} />
-          <InfoItem label="Contact Phone" value={supplierRow.contact_phone} />
-          <InfoItem label="Website URL" value={supplierRow.website_url} />
-          <InfoItem label="Booking Portal URL" value={supplierRow.booking_portal_url} />
+          {addressLines.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No supplier address has been added yet.</p>
+          ) : (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                lineHeight: 1.6,
+                fontWeight: 700,
+              }}
+            >
+              {addressLines.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Related Trip Components</h2>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Related Trip Components</h2>
 
-        {componentError ? (
-          <div className="card">
-            <p>
-              <strong>Error loading related trip components:</strong>
-            </p>
+          {componentError ? (
             <pre>{JSON.stringify(componentError, null, 2)}</pre>
-          </div>
-        ) : componentRows.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>
-            No trip components are linked to this supplier yet.
-          </p>
-        ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 980 }}>
-              <thead>
-                <tr>
-                  <th>Trip</th>
-                  <th>Component</th>
-                  <th>Display Name</th>
-                  <th>Status</th>
-                  <th>Total Price</th>
-                  <th>Confirmation #</th>
-                  <th>Travel Dates</th>
-                  <th>Payment Dates</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {componentRows.map((component) => {
-                  const trip = getTripFromComponent(component);
-
-                  return (
-                    <tr key={component.id}>
-                      <td>
-                        {trip?.trip_name ?? trip?.destinations ?? "Unnamed Trip"}
-                      </td>
-                      <td>{component.component_type}</td>
-                      <td>
-                        {component.display_name ??
-                          component.supplier_name ??
-                          "Not provided"}
-                      </td>
-                      <td>{component.booking_status ?? "Not provided"}</td>
-                      <td>{formatMoney(component.total_price)}</td>
-                      <td>{component.confirmation_number ?? "Not provided"}</td>
-                      <td>
-                        {formatDate(trip?.departure_date, "")}
-                        {trip?.return_date
-                          ? ` → ${formatDate(trip.return_date, "")}`
-                          : ""}
-                      </td>
-                      <td>
-                        {component.deposit_due_date
-                          ? `Deposit: ${formatDate(component.deposit_due_date, "")}`
-                          : ""}
-                        {component.deposit_due_date && component.final_payment_due_date
-                          ? " | "
-                          : ""}
-                        {component.final_payment_due_date
-                          ? `Final: ${formatDate(component.final_payment_due_date, "")}`
-                          : ""}
-                      </td>
-                      <td>
-                        <Link
-                          href={`/admin/trips/${component.trip_id}`}
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Open Trip
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Related Commissions</h2>
-
-        {commissionError ? (
-          <div className="card">
-            <p>
-              <strong>Error loading related commissions:</strong>
+          ) : componentRows.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>
+              No trip components are linked to this supplier yet.
             </p>
+          ) : (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 1000 }}>
+                <thead>
+                  <tr>
+                    <th>Trip</th>
+                    <th>Component</th>
+                    <th>Display Name</th>
+                    <th>Status</th>
+                    <th>Total Price</th>
+                    <th>Confirmation #</th>
+                    <th>Travel Dates</th>
+                    <th>Payment Dates</th>
+                    <th>Open</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {componentRows.map((component) => {
+                    const trip = getTripFromComponent(component);
+
+                    return (
+                      <tr key={component.id}>
+                        <td>{trip?.trip_name ?? trip?.destinations ?? "Unnamed Trip"}</td>
+                        <td>{component.component_type}</td>
+                        <td>{component.display_name ?? component.supplier_name ?? "Not provided"}</td>
+                        <td>{component.booking_status ?? "Not provided"}</td>
+                        <td>{formatMoney(component.total_price)}</td>
+                        <td>{component.confirmation_number ?? "Not provided"}</td>
+                        <td>
+                          {formatDate(trip?.departure_date, "")}
+                          {trip?.return_date ? ` → ${formatDate(trip.return_date, "")}` : ""}
+                        </td>
+                        <td>
+                          {component.deposit_due_date
+                            ? `Deposit: ${formatDate(component.deposit_due_date, "")}`
+                            : ""}
+                          {component.deposit_due_date && component.final_payment_due_date ? " | " : ""}
+                          {component.final_payment_due_date
+                            ? `Final: ${formatDate(component.final_payment_due_date, "")}`
+                            : ""}
+                        </td>
+                        <td>
+                          <Link href={`/admin/trips/${component.trip_id}`}>Open Trip</Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Related Commissions</h2>
+
+          {commissionError ? (
             <pre>{JSON.stringify(commissionError, null, 2)}</pre>
-          </div>
-        ) : commissionRows.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>
-            No commission records are linked to this supplier yet.
-          </p>
-        ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 1160 }}>
-              <thead>
-                <tr>
-                  <th>Commission</th>
-                  <th>Client</th>
-                  <th>Trip</th>
-                  <th>Booking #</th>
-                  <th>Status</th>
-                  <th>Full</th>
-                  <th>Your %</th>
-                  <th>Your Expected</th>
-                  <th>Received</th>
-                  <th>Expected Date</th>
-                  <th>Received Date</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
+          ) : commissionRows.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>
+              No commission records are linked to this supplier yet.
+            </p>
+          ) : (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 1100 }}>
+                <thead>
+                  <tr>
+                    <th>Commission</th>
+                    <th>Client</th>
+                    <th>Trip</th>
+                    <th>Booking #</th>
+                    <th>Status</th>
+                    <th>Full</th>
+                    <th>Your %</th>
+                    <th>Your Expected</th>
+                    <th>Received</th>
+                    <th>Expected Date</th>
+                    <th>Received Date</th>
+                    <th>Open</th>
+                  </tr>
+                </thead>
 
-              <tbody>
-                {commissionRows.map((commission) => {
-                  const expectedCommission = getExpectedCommission(commission);
+                <tbody>
+                  {commissionRows.map((commission) => {
+                    const expectedCommission = getExpectedCommission(commission);
 
-                  return (
-                    <tr key={commission.id}>
-                      <td>{commission.commission_name}</td>
-                      <td>{commission.client_name_snapshot ?? "Not provided"}</td>
-                      <td>{commission.trip_name_snapshot ?? "Not provided"}</td>
-                      <td>{commission.booking_number ?? "Not provided"}</td>
-                      <td>
-                        <StatusBadge status={commission.commission_status} />
-                      </td>
-                      <td>{formatMoney(commission.full_commission_amount)}</td>
-                      <td>{commission.agency_commission_percent ?? 90}%</td>
-                      <td>{formatMoney(expectedCommission)}</td>
-                      <td>{formatMoney(commission.received_commission_amount)}</td>
-                      <td>{formatDate(commission.expected_payment_date)}</td>
-                      <td>{formatDate(commission.received_payment_date)}</td>
-                      <td>
-                        <Link
-                          href={`/admin/commissions/${commission.id}`}
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Open
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                    return (
+                      <tr key={commission.id}>
+                        <td>{commission.commission_name}</td>
+                        <td>{commission.client_name_snapshot ?? "Not provided"}</td>
+                        <td>{commission.trip_name_snapshot ?? "Not provided"}</td>
+                        <td>{commission.booking_number ?? "Not provided"}</td>
+                        <td>
+                          <StatusBadge status={commission.commission_status} />
+                        </td>
+                        <td>{formatMoney(commission.full_commission_amount)}</td>
+                        <td>{commission.agency_commission_percent ?? 90}%</td>
+                        <td>{formatMoney(expectedCommission)}</td>
+                        <td>{formatMoney(commission.received_commission_amount)}</td>
+                        <td>{formatDate(commission.expected_payment_date)}</td>
+                        <td>{formatDate(commission.received_payment_date)}</td>
+                        <td>
+                          <Link href={`/admin/commissions/${commission.id}`}>Open</Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Internal Notes</h2>
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Internal Notes</h2>
 
-        <div className="grid grid-2">
           <InfoItem label="Commission Notes" value={supplierRow.commission_notes} />
           <InfoItem label="General Internal Notes" value={supplierRow.internal_notes} />
         </div>
