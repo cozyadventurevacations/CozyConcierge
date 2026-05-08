@@ -55,8 +55,8 @@ export function AppHeader({
           <Image
             src="/cozy-logo.png"
             alt="Cozy Adventure Vacations"
-            width={48}
-            height={48}
+            width={160}
+            height={58}
             priority
           />
 
