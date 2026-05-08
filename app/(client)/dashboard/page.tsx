@@ -447,7 +447,9 @@ export default async function ClientDashboardPage() {
               pendingInviteRows.length > 0
                 ? "Review shared trip access."
                 : sharedTripRows.length > 0
-                  ? `${sharedTripRows.length} shared trip${sharedTripRows.length === 1 ? "" : "s"} accepted.`
+                  ? `${sharedTripRows.length} shared trip${
+                      sharedTripRows.length === 1 ? "" : "s"
+                    } accepted.`
                   : "No pending invitations."
             }
           />
@@ -510,6 +512,10 @@ export default async function ClientDashboardPage() {
 
           <Link href="/travel-request" className="btn btn-primary">
             Request New Travel Quote
+          </Link>
+
+          <Link href="/ask-cozy" className="btn btn-primary">
+            Ask Cozy
           </Link>
 
           <Link href="/invites" className="btn btn-primary">
