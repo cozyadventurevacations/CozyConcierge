@@ -53,7 +53,7 @@ export function AppHeader({
           }}
         >
           <Image
-            src="/cozy-adventure-vacations-logo.png"
+            src="/cozy-logo.png"
             alt="Cozy Adventure Vacations"
             width={48}
             height={48}
