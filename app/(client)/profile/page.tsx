@@ -255,6 +255,8 @@ function getUpdatedMessageLabel(updated: string | undefined) {
       return "Travel preferences saved successfully.";
     case "allergies":
       return "Food allergy notes saved successfully.";
+    case "notes":
+      return "Profile notes saved successfully.";
     default:
       return "Profile updated successfully.";
   }
@@ -944,6 +946,24 @@ async function updateFoodAllergies(formData: FormData) {
   redirect("/profile?updated=allergies");
 }
 
+async function updateProfileNotes(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      notes: cleanText(formData, "notes"),
+    })
+    .eq("id", clientAccount.id);
+
+  if (error) throw new Error(error.message);
+
+  await revalidateProfilePaths();
+  redirect("/profile?updated=notes");
+}
+
 export default async function ClientProfilePage({
   searchParams,
 }: {
@@ -1336,6 +1356,23 @@ export default async function ClientProfilePage({
           </div>
 
           <SaveButton>Save Food Allergies</SaveButton>
+        </Section>
+      </form>
+
+      <form action={updateProfileNotes}>
+        <Section
+          title="Profile Notes"
+          intro="Use this area for general travel notes you want Cozy Adventure Vacations to keep in mind."
+        >
+          <TextAreaField
+            label="General Notes"
+            name="notes"
+            defaultValue={clientAccount.notes}
+            placeholder="Example: Prefers morning flights, celebrates birthdays while traveling, needs extra time between activities, etc."
+            rows={5}
+          />
+
+          <SaveButton>Save Profile Notes</SaveButton>
         </Section>
       </form>
 
