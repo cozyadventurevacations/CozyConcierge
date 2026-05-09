@@ -209,7 +209,7 @@ async function createPaymentRequest(tripId: string, formData: FormData) {
 
   const { data: trip, error: tripError } = await supabase
     .from("trips")
-    .select("id, client_account_id, trip_name, balance_due")
+    .select("id, client_account_id")
     .eq("id", tripId)
     .eq("client_account_id", clientAccount.id)
     .single();
@@ -258,11 +258,9 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 function InfoCard({
   label,
   value,
-  helper,
 }: {
   label: string;
   value: string;
-  helper?: string;
 }) {
   return (
     <div
@@ -274,14 +272,9 @@ function InfoCard({
       }}
     >
       <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45, fontWeight: 700 }}>
+      <p style={{ margin: "6px 0 0", lineHeight: 1.45, fontWeight: 800 }}>
         {value}
       </p>
-      {helper ? (
-        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.45 }}>
-          {helper}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -337,9 +330,6 @@ export default async function RequestPaymentPage({
     (recentPaymentRequests ?? []) as PaymentRequestRow[];
 
   const savePaymentRequest = createPaymentRequest.bind(null, tripId);
-  const clientName =
-    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-    "Client";
 
   const submittedSuccessfully = submitted === "true";
   const defaultPaymentDate =
@@ -348,7 +338,7 @@ export default async function RequestPaymentPage({
   return (
     <PageShell
       title="Request Payment Link"
-      subtitle="Ask Cozy Adventure Vacations to send a secure payment link for this trip."
+      subtitle="Submit a secure payment link request for this trip."
     >
       <div
         className="card stack"
@@ -375,9 +365,7 @@ export default async function RequestPaymentPage({
         </h1>
 
         <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Hi {clientName}, use this page to request a secure payment link for your trip.
-          Cozy Adventure Vacations will review the amount and send the appropriate supplier
-          or secure payment link.
+          {tripRow.destinations ?? "Destination not provided"}
         </p>
 
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -387,57 +375,43 @@ export default async function RequestPaymentPage({
           </span>
         </div>
 
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href={`/trips/${tripId}`} className="btn btn-primary">
-            Back to Trip
-          </Link>
-        </div>
+        <Link href={`/trips/${tripId}`} className="btn btn-primary">
+          Back to Trip
+        </Link>
       </div>
 
       {submittedSuccessfully ? (
         <div
-          className="card stack"
+          className="card"
           style={{
             border: "1px solid #bbf7d0",
             background: "#f0fdf4",
+            color: "#166534",
           }}
         >
-          <h2 style={{ margin: 0 }}>Payment request received</h2>
-          <p style={{ margin: 0, color: "#166534", lineHeight: 1.6 }}>
-            Your payment link request has been submitted. Cozy Adventure Vacations
-            will review it and send the proper secure payment link.
-          </p>
+          <strong>Payment request received.</strong> Your advisor will review it and send the proper secure payment link.
         </div>
       ) : null}
 
       <div className="grid grid-3">
         <InfoCard
-          label="Destination"
-          value={tripRow.destinations ?? "Not set"}
-          helper="Where the memories are headed."
-        />
-
-        <InfoCard
           label="Balance Due"
           value={formatMoney(tripRow.balance_due)}
-          helper="Current balance shown in your trip record."
         />
 
         <InfoCard
           label="Final Payment Due"
           value={formatDate(tripRow.final_payment_due_date)}
-          helper="Please review this date carefully."
+        />
+
+        <InfoCard
+          label="Previous Requests"
+          value={String(paymentRequestRows.length)}
         />
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Request a Payment Link</h2>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Enter the amount you would like a payment link for and the date you would
-          like to make that payment. If you are unsure, use the current balance due
-          shown above.
-        </p>
+        <h2 style={{ margin: 0 }}>Payment Link Request</h2>
 
         <form action={savePaymentRequest} className="stack">
           <div className="grid grid-2">
@@ -469,21 +443,6 @@ export default async function RequestPaymentPage({
           <div
             style={{
               padding: "12px",
-              border: "1px solid #eef2f5",
-              borderRadius: 12,
-              background: "#fbfdfe",
-            }}
-          >
-            <span className="label">Helpful Reminder</span>
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-              Payment links are reviewed before sending so the amount, supplier,
-              and payment process can be confirmed.
-            </p>
-          </div>
-
-          <div
-            style={{
-              padding: "12px",
               borderRadius: 12,
               background: "#f7fbfc",
               border: "1px solid #e6f0f2",
@@ -491,25 +450,17 @@ export default async function RequestPaymentPage({
               lineHeight: 1.6,
             }}
           >
-            Cozy Adventure Vacations uses secure payment processes and supplier
-            payment links whenever appropriate. Please do not send full credit card
-            details through this form.
+            Please do not send full credit card details through this form.
           </div>
 
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <button type="submit" className="btn btn-primary">
-              Submit Payment Link Request
-            </button>
-          </div>
+          <button type="submit" className="btn btn-primary">
+            Submit Payment Link Request
+          </button>
         </form>
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Recent Payment Link Requests</h2>
-
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          You can review the most recent requests for this trip below.
-        </p>
+        <h2 style={{ margin: 0 }}>Recent Requests</h2>
 
         {paymentRequestsError ? (
           <div>
@@ -520,15 +471,15 @@ export default async function RequestPaymentPage({
           </div>
         ) : paymentRequestRows.length === 0 ? (
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            No payment link requests have been submitted for this trip yet.
+            No payment link requests have been submitted yet.
           </p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
-                  <th>Requested Amount</th>
-                  <th>Requested Date</th>
+                  <th>Amount</th>
+                  <th>Payment Date</th>
                   <th>Status</th>
                   <th>Submitted</th>
                 </tr>
