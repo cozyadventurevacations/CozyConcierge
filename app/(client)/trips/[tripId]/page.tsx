@@ -1794,6 +1794,10 @@ export default async function TripDetailPage({
           <ActionLink href={`/trips/${tripRow.id}/documents`} className="btn btn-primary">
             View Shared Documents
           </ActionLink>
+
+          <ActionLink href="/profile/documents/upload" className="btn btn-primary">
+            Upload Travel Document
+          </ActionLink>
         </div>
       </CollapsibleSection>
 
