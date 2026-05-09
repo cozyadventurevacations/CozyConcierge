@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -403,10 +402,6 @@ export default async function ClientTripDocumentsPage({
             </p>
           </div>
         </div>
-
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-
-        </div>
       </div>
 
       <div
@@ -473,8 +468,6 @@ export default async function ClientTripDocumentsPage({
               {documentsWithUrls.length} document{documentsWithUrls.length === 1 ? "" : "s"} available
             </p>
           </div>
-
-
         </div>
 
         {documentsWithUrls.length === 0 ? (
@@ -538,7 +531,6 @@ export default async function ClientTripDocumentsPage({
           </div>
         )}
       </div>
-
     </PageShell>
   );
 }
