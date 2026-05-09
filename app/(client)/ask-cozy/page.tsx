@@ -26,6 +26,12 @@ const starterQuestions = [
   "How should I prepare for traveling with a group?",
 ];
 
+const welcomeMessage: ChatMessage = {
+  role: "assistant",
+  content:
+    "Hi, I’m Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. You can also select a trip so I can use safe high-level context like destination and travel dates.",
+};
+
 function formatDateLabel(value: string | null | undefined) {
   if (!value) return "";
 
@@ -65,6 +71,15 @@ function getTripOptionLabel(trip: SafeTripOption) {
   return `${trip.label}${trip.destinations ? ` — ${trip.destinations}` : ""}${dates}${sharedLabel}`;
 }
 
+function getConversationTimestamp() {
+  return new Date().toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function AskCozyContent() {
   const searchParams = useSearchParams();
   const questionFromDashboard = searchParams.get("question") ?? "";
@@ -74,16 +89,20 @@ function AskCozyContent() {
   const [selectedTripId, setSelectedTripId] = useState("");
   const [availableTrips, setAvailableTrips] = useState<SafeTripOption[]>([]);
   const [tripLoadError, setTripLoadError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "Hi, I’m Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. You can also select a trip so I can use safe high-level context like destination and travel dates.",
-    },
-  ]);
+  const [conversationStartedAt, setConversationStartedAt] = useState(
+    getConversationTimestamp(),
+  );
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  function resetConversation() {
+    setMessages([welcomeMessage]);
+    setQuestion("");
+    setErrorMessage(null);
+    setConversationStartedAt(getConversationTimestamp());
+  }
 
   async function loadTrips() {
     setIsLoadingTrips(true);
@@ -191,6 +210,8 @@ function AskCozyContent() {
   const selectedTrip = selectedTripId
     ? availableTrips.find((trip) => trip.id === selectedTripId) ?? null
     : null;
+
+  const hasConversationMessages = messages.length > 1;
 
   return (
     <PageShell
@@ -372,9 +393,64 @@ function AskCozyContent() {
       </div>
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>
-          Conversation {isSubmitting ? "— Asking Cozy..." : ""}
-        </h2>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>
+              Conversation {isSubmitting ? "— Asking Cozy..." : ""}
+            </h2>
+
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+              Started {conversationStartedAt}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={resetConversation}
+              disabled={isSubmitting}
+            >
+              New Conversation
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={resetConversation}
+              disabled={isSubmitting || !hasConversationMessages}
+              style={{
+                background: "#ffffff",
+                color: "#b42318",
+                border: "1px solid #fecaca",
+              }}
+            >
+              Delete Conversation
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f7fbfc",
+            border: "1px solid #e6f0f2",
+            color: "#667085",
+            lineHeight: 1.6,
+          }}
+        >
+          Conversations are not saved permanently yet. Starting a new conversation
+          or deleting this one clears the current chat from this page.
+        </div>
 
         <div style={{ display: "grid", gap: 12 }}>
           {messages.map((message, index) => {
