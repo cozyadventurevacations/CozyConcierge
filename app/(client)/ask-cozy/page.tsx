@@ -9,6 +9,16 @@ type ChatMessage = {
   content: string;
 };
 
+type SafeTripOption = {
+  id: string;
+  label: string;
+  destinations: string | null;
+  departure_date: string | null;
+  return_date: string | null;
+  trip_status: string | null;
+  access_type: "primary" | "shared";
+};
+
 const starterQuestions = [
   "What should I double-check 30 days before travel?",
   "What should I pack in my carry-on?",
@@ -16,21 +26,89 @@ const starterQuestions = [
   "How should I prepare for traveling with a group?",
 ];
 
+function formatDateLabel(value: string | null | undefined) {
+  if (!value) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+
+    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getTripOptionLabel(trip: SafeTripOption) {
+  const dates =
+    trip.departure_date || trip.return_date
+      ? ` (${formatDateLabel(trip.departure_date)} → ${formatDateLabel(
+          trip.return_date,
+        )})`
+      : "";
+
+  const sharedLabel = trip.access_type === "shared" ? " • Shared" : "";
+
+  return `${trip.label}${trip.destinations ? ` — ${trip.destinations}` : ""}${dates}${sharedLabel}`;
+}
+
 function AskCozyContent() {
   const searchParams = useSearchParams();
   const questionFromDashboard = searchParams.get("question") ?? "";
   const hasAutoSubmitted = useRef(false);
 
   const [question, setQuestion] = useState("");
+  const [selectedTripId, setSelectedTripId] = useState("");
+  const [availableTrips, setAvailableTrips] = useState<SafeTripOption[]>([]);
+  const [tripLoadError, setTripLoadError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
-        "Hi, I’m Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. For account-specific details, payment links, documents, or private trip information, please use Concierge Messages.",
+        "Hi, I’m Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. You can also select a trip so I can use safe high-level context like destination and travel dates.",
     },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function loadTrips() {
+    setIsLoadingTrips(true);
+    setTripLoadError(null);
+
+    try {
+      const response = await fetch("/api/ask-cozy/trips", {
+        method: "GET",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not load trips.");
+      }
+
+      setAvailableTrips(data.trips ?? []);
+    } catch (error) {
+      setTripLoadError(
+        error instanceof Error ? error.message : "Could not load trips.",
+      );
+    } finally {
+      setIsLoadingTrips(false);
+    }
+  }
 
   async function askCozy(nextQuestion?: string) {
     const messageToSend = String(nextQuestion ?? question).trim();
@@ -60,6 +138,7 @@ function AskCozyContent() {
         },
         body: JSON.stringify({
           message: messageToSend,
+          tripId: selectedTripId || null,
         }),
       });
 
@@ -88,6 +167,10 @@ function AskCozyContent() {
   }
 
   useEffect(() => {
+    void loadTrips();
+  }, []);
+
+  useEffect(() => {
     const cleanQuestion = questionFromDashboard.trim();
 
     if (!cleanQuestion || hasAutoSubmitted.current) {
@@ -104,6 +187,10 @@ function AskCozyContent() {
     event.preventDefault();
     await askCozy();
   }
+
+  const selectedTrip = selectedTripId
+    ? availableTrips.find((trip) => trip.id === selectedTripId) ?? null
+    : null;
 
   return (
     <PageShell
@@ -147,14 +234,84 @@ function AskCozyContent() {
             lineHeight: 1.6,
           }}
         >
-          <strong>Important:</strong> Ask Cozy cannot see your private trip details,
-          payment records, passport uploads, traveler numbers, or documents yet. For
-          anything specific to your booking, use Concierge Messages.
+          <strong>Important:</strong> Ask Cozy can use safe high-level trip context
+          if you choose a trip, but it cannot see payment records, passport uploads,
+          traveler numbers, private documents, or confirmation numbers.
         </div>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         <div className="card stack">
+          <h2 style={{ margin: 0 }}>Trip Context</h2>
+
+          <label className="stack-sm">
+            <span className="label">Optional Trip</span>
+            <select
+              className="select"
+              value={selectedTripId}
+              onChange={(event) => setSelectedTripId(event.target.value)}
+              disabled={isLoadingTrips}
+            >
+              <option value="">
+                {isLoadingTrips ? "Loading trips..." : "General travel question"}
+              </option>
+
+              {availableTrips.map((trip) => (
+                <option key={trip.id} value={trip.id}>
+                  {getTripOptionLabel(trip)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {tripLoadError ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#be123c",
+                lineHeight: 1.6,
+              }}
+            >
+              {tripLoadError}
+            </div>
+          ) : null}
+
+          {selectedTrip ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                color: "#667085",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>{selectedTrip.label}</strong>
+              <br />
+              {selectedTrip.destinations ?? "Destination not provided"}
+              <br />
+              {formatDateLabel(selectedTrip.departure_date)} →{" "}
+              {formatDateLabel(selectedTrip.return_date)}
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+                color: "#667085",
+                lineHeight: 1.6,
+              }}
+            >
+              Choose a trip for more helpful answers, or leave this as a general travel question.
+            </div>
+          )}
+
           <h2 style={{ margin: 0 }}>Starter Questions</h2>
 
           <div style={{ display: "grid", gap: 10 }}>

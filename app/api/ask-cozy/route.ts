@@ -1,5 +1,22 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+type ClientAccount = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
+type SafeTripContext = {
+  id: string;
+  trip_name: string | null;
+  destinations: string | null;
+  departure_date: string | null;
+  return_date: string | null;
+  trip_status: string | null;
+};
 
 const ASK_COZY_SYSTEM_PROMPT = `
 You are Ask Cozy, the client-facing AI assistant for Cozy Concierge, powered by Cozy Adventure Vacations.
@@ -9,7 +26,6 @@ Brand:
 - Brand voice: playful, knowledgeable, respectful, warm, professional, and semi-formal.
 - Desired feeling: comfort, inspiration, adventure, gratitude, and joy.
 - Keep responses clear, reassuring, and easy for travelers to understand.
-- A little light personality is welcome, but never be sarcastic about client concerns.
 
 Primary role:
 - Help clients with general travel planning questions.
@@ -19,10 +35,14 @@ Primary role:
 - Help clients think through packing, documents, accessibility needs, family travel, group travel, cruises, theme parks, resorts, destination planning, and trip-readiness checklists.
 - Encourage clients to use Concierge Messages for booking-specific, account-specific, document-specific, payment-specific, passport-specific, or urgent advisor questions.
 
+Safe trip context:
+- You may use provided trip name, destination, departure date, return date, and trip status to make answers more helpful.
+- Treat trip context as high-level planning context only.
+- Do not imply that you can see the full booking, supplier confirmations, payment records, passport uploads, traveler numbers, private documents, or exact itinerary details.
+
 Important limitations:
-- You cannot see the client's private trip details.
 - You cannot see payment records, passport uploads, traveler numbers, or private documents.
-- You cannot guarantee live prices, live availability, supplier rules, entry requirements, airline rules, passport rules, visa rules, or cancellation policies.
+- You cannot guarantee live prices, availability, supplier rules, entry requirements, airline rules, passport rules, visa rules, or cancellation policies.
 - You cannot collect full credit card numbers, Social Security numbers, full passport numbers, passwords, or highly sensitive identity details.
 - You cannot provide medical, legal, tax, or immigration advice.
 
@@ -62,6 +82,162 @@ function getErrorMessage(error: unknown) {
   }
 }
 
+function formatSafeTripContext(trip: SafeTripContext | null) {
+  if (!trip) {
+    return "No trip context was selected.";
+  }
+
+  return [
+    "Safe selected trip context:",
+    `Trip name: ${trip.trip_name ?? "Not provided"}`,
+    `Destination(s): ${trip.destinations ?? "Not provided"}`,
+    `Departure date: ${trip.departure_date ?? "Not provided"}`,
+    `Return date: ${trip.return_date ?? "Not provided"}`,
+    `Trip status: ${trip.trip_status ?? "Not provided"}`,
+    "",
+    "Important: This is the only trip context available. Do not claim access to payment records, passport details, traveler numbers, private documents, confirmation numbers, or supplier booking records.",
+  ].join("\n");
+}
+
+async function getCurrentClientAccount() {
+  const supabase = await createServerSupabaseClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    throw new Error("Not signed in.");
+  }
+
+  const userEmail = user.email?.trim().toLowerCase();
+
+  if (!userEmail) {
+    throw new Error("Your login account does not have an email address.");
+  }
+
+  const { data: clientAccountByEmail, error: clientEmailError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .ilike("email", userEmail)
+    .maybeSingle();
+
+  if (clientEmailError) {
+    throw new Error(clientEmailError.message);
+  }
+
+  if (clientAccountByEmail) {
+    return {
+      supabase,
+      clientAccount: clientAccountByEmail as ClientAccount,
+    };
+  }
+
+  const { data: userProfile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  if (!userProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const { data: clientAccountByProfile, error: clientProfileError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .eq("user_profile_id", userProfile.id)
+    .maybeSingle();
+
+  if (clientProfileError) {
+    throw new Error(clientProfileError.message);
+  }
+
+  if (!clientAccountByProfile) {
+    throw new Error("Client account not found.");
+  }
+
+  return {
+    supabase,
+    clientAccount: clientAccountByProfile as ClientAccount,
+  };
+}
+
+async function loadSafeTripContext(tripId: string | null) {
+  if (!tripId) {
+    return null;
+  }
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const { data: ownedTrip, error: ownedTripError } = await supabase
+    .from("client_trip_summaries")
+    .select("trip_id, trip_name, destinations, departure_date, return_date, trip_status")
+    .eq("trip_id", tripId)
+    .eq("client_account_id", clientAccount.id)
+    .maybeSingle();
+
+  if (ownedTripError) {
+    throw new Error(ownedTripError.message);
+  }
+
+  if (ownedTrip) {
+    return {
+      id: ownedTrip.trip_id,
+      trip_name: ownedTrip.trip_name,
+      destinations: ownedTrip.destinations,
+      departure_date: ownedTrip.departure_date,
+      return_date: ownedTrip.return_date,
+      trip_status: ownedTrip.trip_status,
+    } satisfies SafeTripContext;
+  }
+
+  const { data: memberAccess, error: memberAccessError } = await supabase
+    .from("trip_members" as any)
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("client_account_id", clientAccount.id)
+    .eq("invite_status", "active")
+    .eq("can_view_trip", true)
+    .maybeSingle();
+
+  if (memberAccessError) {
+    throw new Error(memberAccessError.message);
+  }
+
+  if (!memberAccess) {
+    throw new Error("Trip not found or access denied.");
+  }
+
+  const { data: sharedTrip, error: sharedTripError } = await supabase
+    .from("trips")
+    .select("id, trip_name, destinations, departure_date, return_date, trip_status")
+    .eq("id", tripId)
+    .maybeSingle();
+
+  if (sharedTripError) {
+    throw new Error(sharedTripError.message);
+  }
+
+  if (!sharedTrip) {
+    throw new Error("Trip not found or access denied.");
+  }
+
+  return {
+    id: sharedTrip.id,
+    trip_name: sharedTrip.trip_name,
+    destinations: sharedTrip.destinations,
+    departure_date: sharedTrip.departure_date,
+    return_date: sharedTrip.return_date,
+    trip_status: sharedTrip.trip_status,
+  } satisfies SafeTripContext;
+}
+
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -70,7 +246,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Ask Cozy is not configured yet. Missing OPENAI_API_KEY in .env.local.",
+            "Ask Cozy is not configured yet. Missing OPENAI_API_KEY in the environment variables.",
         },
         { status: 500 },
       );
@@ -78,6 +254,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const message = String(body.message ?? "").trim();
+    const selectedTripId = String(body.tripId ?? "").trim() || null;
 
     if (!message) {
       return NextResponse.json(
@@ -93,6 +270,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const tripContext = await loadSafeTripContext(selectedTripId);
+
     const client = new OpenAI({
       apiKey,
     });
@@ -106,7 +285,7 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: message,
+          content: `${formatSafeTripContext(tripContext)}\n\nClient question:\n${message}`,
         },
       ],
     });
