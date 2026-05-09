@@ -25,6 +25,7 @@ type ClientAccount = {
 type PaymentRequestRow = {
   id: string;
   requested_amount: number | null;
+  requested_payment_date: string | null;
   status: string | null;
   created_at: string | null;
 };
@@ -80,6 +81,29 @@ function formatDateTime(value: string | null | undefined, fallback = "Not set") 
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function getTodayDateInputValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function cleanDate(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+
+  if (!value) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error("Invalid payment date submitted.");
+  }
+
+  return value;
 }
 
 function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
@@ -173,9 +197,14 @@ async function createPaymentRequest(tripId: string, formData: FormData) {
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
   const requestedAmount = toMoneyNumber(formData.get("requested_amount"));
+  const requestedPaymentDate = cleanDate(formData, "requested_payment_date");
 
   if (requestedAmount <= 0) {
     throw new Error("Please enter a payment amount greater than $0.");
+  }
+
+  if (!requestedPaymentDate) {
+    throw new Error("Please choose the date you would like to make the payment.");
   }
 
   const { data: trip, error: tripError } = await supabase
@@ -193,6 +222,7 @@ async function createPaymentRequest(tripId: string, formData: FormData) {
     trip_id: tripId,
     client_account_id: clientAccount.id,
     requested_amount: requestedAmount,
+    requested_payment_date: requestedPaymentDate,
     status: "new",
   });
 
@@ -296,7 +326,7 @@ export default async function RequestPaymentPage({
   const { data: recentPaymentRequests, error: paymentRequestsError } =
     await supabase
       .from("payment_requests")
-      .select("id, requested_amount, status, created_at")
+      .select("id, requested_amount, requested_payment_date, status, created_at")
       .eq("trip_id", tripId)
       .eq("client_account_id", clientAccount.id)
       .order("created_at", { ascending: false })
@@ -312,6 +342,8 @@ export default async function RequestPaymentPage({
     "Client";
 
   const submittedSuccessfully = submitted === "true";
+  const defaultPaymentDate =
+    tripRow.final_payment_due_date ?? getTodayDateInputValue();
 
   return (
     <PageShell
@@ -375,8 +407,6 @@ export default async function RequestPaymentPage({
             Your payment link request has been submitted. Cozy Adventure Vacations
             will review it and send the proper secure payment link.
           </p>
-
-
         </div>
       ) : null}
 
@@ -404,8 +434,9 @@ export default async function RequestPaymentPage({
         <h2 style={{ margin: 0 }}>Request a Payment Link</h2>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Enter the amount you would like a payment link for. If you are unsure,
-          use the current balance due shown above.
+          Enter the amount you would like a payment link for and the date you would
+          like to make that payment. If you are unsure, use the current balance due
+          shown above.
         </p>
 
         <form action={savePaymentRequest} className="stack">
@@ -423,20 +454,31 @@ export default async function RequestPaymentPage({
               />
             </label>
 
-            <div
-              style={{
-                padding: "12px",
-                border: "1px solid #eef2f5",
-                borderRadius: 12,
-                background: "#fbfdfe",
-              }}
-            >
-              <span className="label">Helpful Reminder</span>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                Payment links are reviewed before sending so the amount and supplier
-                payment process can be confirmed.
-              </p>
-            </div>
+            <label className="stack-sm">
+              <span className="label">Requested Payment Date</span>
+              <input
+                name="requested_payment_date"
+                type="date"
+                className="input"
+                defaultValue={defaultPaymentDate}
+                required
+              />
+            </label>
+          </div>
+
+          <div
+            style={{
+              padding: "12px",
+              border: "1px solid #eef2f5",
+              borderRadius: 12,
+              background: "#fbfdfe",
+            }}
+          >
+            <span className="label">Helpful Reminder</span>
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+              Payment links are reviewed before sending so the amount, supplier,
+              and payment process can be confirmed.
+            </p>
           </div>
 
           <div
@@ -482,10 +524,11 @@ export default async function RequestPaymentPage({
           </p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 620 }}>
+            <table className="table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
                   <th>Requested Amount</th>
+                  <th>Requested Date</th>
                   <th>Status</th>
                   <th>Submitted</th>
                 </tr>
@@ -495,6 +538,7 @@ export default async function RequestPaymentPage({
                 {paymentRequestRows.map((request) => (
                   <tr key={request.id}>
                     <td>{formatMoney(request.requested_amount)}</td>
+                    <td>{formatDate(request.requested_payment_date)}</td>
                     <td>
                       <StatusBadge status={request.status} />
                     </td>
