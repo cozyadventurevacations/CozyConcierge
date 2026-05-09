@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 
 type ChatMessage = {
@@ -110,9 +110,12 @@ function getConversationTimestamp() {
 }
 
 function AskCozyContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const questionFromDashboard = searchParams.get("question") ?? "";
+
   const hasAutoSubmitted = useRef(false);
+  const conversationEndRef = useRef<HTMLDivElement | null>(null);
 
   const [question, setQuestion] = useState("");
   const [selectedTripId, setSelectedTripId] = useState("");
@@ -132,6 +135,15 @@ function AskCozyContent() {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isLoadingThreadDetail, setIsLoadingThreadDetail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  function scrollToConversationEnd() {
+    window.setTimeout(() => {
+      conversationEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 100);
+  }
 
   function resetConversation() {
     setMessages([welcomeMessage]);
@@ -351,9 +363,20 @@ function AskCozyContent() {
 
     hasAutoSubmitted.current = true;
     setQuestion(cleanQuestion);
-    void askCozy(cleanQuestion);
+
+    void askCozy(cleanQuestion).finally(() => {
+      router.replace("/ask-cozy", {
+        scroll: false,
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionFromDashboard]);
+
+  useEffect(() => {
+    if (messages.length > 1 || isSubmitting) {
+      scrollToConversationEnd();
+    }
+  }, [messages, isSubmitting]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -769,6 +792,8 @@ function AskCozyContent() {
               Ask Cozy is thinking...
             </div>
           ) : null}
+
+          <div ref={conversationEndRef} />
         </div>
       </div>
     </PageShell>
