@@ -1452,6 +1452,10 @@ export default async function TripDetailPage({
             Request Payment Link
           </ActionLink>
 
+          <ActionLink href={`/ask-cozy?tripId=${tripRow.id}`} className="btn btn-primary">
+            Ask Cozy About This Trip
+          </ActionLink>
+
           <ActionLink href="/trips" className="btn btn-primary">
             Back to My Trips
           </ActionLink>

@@ -113,8 +113,10 @@ function AskCozyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const questionFromDashboard = searchParams.get("question") ?? "";
+  const tripIdFromTripPage = searchParams.get("tripId") ?? "";
 
   const hasAutoSubmitted = useRef(false);
+  const hasPreselectedTrip = useRef(false);
   const conversationEndRef = useRef<HTMLDivElement | null>(null);
 
   const [question, setQuestion] = useState("");
@@ -354,6 +356,24 @@ function AskCozyContent() {
     void loadTrips();
     void loadThreads();
   }, []);
+
+  useEffect(() => {
+    const cleanTripId = tripIdFromTripPage.trim();
+
+    if (!cleanTripId || hasPreselectedTrip.current || isLoadingTrips) {
+      return;
+    }
+
+    const tripIsAvailable = availableTrips.some((trip) => trip.id === cleanTripId);
+
+    if (tripIsAvailable) {
+      hasPreselectedTrip.current = true;
+      setSelectedTripId(cleanTripId);
+      router.replace("/ask-cozy", {
+        scroll: false,
+      });
+    }
+  }, [availableTrips, isLoadingTrips, router, tripIdFromTripPage]);
 
   useEffect(() => {
     const cleanQuestion = questionFromDashboard.trim();
