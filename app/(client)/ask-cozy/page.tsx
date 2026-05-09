@@ -241,6 +241,7 @@ function AskCozyContent() {
       );
 
       setMessages(loadedMessages.length > 0 ? loadedMessages : [welcomeMessage]);
+      scrollToConversationEnd();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -401,25 +402,46 @@ function AskCozyContent() {
           background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
         }}
       >
-        <p
+        <div
           style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
           }}
         >
-          Cozy Concierge AI
-        </p>
+          <div style={{ maxWidth: 760 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--accent-dark)",
+                fontWeight: 800,
+              }}
+            >
+              Cozy Concierge AI
+            </p>
 
-        <h2 style={{ margin: 0 }}>How can I help?</h2>
+            <h2 style={{ margin: "4px 0 0" }}>Ask Cozy</h2>
 
-        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Ask general travel questions, get packing reminders, prepare for your trip,
-          or figure out what to ask your advisor next.
-        </p>
+            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>
+              Ask general travel questions, prepare for your trip, get packing
+              reminders, or figure out what to ask your advisor next.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={resetConversation}
+            disabled={isSubmitting}
+          >
+            New Conversation
+          </button>
+        </div>
 
         <div
           style={{
@@ -437,364 +459,424 @@ function AskCozyContent() {
         </div>
       </div>
 
-      <div className="grid grid-2" style={{ alignItems: "start" }}>
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Saved Conversations</h2>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(280px, 360px) minmax(0, 1fr)",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
+        <aside className="stack" style={{ minWidth: 0 }}>
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Saved Conversations</h2>
 
-          {isLoadingThreads ? (
-            <p style={{ margin: 0, color: "#667085" }}>Loading conversations...</p>
-          ) : threadLoadError ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#fff1f2",
-                border: "1px solid #fecdd3",
-                color: "#be123c",
-                lineHeight: 1.6,
-              }}
-            >
-              {threadLoadError}
-            </div>
-          ) : savedThreads.length === 0 ? (
-            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              No saved Ask Cozy conversations yet.
-            </p>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {savedThreads.map((thread) => (
-                <div
-                  key={thread.id}
-                  style={{
-                    padding: "12px",
-                    borderRadius: 12,
-                    border:
-                      thread.id === activeThreadId
-                        ? "2px solid var(--accent-dark)"
-                        : "1px solid #e6f0f2",
-                    background: thread.id === activeThreadId ? "#f7fbfc" : "#ffffff",
-                  }}
-                >
-                  <p style={{ margin: 0, fontWeight: 900 }}>{thread.title}</p>
-                  <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>
-                    Updated {formatDateTimeLabel(thread.updated_at)}
-                  </p>
-                  {thread.retention_until ? (
-                    <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>
-                      Kept until {formatDateLabel(thread.retention_until)}
-                    </p>
-                  ) : null}
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      flexWrap: "wrap",
-                      marginTop: 10,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => loadThread(thread.id)}
-                      disabled={isLoadingThreadDetail || isSubmitting}
-                      style={{ padding: "7px 10px", fontSize: 13 }}
-                    >
-                      Open
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => deleteConversation(thread.id)}
-                      disabled={isLoadingThreadDetail || isSubmitting}
-                      style={{
-                        padding: "7px 10px",
-                        fontSize: 13,
-                        background: "#ffffff",
-                        color: "#b42318",
-                        border: "1px solid #fecaca",
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={resetConversation}
-            disabled={isSubmitting}
-          >
-            New Conversation
-          </button>
-        </div>
-
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Trip Context</h2>
-
-          <label className="stack-sm">
-            <span className="label">Optional Trip</span>
-            <select
-              className="select"
-              value={selectedTripId}
-              onChange={(event) => setSelectedTripId(event.target.value)}
-              disabled={isLoadingTrips || Boolean(activeThreadId)}
-            >
-              <option value="">
-                {isLoadingTrips ? "Loading trips..." : "General travel question"}
-              </option>
-
-              {availableTrips.map((trip) => (
-                <option key={trip.id} value={trip.id}>
-                  {getTripOptionLabel(trip)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {activeThreadId ? (
-            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-              Trip context is locked once a conversation is created. Start a new
-              conversation to choose a different trip.
-            </p>
-          ) : null}
-
-          {tripLoadError ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#fff1f2",
-                border: "1px solid #fecdd3",
-                color: "#be123c",
-                lineHeight: 1.6,
-              }}
-            >
-              {tripLoadError}
-            </div>
-          ) : null}
-
-          {selectedTrip ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#f7fbfc",
-                border: "1px solid #e6f0f2",
-                color: "#667085",
-                lineHeight: 1.6,
-              }}
-            >
-              <strong>{selectedTrip.label}</strong>
-              <br />
-              {selectedTrip.destinations ?? "Destination not provided"}
-              <br />
-              {formatDateLabel(selectedTrip.departure_date)} →{" "}
-              {formatDateLabel(selectedTrip.return_date)}
-            </div>
-          ) : (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#f7fbfc",
-                border: "1px solid #e6f0f2",
-                color: "#667085",
-                lineHeight: 1.6,
-              }}
-            >
-              Choose a trip for more helpful answers, or leave this as a general travel question.
-            </div>
-          )}
-
-          <h2 style={{ margin: 0 }}>Starter Questions</h2>
-
-          <div style={{ display: "grid", gap: 10 }}>
-            {starterQuestions.map((starterQuestion) => (
-              <button
-                key={starterQuestion}
-                type="button"
-                className="btn btn-primary"
-                onClick={() => askCozy(starterQuestion)}
-                disabled={isSubmitting}
+            {isLoadingThreads ? (
+              <p style={{ margin: 0, color: "#667085" }}>
+                Loading conversations...
+              </p>
+            ) : threadLoadError ? (
+              <div
                 style={{
-                  justifyContent: "flex-start",
-                  textAlign: "left",
-                  whiteSpace: "normal",
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#be123c",
+                  lineHeight: 1.6,
                 }}
               >
-                {starterQuestion}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Ask a Question</h2>
-
-        <form onSubmit={handleSubmit} className="stack">
-          <label className="stack-sm">
-            <span className="label">Your Question</span>
-            <textarea
-              className="textarea"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              rows={5}
-              placeholder="Example: What should I pack in my carry-on for a cruise?"
-            />
-          </label>
-
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
-          </button>
-        </form>
-
-        {errorMessage ? (
-          <div
-            style={{
-              padding: "12px",
-              borderRadius: 12,
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
-              color: "#be123c",
-              lineHeight: 1.6,
-            }}
-          >
-            {errorMessage}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="card stack">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-          }}
-        >
-          <div>
-            <h2 style={{ margin: 0 }}>
-              Conversation {isSubmitting ? "— Asking Cozy..." : ""}
-            </h2>
-
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-              Started {conversationStartedAt}
-            </p>
-
-            {activeThreadRetentionUntil ? (
-              <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                Retained until {formatDateLabel(activeThreadRetentionUntil)}
+                {threadLoadError}
+              </div>
+            ) : savedThreads.length === 0 ? (
+              <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                No saved Ask Cozy conversations yet.
               </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                  maxHeight: 360,
+                  overflowY: "auto",
+                  paddingRight: 2,
+                }}
+              >
+                {savedThreads.map((thread) => (
+                  <div
+                    key={thread.id}
+                    style={{
+                      padding: "12px",
+                      borderRadius: 12,
+                      border:
+                        thread.id === activeThreadId
+                          ? "2px solid var(--accent-dark)"
+                          : "1px solid #e6f0f2",
+                      background:
+                        thread.id === activeThreadId ? "#f7fbfc" : "#ffffff",
+                    }}
+                  >
+                    <p style={{ margin: 0, fontWeight: 900, lineHeight: 1.35 }}>
+                      {thread.title}
+                    </p>
+
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        color: "#667085",
+                        fontSize: 13,
+                      }}
+                    >
+                      Updated {formatDateTimeLabel(thread.updated_at)}
+                    </p>
+
+                    {thread.retention_until ? (
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "#667085",
+                          fontSize: 13,
+                        }}
+                      >
+                        Kept until {formatDateLabel(thread.retention_until)}
+                      </p>
+                    ) : null}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 10,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => loadThread(thread.id)}
+                        disabled={isLoadingThreadDetail || isSubmitting}
+                        style={{ padding: "7px 10px", fontSize: 13 }}
+                      >
+                        Open
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => deleteConversation(thread.id)}
+                        disabled={isLoadingThreadDetail || isSubmitting}
+                        style={{
+                          padding: "7px 10px",
+                          fontSize: 13,
+                          background: "#ffffff",
+                          color: "#b42318",
+                          border: "1px solid #fecaca",
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Trip Context</h2>
+
+            <label className="stack-sm">
+              <span className="label">Optional Trip</span>
+              <select
+                className="select"
+                value={selectedTripId}
+                onChange={(event) => setSelectedTripId(event.target.value)}
+                disabled={isLoadingTrips || Boolean(activeThreadId)}
+              >
+                <option value="">
+                  {isLoadingTrips ? "Loading trips..." : "General travel question"}
+                </option>
+
+                {availableTrips.map((trip) => (
+                  <option key={trip.id} value={trip.id}>
+                    {getTripOptionLabel(trip)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {activeThreadId ? (
+              <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                Trip context is locked once a conversation is created. Start a new
+                conversation to choose a different trip.
+              </p>
+            ) : null}
+
+            {tripLoadError ? (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#be123c",
+                  lineHeight: 1.6,
+                }}
+              >
+                {tripLoadError}
+              </div>
+            ) : null}
+
+            {selectedTrip ? (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#f7fbfc",
+                  border: "1px solid #e6f0f2",
+                  color: "#667085",
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>{selectedTrip.label}</strong>
+                <br />
+                {selectedTrip.destinations ?? "Destination not provided"}
+                <br />
+                {formatDateLabel(selectedTrip.departure_date)} →{" "}
+                {formatDateLabel(selectedTrip.return_date)}
+              </div>
+            ) : (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#f7fbfc",
+                  border: "1px solid #e6f0f2",
+                  color: "#667085",
+                  lineHeight: 1.6,
+                }}
+              >
+                Choose a trip for more helpful answers, or leave this as a general
+                travel question.
+              </div>
+            )}
+          </div>
+
+          <div className="card stack">
+            <h2 style={{ margin: 0 }}>Starter Questions</h2>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              {starterQuestions.map((starterQuestion) => (
+                <button
+                  key={starterQuestion}
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => askCozy(starterQuestion)}
+                  disabled={isSubmitting}
+                  style={{
+                    justifyContent: "flex-start",
+                    textAlign: "left",
+                    whiteSpace: "normal",
+                  }}
+                >
+                  {starterQuestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <main className="stack" style={{ minWidth: 0 }}>
+          <div className="card stack">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "flex-start",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Ask a Question</h2>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    color: "#667085",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {activeThreadId
+                    ? "Continue this saved conversation."
+                    : "Start a new Ask Cozy conversation."}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => deleteConversation()}
+                disabled={isSubmitting || !hasConversationMessages}
+                style={{
+                  background: "#ffffff",
+                  color: "#b42318",
+                  border: "1px solid #fecaca",
+                }}
+              >
+                Delete Conversation
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="stack">
+              <label className="stack-sm">
+                <span className="label">Your Question</span>
+                <textarea
+                  className="textarea"
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  rows={4}
+                  placeholder="Example: What should I pack in my carry-on for a cruise?"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
+              </button>
+            </form>
+
+            {errorMessage ? (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#be123c",
+                  lineHeight: 1.6,
+                }}
+              >
+                {errorMessage}
+              </div>
             ) : null}
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={resetConversation}
-              disabled={isSubmitting}
-            >
-              New Conversation
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => deleteConversation()}
-              disabled={isSubmitting || !hasConversationMessages}
+          <div className="card stack">
+            <div
               style={{
-                background: "#ffffff",
-                color: "#b42318",
-                border: "1px solid #fecaca",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "flex-start",
               }}
             >
-              Delete Conversation
-            </button>
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "12px",
-            borderRadius: 12,
-            background: "#f7fbfc",
-            border: "1px solid #e6f0f2",
-            color: "#667085",
-            lineHeight: 1.6,
-          }}
-        >
-          Ask Cozy conversations are now saved so you can come back to them later.
-          Trip-related conversations are retained until 31 days after the trip return
-          date when a return date is available.
-        </div>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {messages.map((message, index) => {
-            const isUser = message.role === "user";
-
-            return (
-              <div
-                key={message.id ?? `${message.role}-${index}`}
-                style={{
-                  justifySelf: isUser ? "end" : "start",
-                  maxWidth: "82%",
-                  padding: "12px",
-                  borderRadius: 14,
-                  border: "1px solid #e6f0f2",
-                  background: isUser ? "#f0f7f8" : "#ffffff",
-                }}
-              >
-                <p
-                  style={{
-                    margin: 0,
-                    fontWeight: 900,
-                    color: "var(--accent-dark)",
-                  }}
-                >
-                  {isUser ? "You" : "Ask Cozy"}
-                </p>
+              <div>
+                <h2 style={{ margin: 0 }}>
+                  Conversation {isSubmitting ? "— Asking Cozy..." : ""}
+                </h2>
 
                 <p
                   style={{
                     margin: "6px 0 0",
-                    whiteSpace: "pre-wrap",
-                    lineHeight: 1.6,
+                    color: "#667085",
+                    lineHeight: 1.5,
                   }}
                 >
-                  {message.content}
+                  Started {conversationStartedAt}
                 </p>
-              </div>
-            );
-          })}
 
-          {isSubmitting ? (
+                {activeThreadRetentionUntil ? (
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      color: "#667085",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Retained until {formatDateLabel(activeThreadRetentionUntil)}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
             <div
               style={{
-                justifySelf: "start",
-                maxWidth: "82%",
                 padding: "12px",
-                borderRadius: 14,
+                borderRadius: 12,
+                background: "#f7fbfc",
                 border: "1px solid #e6f0f2",
-                background: "#ffffff",
                 color: "#667085",
+                lineHeight: 1.6,
               }}
             >
-              Ask Cozy is thinking...
+              Ask Cozy conversations are saved so you can come back to them later.
+              Trip-related conversations are retained until 31 days after the trip
+              return date when a return date is available.
             </div>
-          ) : null}
 
-          <div ref={conversationEndRef} />
-        </div>
+            <div style={{ display: "grid", gap: 12 }}>
+              {messages.map((message, index) => {
+                const isUser = message.role === "user";
+
+                return (
+                  <div
+                    key={message.id ?? `${message.role}-${index}`}
+                    style={{
+                      justifySelf: isUser ? "end" : "start",
+                      maxWidth: "86%",
+                      padding: "12px",
+                      borderRadius: 14,
+                      border: "1px solid #e6f0f2",
+                      background: isUser ? "#f0f7f8" : "#ffffff",
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontWeight: 900,
+                        color: "var(--accent-dark)",
+                      }}
+                    >
+                      {isUser ? "You" : "Ask Cozy"}
+                    </p>
+
+                    <p
+                      style={{
+                        margin: "6px 0 0",
+                        whiteSpace: "pre-wrap",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {message.content}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {isSubmitting ? (
+                <div
+                  style={{
+                    justifySelf: "start",
+                    maxWidth: "86%",
+                    padding: "12px",
+                    borderRadius: 14,
+                    border: "1px solid #e6f0f2",
+                    background: "#ffffff",
+                    color: "#667085",
+                  }}
+                >
+                  Ask Cozy is thinking...
+                </div>
+              ) : null}
+
+              <div ref={conversationEndRef} />
+            </div>
+          </div>
+        </main>
       </div>
     </PageShell>
   );
