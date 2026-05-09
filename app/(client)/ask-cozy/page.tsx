@@ -5,8 +5,20 @@ import { useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 
 type ChatMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  created_at?: string | null;
+};
+
+type SavedThread = {
+  id: string;
+  trip_id: string | null;
+  title: string;
+  status: string;
+  retention_until: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 type SafeTripOption = {
@@ -58,6 +70,23 @@ function formatDateLabel(value: string | null | undefined) {
   });
 }
 
+function formatDateTimeLabel(value: string | null | undefined) {
+  if (!value) return "Not set";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function getTripOptionLabel(trip: SafeTripOption) {
   const dates =
     trip.departure_date || trip.return_date
@@ -88,19 +117,28 @@ function AskCozyContent() {
   const [question, setQuestion] = useState("");
   const [selectedTripId, setSelectedTripId] = useState("");
   const [availableTrips, setAvailableTrips] = useState<SafeTripOption[]>([]);
+  const [savedThreads, setSavedThreads] = useState<SavedThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeThreadRetentionUntil, setActiveThreadRetentionUntil] =
+    useState<string | null>(null);
   const [tripLoadError, setTripLoadError] = useState<string | null>(null);
+  const [threadLoadError, setThreadLoadError] = useState<string | null>(null);
   const [conversationStartedAt, setConversationStartedAt] = useState(
     getConversationTimestamp(),
   );
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [isLoadingThreads, setIsLoadingThreads] = useState(true);
+  const [isLoadingThreadDetail, setIsLoadingThreadDetail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   function resetConversation() {
     setMessages([welcomeMessage]);
     setQuestion("");
     setErrorMessage(null);
+    setActiveThreadId(null);
+    setActiveThreadRetentionUntil(null);
     setConversationStartedAt(getConversationTimestamp());
   }
 
@@ -126,6 +164,114 @@ function AskCozyContent() {
       );
     } finally {
       setIsLoadingTrips(false);
+    }
+  }
+
+  async function loadThreads() {
+    setIsLoadingThreads(true);
+    setThreadLoadError(null);
+
+    try {
+      const response = await fetch("/api/ask-cozy/threads", {
+        method: "GET",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not load Ask Cozy conversations.");
+      }
+
+      setSavedThreads(data.threads ?? []);
+    } catch (error) {
+      setThreadLoadError(
+        error instanceof Error
+          ? error.message
+          : "Could not load Ask Cozy conversations.",
+      );
+    } finally {
+      setIsLoadingThreads(false);
+    }
+  }
+
+  async function loadThread(threadId: string) {
+    setIsLoadingThreadDetail(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/ask-cozy/threads/${threadId}`, {
+        method: "GET",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not load this conversation.");
+      }
+
+      setActiveThreadId(data.thread.id);
+      setSelectedTripId(data.thread.trip_id ?? "");
+      setActiveThreadRetentionUntil(data.thread.retention_until ?? null);
+      setConversationStartedAt(formatDateTimeLabel(data.thread.created_at));
+
+      const loadedMessages = (data.messages ?? []).map(
+        (message: {
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          created_at: string | null;
+        }) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          created_at: message.created_at,
+        }),
+      );
+
+      setMessages(loadedMessages.length > 0 ? loadedMessages : [welcomeMessage]);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load this conversation.",
+      );
+    } finally {
+      setIsLoadingThreadDetail(false);
+    }
+  }
+
+  async function deleteConversation(threadId?: string | null) {
+    const targetThreadId = threadId ?? activeThreadId;
+
+    if (!targetThreadId) {
+      resetConversation();
+      return;
+    }
+
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/ask-cozy/threads/${targetThreadId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not delete this conversation.");
+      }
+
+      if (targetThreadId === activeThreadId) {
+        resetConversation();
+      }
+
+      await loadThreads();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not delete this conversation.",
+      );
     }
   }
 
@@ -158,6 +304,7 @@ function AskCozyContent() {
         body: JSON.stringify({
           message: messageToSend,
           tripId: selectedTripId || null,
+          threadId: activeThreadId,
         }),
       });
 
@@ -167,6 +314,9 @@ function AskCozyContent() {
         throw new Error(data.error ?? "Ask Cozy could not answer that.");
       }
 
+      setActiveThreadId(data.threadId ?? activeThreadId);
+      setActiveThreadRetentionUntil(data.retentionUntil ?? null);
+
       setMessages((currentMessages) => [
         ...currentMessages,
         {
@@ -174,6 +324,8 @@ function AskCozyContent() {
           content: data.answer ?? "I’m sorry, I could not answer that.",
         },
       ]);
+
+      await loadThreads();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -187,6 +339,7 @@ function AskCozyContent() {
 
   useEffect(() => {
     void loadTrips();
+    void loadThreads();
   }, []);
 
   useEffect(() => {
@@ -263,6 +416,102 @@ function AskCozyContent() {
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         <div className="card stack">
+          <h2 style={{ margin: 0 }}>Saved Conversations</h2>
+
+          {isLoadingThreads ? (
+            <p style={{ margin: 0, color: "#667085" }}>Loading conversations...</p>
+          ) : threadLoadError ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#be123c",
+                lineHeight: 1.6,
+              }}
+            >
+              {threadLoadError}
+            </div>
+          ) : savedThreads.length === 0 ? (
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              No saved Ask Cozy conversations yet.
+            </p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {savedThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  style={{
+                    padding: "12px",
+                    borderRadius: 12,
+                    border:
+                      thread.id === activeThreadId
+                        ? "2px solid var(--accent-dark)"
+                        : "1px solid #e6f0f2",
+                    background: thread.id === activeThreadId ? "#f7fbfc" : "#ffffff",
+                  }}
+                >
+                  <p style={{ margin: 0, fontWeight: 900 }}>{thread.title}</p>
+                  <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>
+                    Updated {formatDateTimeLabel(thread.updated_at)}
+                  </p>
+                  {thread.retention_until ? (
+                    <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>
+                      Kept until {formatDateLabel(thread.retention_until)}
+                    </p>
+                  ) : null}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginTop: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => loadThread(thread.id)}
+                      disabled={isLoadingThreadDetail || isSubmitting}
+                      style={{ padding: "7px 10px", fontSize: 13 }}
+                    >
+                      Open
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => deleteConversation(thread.id)}
+                      disabled={isLoadingThreadDetail || isSubmitting}
+                      style={{
+                        padding: "7px 10px",
+                        fontSize: 13,
+                        background: "#ffffff",
+                        color: "#b42318",
+                        border: "1px solid #fecaca",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={resetConversation}
+            disabled={isSubmitting}
+          >
+            New Conversation
+          </button>
+        </div>
+
+        <div className="card stack">
           <h2 style={{ margin: 0 }}>Trip Context</h2>
 
           <label className="stack-sm">
@@ -271,7 +520,7 @@ function AskCozyContent() {
               className="select"
               value={selectedTripId}
               onChange={(event) => setSelectedTripId(event.target.value)}
-              disabled={isLoadingTrips}
+              disabled={isLoadingTrips || Boolean(activeThreadId)}
             >
               <option value="">
                 {isLoadingTrips ? "Loading trips..." : "General travel question"}
@@ -284,6 +533,13 @@ function AskCozyContent() {
               ))}
             </select>
           </label>
+
+          {activeThreadId ? (
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+              Trip context is locked once a conversation is created. Start a new
+              conversation to choose a different trip.
+            </p>
+          ) : null}
 
           {tripLoadError ? (
             <div
@@ -354,42 +610,42 @@ function AskCozyContent() {
             ))}
           </div>
         </div>
+      </div>
 
-        <div className="card stack">
-          <h2 style={{ margin: 0 }}>Ask a Question</h2>
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Ask a Question</h2>
 
-          <form onSubmit={handleSubmit} className="stack">
-            <label className="stack-sm">
-              <span className="label">Your Question</span>
-              <textarea
-                className="textarea"
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                rows={5}
-                placeholder="Example: What should I pack in my carry-on for a cruise?"
-              />
-            </label>
+        <form onSubmit={handleSubmit} className="stack">
+          <label className="stack-sm">
+            <span className="label">Your Question</span>
+            <textarea
+              className="textarea"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              rows={5}
+              placeholder="Example: What should I pack in my carry-on for a cruise?"
+            />
+          </label>
 
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
-            </button>
-          </form>
+          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+            {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
+          </button>
+        </form>
 
-          {errorMessage ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#fff1f2",
-                border: "1px solid #fecdd3",
-                color: "#be123c",
-                lineHeight: 1.6,
-              }}
-            >
-              {errorMessage}
-            </div>
-          ) : null}
-        </div>
+        {errorMessage ? (
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              color: "#be123c",
+              lineHeight: 1.6,
+            }}
+          >
+            {errorMessage}
+          </div>
+        ) : null}
       </div>
 
       <div className="card stack">
@@ -410,6 +666,12 @@ function AskCozyContent() {
             <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
               Started {conversationStartedAt}
             </p>
+
+            {activeThreadRetentionUntil ? (
+              <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                Retained until {formatDateLabel(activeThreadRetentionUntil)}
+              </p>
+            ) : null}
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -425,7 +687,7 @@ function AskCozyContent() {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={resetConversation}
+              onClick={() => deleteConversation()}
               disabled={isSubmitting || !hasConversationMessages}
               style={{
                 background: "#ffffff",
@@ -448,8 +710,9 @@ function AskCozyContent() {
             lineHeight: 1.6,
           }}
         >
-          Conversations are not saved permanently yet. Starting a new conversation
-          or deleting this one clears the current chat from this page.
+          Ask Cozy conversations are now saved so you can come back to them later.
+          Trip-related conversations are retained until 31 days after the trip return
+          date when a return date is available.
         </div>
 
         <div style={{ display: "grid", gap: 12 }}>
@@ -458,7 +721,7 @@ function AskCozyContent() {
 
             return (
               <div
-                key={`${message.role}-${index}`}
+                key={message.id ?? `${message.role}-${index}`}
                 style={{
                   justifySelf: isUser ? "end" : "start",
                   maxWidth: "82%",

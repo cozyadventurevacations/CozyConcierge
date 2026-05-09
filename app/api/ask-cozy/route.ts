@@ -18,6 +18,15 @@ type SafeTripContext = {
   trip_status: string | null;
 };
 
+type AskCozyThread = {
+  id: string;
+  client_account_id: string;
+  trip_id: string | null;
+  title: string;
+  status: string;
+  retention_until: string | null;
+};
+
 const ASK_COZY_SYSTEM_PROMPT = `
 You are Ask Cozy, the client-facing AI assistant for Cozy Concierge, powered by Cozy Adventure Vacations.
 
@@ -99,6 +108,44 @@ function formatSafeTripContext(trip: SafeTripContext | null) {
   ].join("\n");
 }
 
+function createThreadTitle(message: string) {
+  const cleanMessage = message.replace(/\s+/g, " ").trim();
+
+  if (!cleanMessage) {
+    return "Ask Cozy Conversation";
+  }
+
+  if (cleanMessage.length <= 70) {
+    return cleanMessage;
+  }
+
+  return `${cleanMessage.slice(0, 67)}...`;
+}
+
+function addDaysToDate(dateValue: string, days: number) {
+  const date = new Date(`${dateValue}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  date.setDate(date.getDate() + days);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getRetentionUntil(trip: SafeTripContext | null) {
+  if (!trip?.return_date) {
+    return null;
+  }
+
+  return addDaysToDate(trip.return_date, 31);
+}
+
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
@@ -168,18 +215,24 @@ async function getCurrentClientAccount() {
   };
 }
 
-async function loadSafeTripContext(tripId: string | null) {
+async function loadSafeTripContext({
+  tripId,
+  supabase,
+  clientAccountId,
+}: {
+  tripId: string | null;
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+}) {
   if (!tripId) {
     return null;
   }
-
-  const { supabase, clientAccount } = await getCurrentClientAccount();
 
   const { data: ownedTrip, error: ownedTripError } = await supabase
     .from("client_trip_summaries")
     .select("trip_id, trip_name, destinations, departure_date, return_date, trip_status")
     .eq("trip_id", tripId)
-    .eq("client_account_id", clientAccount.id)
+    .eq("client_account_id", clientAccountId)
     .maybeSingle();
 
   if (ownedTripError) {
@@ -201,7 +254,7 @@ async function loadSafeTripContext(tripId: string | null) {
     .from("trip_members" as any)
     .select("id")
     .eq("trip_id", tripId)
-    .eq("client_account_id", clientAccount.id)
+    .eq("client_account_id", clientAccountId)
     .eq("invite_status", "active")
     .eq("can_view_trip", true)
     .maybeSingle();
@@ -238,6 +291,114 @@ async function loadSafeTripContext(tripId: string | null) {
   } satisfies SafeTripContext;
 }
 
+async function loadThread({
+  threadId,
+  supabase,
+  clientAccountId,
+}: {
+  threadId: string | null;
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+}) {
+  if (!threadId) {
+    return null;
+  }
+
+  const { data: thread, error } = await supabase
+    .from("ask_cozy_threads")
+    .select("id, client_account_id, trip_id, title, status, retention_until")
+    .eq("id", threadId)
+    .eq("client_account_id", clientAccountId)
+    .neq("status", "deleted")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!thread) {
+    throw new Error("Ask Cozy conversation not found.");
+  }
+
+  return thread as AskCozyThread;
+}
+
+async function createThread({
+  supabase,
+  clientAccountId,
+  tripId,
+  tripContext,
+  firstMessage,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+  tripId: string | null;
+  tripContext: SafeTripContext | null;
+  firstMessage: string;
+}) {
+  const { data: thread, error } = await supabase
+    .from("ask_cozy_threads")
+    .insert({
+      client_account_id: clientAccountId,
+      trip_id: tripId,
+      title: createThreadTitle(firstMessage),
+      status: "active",
+      retention_until: getRetentionUntil(tripContext),
+    })
+    .select("id, client_account_id, trip_id, title, status, retention_until")
+    .single();
+
+  if (error || !thread) {
+    throw new Error(error?.message ?? "Could not create Ask Cozy conversation.");
+  }
+
+  return thread as AskCozyThread;
+}
+
+async function saveMessage({
+  supabase,
+  clientAccountId,
+  threadId,
+  role,
+  content,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccountId: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+}) {
+  const { error } = await supabase.from("ask_cozy_messages").insert({
+    thread_id: threadId,
+    client_account_id: clientAccountId,
+    role,
+    content,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+async function touchThread({
+  supabase,
+  threadId,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  threadId: string;
+}) {
+  const { error } = await supabase
+    .from("ask_cozy_threads")
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", threadId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -255,6 +416,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const message = String(body.message ?? "").trim();
     const selectedTripId = String(body.tripId ?? "").trim() || null;
+    const requestedThreadId = String(body.threadId ?? "").trim() || null;
 
     if (!message) {
       return NextResponse.json(
@@ -270,7 +432,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const tripContext = await loadSafeTripContext(selectedTripId);
+    const { supabase, clientAccount } = await getCurrentClientAccount();
+
+    const existingThread = await loadThread({
+      threadId: requestedThreadId,
+      supabase,
+      clientAccountId: clientAccount.id,
+    });
+
+    const tripIdForContext = existingThread?.trip_id ?? selectedTripId;
+
+    const tripContext = await loadSafeTripContext({
+      tripId: tripIdForContext,
+      supabase,
+      clientAccountId: clientAccount.id,
+    });
+
+    const thread =
+      existingThread ??
+      (await createThread({
+        supabase,
+        clientAccountId: clientAccount.id,
+        tripId: tripContext?.id ?? null,
+        tripContext,
+        firstMessage: message,
+      }));
+
+    await saveMessage({
+      supabase,
+      clientAccountId: clientAccount.id,
+      threadId: thread.id,
+      role: "user",
+      content: message,
+    });
 
     const client = new OpenAI({
       apiKey,
@@ -290,8 +484,28 @@ export async function POST(request: Request) {
       ],
     });
 
+    const answer =
+      response.output_text ||
+      "I’m sorry, I had trouble answering that. Please try again or message your advisor if this is time-sensitive.";
+
+    await saveMessage({
+      supabase,
+      clientAccountId: clientAccount.id,
+      threadId: thread.id,
+      role: "assistant",
+      content: answer,
+    });
+
+    await touchThread({
+      supabase,
+      threadId: thread.id,
+    });
+
     return NextResponse.json({
-      answer: response.output_text,
+      answer,
+      threadId: thread.id,
+      title: thread.title,
+      retentionUntil: thread.retention_until,
     });
   } catch (error) {
     const message = getErrorMessage(error);
