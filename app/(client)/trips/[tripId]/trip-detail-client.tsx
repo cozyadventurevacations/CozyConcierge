@@ -763,7 +763,7 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
   );
 }
 
-function TravelCircleTab({ tripId, tripMembers, isPrimaryClient, canManageTravelCircle, onInviteCompanion, onRemoveCompanion }: { tripId: string; tripMembers: TripMemberRow[]; isPrimaryClient: boolean; canManageTravelCircle: boolean; onInviteCompanion: (f: FormData) => Promise<void>; onRemoveCompanion: (f: FormData) => Promise<void> }) {
+function TravelCircleTab({ tripId, tripMembers, canManageTravelCircle, onInviteCompanion, onRemoveCompanion }: { tripId: string; tripMembers: TripMemberRow[]; isPrimaryClient: boolean; canManageTravelCircle: boolean; onInviteCompanion: (f: FormData) => Promise<void>; onRemoveCompanion: (f: FormData) => Promise<void> }) {
   const owners = tripMembers.filter((m) => m.role === "owner");
   const companions = tripMembers.filter((m) => m.role !== "owner");
 
