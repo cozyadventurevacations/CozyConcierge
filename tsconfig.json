@@ -33,7 +33,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts"
-  ],
+, "patch-payment-badges.js"  ],
   "exclude": [
     "node_modules"
   ]
