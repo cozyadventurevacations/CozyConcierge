@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,7 @@ type ClientAccountRow = {
   last_name: string | null;
   preferred_name: string | null;
   email: string | null;
+  welcome_dismissed_at: string | null;
 };
 
 type TripRow = {
@@ -118,30 +120,14 @@ function MetricCard({
         background: isWarning ? "#fffbf7" : "#ffffff",
       }}
     >
-      <span
-        style={{
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "#5e7e8f",
-          fontWeight: 700,
-        }}
-      >
+      <span style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5e7e8f", fontWeight: 700 }}>
         {label}
       </span>
-      <strong
-        style={{
-          fontSize: "1.7rem",
-          lineHeight: 1,
-          color: isWarning ? "#6b3a08" : "var(--accent-dark)",
-        }}
-      >
+      <strong style={{ fontSize: "1.7rem", lineHeight: 1, color: isWarning ? "#6b3a08" : "var(--accent-dark)" }}>
         {value}
       </strong>
       {helper && (
-        <span style={{ fontSize: 12, color: "#5e7e8f", lineHeight: 1.4 }}>
-          {helper}
-        </span>
+        <span style={{ fontSize: 12, color: "#5e7e8f", lineHeight: 1.4 }}>{helper}</span>
       )}
     </div>
   );
@@ -160,16 +146,7 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
         border: "1px solid #e6f0f2",
       }}
     >
-      <div
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: "50%",
-          overflow: "hidden",
-          flexShrink: 0,
-          border: "2px solid #e6f0f2",
-        }}
-      >
+      <div style={{ width: 64, height: 64, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid #e6f0f2" }}>
         <Image
           src="/jeremy.jpg"
           alt="Jeremy Brown, Cozy Adventure Vacations"
@@ -179,41 +156,16 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
           priority
         />
       </div>
-
       <div style={{ flex: 1, minWidth: 160 }}>
-        <p
-          style={{
-            margin: 0,
-            fontSize: 11,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
-          }}
-        >
-          Your Advisor
-        </p>
-        <p style={{ margin: "3px 0 0", fontSize: 17, fontWeight: 800 }}>
-          Jeremy Brown
-        </p>
-        <p style={{ margin: "2px 0 0", fontSize: 13, color: "#5e7e8f" }}>
-          Cozy Adventure Vacations &middot; <em>Memories Await!</em>
-        </p>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Your Advisor</p>
+        <p style={{ margin: "3px 0 0", fontSize: 17, fontWeight: 800 }}>Jeremy Brown</p>
+        <p style={{ margin: "2px 0 0", fontSize: 13, color: "#5e7e8f" }}>Cozy Adventure Vacations &middot; <em>Memories Await!</em></p>
       </div>
-
       <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-        <Link
-          href="/messages"
-          className="btn btn-outline"
-          style={{ padding: "8px 14px", fontSize: 13 }}
-        >
+        <Link href="/messages" className="btn btn-outline" style={{ padding: "8px 14px", fontSize: 13 }}>
           {unreadCount > 0 ? `✉ ${unreadCount} Unread` : "✉ Messages"}
         </Link>
-        <Link
-          href="/travel-request"
-          className="btn btn-primary"
-          style={{ padding: "8px 14px", fontSize: 13 }}
-        >
+        <Link href="/travel-request" className="btn btn-primary" style={{ padding: "8px 14px", fontSize: 13 }}>
           Request a Quote
         </Link>
       </div>
@@ -223,10 +175,8 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
 
 function isPastDue(value: string | null | undefined) {
   if (!value) return false;
-
   const date = new Date(`${value}T23:59:59`);
   const today = new Date();
-
   return !Number.isNaN(date.getTime()) && date.getTime() < today.getTime();
 }
 
@@ -234,12 +184,7 @@ function getPaymentStatus(trip: TripRow) {
   const balanceDue = Number(trip.balance_due ?? 0);
   const depositPaid = trip.deposit_paid === true;
 
-  if (balanceDue <= 0) {
-    return {
-      label: "Paid in Full",
-      tone: "success" as const,
-    };
-  }
+  if (balanceDue <= 0) return { label: "Paid in Full", tone: "success" as const };
 
   if (!depositPaid && trip.deposit_due_date) {
     return {
@@ -255,15 +200,11 @@ function getPaymentStatus(trip: TripRow) {
     };
   }
 
-  return {
-    label: "Balance Due",
-    tone: "warning" as const,
-  };
+  return { label: "Balance Due", tone: "warning" as const };
 }
 
 function PaymentStatusBadge({ trip }: { trip: TripRow }) {
   const status = getPaymentStatus(trip);
-
   const styles = {
     success: { background: "#ecfdf3", color: "#027a48" },
     warning: { background: "#fff7ed", color: "#9a3412" },
@@ -271,19 +212,7 @@ function PaymentStatusBadge({ trip }: { trip: TripRow }) {
   }[status.tone];
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        borderRadius: 999,
-        padding: "4px 10px",
-        background: styles.background,
-        color: styles.color,
-        fontWeight: 800,
-        fontSize: 12,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 10px", background: styles.background, color: styles.color, fontWeight: 800, fontSize: 12, whiteSpace: "nowrap" }}>
       {status.label}
     </span>
   );
@@ -300,19 +229,7 @@ function TripStatusBadge({ status }: { status: string | null | undefined }) {
   };
   const style = colors[s] ?? colors.draft;
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        borderRadius: 999,
-        padding: "4px 10px",
-        background: style.bg,
-        color: style.color,
-        fontWeight: 700,
-        fontSize: 12,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 10px", background: style.bg, color: style.color, fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>
       {s}
     </span>
   );
@@ -321,52 +238,27 @@ function TripStatusBadge({ status }: { status: string | null | undefined }) {
 function TripCard({ trip }: { trip: TripRow }) {
   const departure = formatDateShort(trip.departure_date);
   const returnDate = formatDateShort(trip.return_date);
-  const hasBalance =
-    typeof trip.balance_due === "number" && trip.balance_due > 0;
+  const hasBalance = typeof trip.balance_due === "number" && trip.balance_due > 0;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 16,
-        flexWrap: "wrap",
-        padding: "14px 0",
-        borderBottom: "1px solid #f0f5f8",
-      }}
-    >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", padding: "14px 0", borderBottom: "1px solid #f0f5f8" }}>
       <div style={{ flex: 1, minWidth: 160 }}>
-        <p style={{ margin: 0, fontWeight: 800, fontSize: 15 }}>
-          {trip.trip_name ?? "Trip"}
-        </p>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: 15 }}>{trip.trip_name ?? "Trip"}</p>
         <p style={{ margin: "3px 0 0", fontSize: 12, color: "#5e7e8f" }}>
           {trip.destinations ?? "Destination TBD"}
           {departure ? ` · ${departure}` : ""}
           {returnDate ? ` → ${returnDate}` : ""}
         </p>
       </div>
-
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <TripStatusBadge status={trip.trip_status} />
         <PaymentStatusBadge trip={trip} />
         {hasBalance && (
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#6b3a08",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#6b3a08", whiteSpace: "nowrap" }}>
             {formatMoney(trip.balance_due)} due
           </span>
         )}
-        <Link
-          href={`/trips/${trip.trip_id}`}
-          className="btn btn-primary"
-          style={{ padding: "7px 14px", fontSize: 13 }}
-        >
+        <Link href={`/trips/${trip.trip_id}`} className="btn btn-primary" style={{ padding: "7px 14px", fontSize: 13 }}>
           View Trip
         </Link>
       </div>
@@ -378,42 +270,15 @@ function AskCozyCompact() {
   return (
     <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
       <div>
-        <p
-          style={{
-            margin: 0,
-            fontSize: 11,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
-          }}
-        >
-          Ask Cozy
-        </p>
-        <p style={{ margin: "3px 0 0", fontWeight: 700, fontSize: 15 }}>
-          Got a travel question?
-        </p>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Ask Cozy</p>
+        <p style={{ margin: "3px 0 0", fontWeight: 700, fontSize: 15 }}>Got a travel question?</p>
       </div>
-
       <form action="/ask-cozy" method="get" style={{ display: "flex", gap: 8 }}>
-        <input
-          className="input"
-          name="question"
-          placeholder="e.g. What should I pack for May in Florida?"
-          style={{ flex: 1, padding: "9px 13px", fontSize: 13 }}
-        />
-        <button
-          type="submit"
-          className="btn btn-primary"
-          style={{ padding: "9px 16px", fontSize: 13, whiteSpace: "nowrap" }}
-        >
-          Ask
-        </button>
+        <input className="input" name="question" placeholder="e.g. What should I pack for May in Florida?" style={{ flex: 1, padding: "9px 13px", fontSize: 13 }} />
+        <button type="submit" className="btn btn-primary" style={{ padding: "9px 16px", fontSize: 13, whiteSpace: "nowrap" }}>Ask</button>
       </form>
-
       <p style={{ margin: 0, fontSize: 11, color: "#5e7e8f", lineHeight: 1.5 }}>
-        For booking-specific questions, use Concierge Messages so your advisor
-        can see the full context.
+        For booking-specific questions, use Concierge Messages so your advisor can see the full context.
       </p>
     </div>
   );
@@ -425,43 +290,18 @@ function QuickActions({ nextTripId }: { nextTripId: string | null }) {
     { label: "Messages", href: "/messages" },
     { label: "Invitations", href: "/invites" },
     { label: "My Profile", href: "/profile" },
-    ...(nextTripId
-      ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }]
-      : []),
+    ...(nextTripId ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }] : []),
   ];
 
   return (
     <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 11,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          color: "var(--accent-dark)",
-          fontWeight: 800,
-        }}
-      >
-        Quick Actions
-      </p>
+      <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Quick Actions</p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {actions.map((action) => (
           <Link
             key={action.href}
             href={action.href}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#f0f7f8",
-              color: "var(--accent-dark)",
-              border: "1px solid #e6f0f2",
-              borderRadius: 10,
-              padding: "8px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#f0f7f8", color: "var(--accent-dark)", border: "1px solid #e6f0f2", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 600, textDecoration: "none" }}
           >
             {action.label}
           </Link>
@@ -471,16 +311,183 @@ function QuickActions({ nextTripId }: { nextTripId: string | null }) {
   );
 }
 
+// ─── Welcome Banner ───────────────────────────────────────────────────────────
+
+const TOUR_ITEMS = [
+  {
+    icon: "✈️",
+    title: "Your Trips",
+    description: "View your upcoming trips, travel details, itinerary, payment timeline, and shared documents all in one place.",
+    href: "/trips",
+    cta: "View Trips",
+  },
+  {
+    icon: "✉️",
+    title: "Concierge Messages",
+    description: "Send private messages directly to your advisor, or use Travel Circle to keep your travel companions in the loop.",
+    href: "/messages",
+    cta: "Open Messages",
+  },
+  {
+    icon: "👤",
+    title: "Your Profile",
+    description: "Keep your travel preferences, passport details, emergency contacts, and loyalty numbers up to date for seamless planning.",
+    href: "/profile",
+    cta: "Complete Profile",
+  },
+  {
+    icon: "🤖",
+    title: "Ask Cozy",
+    description: "Get instant answers to general travel questions — packing tips, destination info, pre-travel prep, and more.",
+    href: "/ask-cozy",
+    cta: "Ask a Question",
+  },
+];
+
+function WelcomeBanner({
+  preferredName,
+  onDismiss,
+}: {
+  preferredName: string;
+  onDismiss: (formData: FormData) => Promise<void>;
+}) {
+  return (
+    <div
+      className="card stack"
+      style={{
+        border: "1px solid #bfdbfe",
+        background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 70%)",
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1d4ed8", fontWeight: 800 }}>
+            Welcome to Cozy Concierge
+          </p>
+          <h2 style={{ margin: "6px 0 0", fontSize: "1.5rem" }}>
+            Hi {preferredName}, we&apos;re so glad you&apos;re here! 🎉
+          </h2>
+          <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.65, maxWidth: 620 }}>
+            Your personal travel concierge portal is ready. Here&apos;s a quick look at everything available to you — take a moment to explore, then dismiss this when you&apos;re ready.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", border: "2px solid #bfdbfe", flexShrink: 0 }}>
+            <Image
+              src="/jeremy.jpg"
+              alt="Jeremy Brown"
+              width={56}
+              height={56}
+              style={{ objectFit: "cover", width: "100%", height: "100%" }}
+            />
+          </div>
+          <div>
+            <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>Jeremy Brown</p>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#5e7e8f" }}>Your Advisor</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Mini tour grid */}
+      <div className="grid grid-2" style={{ gap: 12 }}>
+        {TOUR_ITEMS.map((item) => (
+          <div
+            key={item.href}
+            style={{ padding: 16, borderRadius: 14, border: "1px solid #dbeafe", background: "#ffffff", display: "flex", flexDirection: "column", gap: 8 }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 24 }} aria-hidden>{item.icon}</span>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: "var(--accent-dark)" }}>{item.title}</p>
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: "#667085", lineHeight: 1.55, flex: 1 }}>{item.description}</p>
+            <Link
+              href={item.href}
+              style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", padding: "7px 14px", borderRadius: 10, background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: 13, textDecoration: "none", border: "1px solid #bfdbfe" }}
+            >
+              {item.cta} →
+            </Link>
+          </div>
+        ))}
+      </div>
+
+      {/* Dismiss */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, paddingTop: 4, borderTop: "1px solid #dbeafe" }}>
+        <p style={{ margin: 0, fontSize: 13, color: "#667085" }}>
+          Your advisor Jeremy is here whenever you need anything.{" "}
+          <Link href="/messages" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Send a message</Link> any time.
+        </p>
+        <form action={onDismiss}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ background: "#1d4ed8", fontSize: 13, padding: "9px 18px" }}
+          >
+            Got it — let&apos;s go! ✓
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Server action ────────────────────────────────────────────────────────────
+
+async function dismissWelcome() {
+  "use server";
+
+  const supabase = await createServerSupabaseClient();
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) return;
+
+  const userEmail = user.email?.trim().toLowerCase();
+  if (!userEmail) return;
+
+  // Find client account by email first, then by user profile
+  const { data: byEmail } = await supabase
+    .from("client_accounts")
+    .select("id")
+    .ilike("email", userEmail)
+    .maybeSingle();
+
+  let clientAccountId = byEmail?.id ?? null;
+
+  if (!clientAccountId) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (profile) {
+      const { data: byProfile } = await supabase
+        .from("client_accounts")
+        .select("id")
+        .eq("user_profile_id", profile.id)
+        .maybeSingle();
+
+      clientAccountId = byProfile?.id ?? null;
+    }
+  }
+
+  if (!clientAccountId) return;
+
+  await supabase
+    .from("client_accounts")
+    .update({ welcome_dismissed_at: new Date().toISOString() })
+    .eq("id", clientAccountId);
+
+  revalidatePath("/dashboard");
+}
+
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) redirect("/login");
 
   const userEmail = user.email?.trim().toLowerCase();
@@ -488,7 +495,7 @@ async function getCurrentClientAccount() {
 
   const { data: byEmail, error: emailError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, preferred_name, email")
+    .select("id, first_name, last_name, preferred_name, email, welcome_dismissed_at")
     .ilike("email", userEmail)
     .maybeSingle();
 
@@ -506,7 +513,7 @@ async function getCurrentClientAccount() {
 
   const { data: byProfile, error: profileAccountError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, preferred_name, email")
+    .select("id, first_name, last_name, preferred_name, email, welcome_dismissed_at")
     .eq("user_profile_id", profile.id)
     .maybeSingle();
 
@@ -541,9 +548,7 @@ export default async function ClientDashboardPage() {
   const [tripsResult, threadsResult, invitesResult] = await Promise.all([
     supabase
       .from("client_trip_summaries")
-      .select(
-        "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid",
-      )
+      .select("trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid")
       .eq("client_account_id", clientAccount.id)
       .order("departure_date", { ascending: true }),
 
@@ -585,9 +590,7 @@ export default async function ClientDashboardPage() {
   const nextPaymentTrip =
     rows
       .filter((t) => t.final_payment_due_date && (t.balance_due ?? 0) > 0)
-      .sort((a, b) =>
-        String(a.final_payment_due_date).localeCompare(String(b.final_payment_due_date)),
-      )[0] ?? null;
+      .sort((a, b) => String(a.final_payment_due_date).localeCompare(String(b.final_payment_due_date)))[0] ?? null;
 
   const unreadMessages = messageThreads.reduce(
     (sum, t) => sum + Number(t.client_unread_count ?? 0),
@@ -597,39 +600,38 @@ export default async function ClientDashboardPage() {
   const openThreads = messageThreads.filter((t) => t.status === "open").length;
   const preferredName = getPreferredName(clientAccount);
 
+  // Show welcome banner only if never dismissed
+  const showWelcome = !clientAccount.welcome_dismissed_at;
+
   return (
     <PageShell
       title={`Welcome back, ${preferredName}`}
       subtitle={getTodayLabel()}
     >
+      {/* ── Welcome banner — first login only ── */}
+      {showWelcome && (
+        <WelcomeBanner
+          preferredName={preferredName}
+          onDismiss={dismissWelcome}
+        />
+      )}
+
       <div className="grid grid-3">
         <MetricCard
           label="Upcoming Trips"
           value={upcomingTrips.length}
-          helper={
-            nextTrip
-              ? `Next: ${nextTrip.trip_name ?? "Trip"} · ${formatDateShort(nextTrip.departure_date) ?? ""}`
-              : "No upcoming trips yet."
-          }
+          helper={nextTrip ? `Next: ${nextTrip.trip_name ?? "Trip"} · ${formatDateShort(nextTrip.departure_date) ?? ""}` : "No upcoming trips yet."}
         />
         <MetricCard
           label="Balance Due"
           value={formatMoney(totalBalance)}
-          helper={
-            nextPaymentTrip
-              ? `Final payment due ${formatDateLong(nextPaymentTrip.final_payment_due_date)}`
-              : "No outstanding balance."
-          }
+          helper={nextPaymentTrip ? `Final payment due ${formatDateLong(nextPaymentTrip.final_payment_due_date)}` : "No outstanding balance."}
           tone={totalBalance > 0 ? "warning" : "neutral"}
         />
         <MetricCard
           label="Messages"
           value={openThreads}
-          helper={
-            unreadMessages > 0
-              ? `${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}`
-              : "No unread messages."
-          }
+          helper={unreadMessages > 0 ? `${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}` : "No unread messages."}
           tone={unreadMessages > 0 ? "warning" : "neutral"}
         />
       </div>
@@ -637,45 +639,18 @@ export default async function ClientDashboardPage() {
       <AdvisorCard unreadCount={unreadMessages} />
 
       <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: "var(--accent-dark)",
-                fontWeight: 800,
-              }}
-            >
-              My Trips
-            </p>
+            <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>My Trips</p>
             <h2 style={{ margin: "3px 0 0" }}>Upcoming Adventures</h2>
           </div>
-          <Link
-            href="/trips"
-            className="btn btn-outline"
-            style={{ padding: "8px 14px", fontSize: 13 }}
-          >
-            View All Trips
-          </Link>
+          <Link href="/trips" className="btn btn-outline" style={{ padding: "8px 14px", fontSize: 13 }}>View All Trips</Link>
         </div>
 
         {upcomingTrips.length === 0 ? (
           <p style={{ margin: 0, color: "#5e7e8f", lineHeight: 1.6 }}>
             No upcoming trips yet.{" "}
-            <Link href="/travel-request" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>
-              Request a quote
-            </Link>{" "}
+            <Link href="/travel-request" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Request a quote</Link>{" "}
             to start planning your next adventure.
           </p>
         ) : (
@@ -690,30 +665,15 @@ export default async function ClientDashboardPage() {
       {pendingInvites.length > 0 && (
         <div
           className="card"
-          style={{
-            background: "#fff7ed",
-            border: "1px solid #fed7aa",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
+          style={{ background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}
         >
           <div>
             <p style={{ margin: 0, fontWeight: 800, color: "#854f0b" }}>
-              {pendingInvites.length} Pending Travel Invitation
-              {pendingInvites.length === 1 ? "" : "s"}
+              {pendingInvites.length} Pending Travel Invitation{pendingInvites.length === 1 ? "" : "s"}
             </p>
-            <p style={{ margin: "3px 0 0", fontSize: 13, color: "#92400e" }}>
-              You have been invited to join a shared trip.
-            </p>
+            <p style={{ margin: "3px 0 0", fontSize: 13, color: "#92400e" }}>You have been invited to join a shared trip.</p>
           </div>
-          <Link
-            href="/invites"
-            className="btn btn-primary"
-            style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}
-          >
+          <Link href="/invites" className="btn btn-primary" style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}>
             Review Invitations
           </Link>
         </div>
