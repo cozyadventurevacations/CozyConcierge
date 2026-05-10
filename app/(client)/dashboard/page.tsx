@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
@@ -158,20 +159,22 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
     >
       <div
         style={{
-          width: 52,
-          height: 52,
+          width: 64,
+          height: 64,
           borderRadius: "50%",
-          background: "var(--accent-dark)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#fff",
-          fontSize: 18,
-          fontWeight: 800,
+          overflow: "hidden",
           flexShrink: 0,
+          border: "2px solid #e6f0f2",
         }}
       >
-        JB
+        <Image
+          src="/jeremy.jpg"
+          alt="Jeremy Brown, Cozy Adventure Vacations"
+          width={64}
+          height={64}
+          style={{ objectFit: "cover", width: "100%", height: "100%" }}
+          priority
+        />
       </div>
 
       <div style={{ flex: 1, minWidth: 160 }}>
@@ -191,8 +194,7 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
           Jeremy Brown
         </p>
         <p style={{ margin: "2px 0 0", fontSize: 13, color: "#5e7e8f" }}>
-          Cozy Adventure Vacations &middot;{" "}
-          <em>Memories Await!</em>
+          Cozy Adventure Vacations &middot; <em>Memories Await!</em>
         </p>
       </div>
 
@@ -521,7 +523,6 @@ export default async function ClientDashboardPage() {
   );
 
   const openThreads = messageThreads.filter((t) => t.status === "open").length;
-
   const preferredName = getPreferredName(clientAccount);
 
   return (
@@ -529,7 +530,6 @@ export default async function ClientDashboardPage() {
       title={`Welcome back, ${preferredName}`}
       subtitle={getTodayLabel()}
     >
-      {/* Metrics row */}
       <div className="grid grid-3">
         <MetricCard
           label="Upcoming Trips"
@@ -562,14 +562,9 @@ export default async function ClientDashboardPage() {
         />
       </div>
 
-      {/* Advisor card */}
       <AdvisorCard unreadCount={unreadMessages} />
 
-      {/* Upcoming trips */}
-      <div
-        className="card stack"
-        style={{ border: "1px solid #e6f0f2" }}
-      >
+      <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
         <div
           style={{
             display: "flex",
@@ -620,7 +615,6 @@ export default async function ClientDashboardPage() {
         )}
       </div>
 
-      {/* Pending invites banner */}
       {pendingInvites.length > 0 && (
         <div
           className="card"
@@ -653,7 +647,6 @@ export default async function ClientDashboardPage() {
         </div>
       )}
 
-      {/* Ask Cozy + Quick Actions */}
       <div className="grid grid-2">
         <AskCozyCompact />
         <QuickActions nextTripId={nextTrip?.trip_id ?? null} />
