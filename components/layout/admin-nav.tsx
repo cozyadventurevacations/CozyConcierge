@@ -4,6 +4,7 @@ export const adminNav = [
   { href: "/admin/trips", label: "Trips" },
   { href: "/admin/quote-requests", label: "Travel Requests" },
   { href: "/admin/payment-requests", label: "Payment Requests" },
+  { href: "/admin/payment-follow-ups", label: "Payment Follow-Ups" },
   { href: "/admin/clients", label: "Clients" },
   { href: "/admin/client-documents", label: "Client Documents" },
   { href: "/admin/suppliers", label: "Suppliers" },
