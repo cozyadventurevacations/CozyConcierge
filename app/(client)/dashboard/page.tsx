@@ -3,10 +3,13 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type ClientAccountRow = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  preferred_name: string | null;
   email: string | null;
 };
 
@@ -30,22 +33,6 @@ type TripInviteRow = {
   role: string | null;
   invite_status: string | null;
   created_at: string | null;
-  trips:
-    | {
-        id: string;
-        trip_name: string | null;
-        destinations: string | null;
-        departure_date: string | null;
-        return_date: string | null;
-      }
-    | Array<{
-        id: string;
-        trip_name: string | null;
-        destinations: string | null;
-        departure_date: string | null;
-        return_date: string | null;
-      }>
-    | null;
 };
 
 type MessageThreadRow = {
@@ -55,163 +42,272 @@ type MessageThreadRow = {
   last_message_at: string | null;
 };
 
-function formatMoney(value: number | null | undefined, fallback = "$0.00") {
-  if (typeof value !== "number") return fallback;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function formatMoney(value: number | null | undefined) {
+  if (typeof value !== "number") return "$0.00";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatDate(value: string | null | undefined, fallback = "Not set") {
-  if (!value) return fallback;
+function formatDateShort(value: string | null | undefined) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-").map(Number);
-
-    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("en-US", {
+function formatDateLong(value: string | null | undefined) {
+  if (!value) return "Not set";
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
   });
 }
 
-function getClientDisplayName(client: ClientAccountRow | null) {
-  if (!client) return "Traveler";
+function getTodayLabel() {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
+function getPreferredName(client: ClientAccountRow) {
   return (
-    `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() ||
+    client.preferred_name?.trim() ||
+    client.first_name?.trim() ||
     client.email ||
     "Traveler"
   );
 }
 
-function getInviteTrip(invite: TripInviteRow) {
-  if (Array.isArray(invite.trips)) {
-    return invite.trips[0] ?? null;
-  }
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-  return invite.trips ?? null;
-}
-
-function StatusBadge({ status }: { status: string | null | undefined }) {
-  const label = status ?? "draft";
-
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        borderRadius: 999,
-        padding: "5px 10px",
-        background: "#f0f7f8",
-        color: "var(--accent-dark)",
-        fontWeight: 700,
-        fontSize: 13,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function SummaryCard({
+function MetricCard({
   label,
   value,
   helper,
+  tone = "neutral",
 }: {
   label: string;
   value: string | number;
   helper?: string;
+  tone?: "neutral" | "warning";
 }) {
+  const isWarning = tone === "warning";
   return (
     <div
       className="card stack"
       style={{
-        border: "1px solid #e6f0f2",
-        background: "#ffffff",
+        gap: 8,
+        border: isWarning ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+        background: isWarning ? "#fffbf7" : "#ffffff",
       }}
     >
-      <span className="label">{label}</span>
-      <strong style={{ fontSize: "2rem", lineHeight: 1 }}>{value}</strong>
-      {helper ? (
-        <span style={{ color: "#64748b", lineHeight: 1.45 }}>{helper}</span>
-      ) : null}
+      <span
+        style={{
+          fontSize: 11,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "#5e7e8f",
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </span>
+      <strong
+        style={{
+          fontSize: "1.7rem",
+          lineHeight: 1,
+          color: isWarning ? "#6b3a08" : "var(--accent-dark)",
+        }}
+      >
+        {value}
+      </strong>
+      {helper && (
+        <span style={{ fontSize: 12, color: "#5e7e8f", lineHeight: 1.4 }}>
+          {helper}
+        </span>
+      )}
     </div>
   );
 }
 
-function ActionCard({
-  title,
-  description,
-  href,
-  cta,
-  tone = "neutral",
-}: {
-  title: string;
-  description: string;
-  href: string;
-  cta: string;
-  tone?: "neutral" | "warning" | "good";
-}) {
-  const styles = {
-    neutral: { background: "#ffffff", border: "1px solid #e6f0f2" },
-    warning: { background: "#fff7ed", border: "1px solid #fed7aa" },
-    good: { background: "#f0fdf4", border: "1px solid #bbf7d0" },
-  }[tone];
-
+function AdvisorCard({ unreadCount }: { unreadCount: number }) {
   return (
     <div
-      className="card stack"
+      className="card"
       style={{
-        background: styles.background,
-        border: styles.border,
+        display: "flex",
+        gap: 18,
+        alignItems: "center",
+        flexWrap: "wrap",
+        background: "linear-gradient(135deg, #f0f7f8 0%, #ffffff 60%)",
+        border: "1px solid #e6f0f2",
       }}
     >
-      <h2 style={{ margin: 0 }}>{title}</h2>
+      <div
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: "50%",
+          background: "var(--accent-dark)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#fff",
+          fontSize: 18,
+          fontWeight: 800,
+          flexShrink: 0,
+        }}
+      >
+        JB
+      </div>
 
-      <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
-        {description}
-      </p>
+      <div style={{ flex: 1, minWidth: 160 }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--accent-dark)",
+            fontWeight: 800,
+          }}
+        >
+          Your Advisor
+        </p>
+        <p style={{ margin: "3px 0 0", fontSize: 17, fontWeight: 800 }}>
+          Jeremy Brown
+        </p>
+        <p style={{ margin: "2px 0 0", fontSize: 13, color: "#5e7e8f" }}>
+          Cozy Adventure Vacations &middot;{" "}
+          <em>Memories Await!</em>
+        </p>
+      </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <Link href={href} className="btn btn-primary">
-          {cta}
+      <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+        <Link
+          href="/messages"
+          className="btn btn-outline"
+          style={{ padding: "8px 14px", fontSize: 13 }}
+        >
+          {unreadCount > 0 ? `✉ ${unreadCount} Unread` : "✉ Messages"}
+        </Link>
+        <Link
+          href="/travel-request"
+          className="btn btn-primary"
+          style={{ padding: "8px 14px", fontSize: 13 }}
+        >
+          Request a Quote
         </Link>
       </div>
     </div>
   );
 }
 
-function AskCozyDashboardCard() {
+function TripStatusBadge({ status }: { status: string | null | undefined }) {
+  const s = status ?? "draft";
+  const colors: Record<string, { bg: string; color: string }> = {
+    confirmed: { bg: "#eaf3de", color: "#3b6d11" },
+    active: { bg: "#eaf3de", color: "#3b6d11" },
+    completed: { bg: "#f0f7f8", color: "var(--accent-dark)" },
+    cancelled: { bg: "#fef2f2", color: "#991b1b" },
+    draft: { bg: "#f0f7f8", color: "var(--accent-dark)" },
+  };
+  const style = colors[s] ?? colors.draft;
   return (
-    <div
-      className="card stack"
+    <span
       style={{
-        border: "1px solid #e6f0f2",
-        background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "4px 10px",
+        background: style.bg,
+        color: style.color,
+        fontWeight: 700,
+        fontSize: 12,
+        whiteSpace: "nowrap",
       }}
     >
+      {s}
+    </span>
+  );
+}
+
+function TripCard({ trip }: { trip: TripRow }) {
+  const departure = formatDateShort(trip.departure_date);
+  const returnDate = formatDateShort(trip.return_date);
+  const hasBalance =
+    typeof trip.balance_due === "number" && trip.balance_due > 0;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 16,
+        flexWrap: "wrap",
+        padding: "14px 0",
+        borderBottom: "1px solid #f0f5f8",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 160 }}>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: 15 }}>
+          {trip.trip_name ?? "Trip"}
+        </p>
+        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#5e7e8f" }}>
+          {trip.destinations ?? "Destination TBD"}
+          {departure ? ` · ${departure}` : ""}
+          {returnDate ? ` → ${returnDate}` : ""}
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <TripStatusBadge status={trip.trip_status} />
+        {hasBalance && (
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#6b3a08",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {formatMoney(trip.balance_due)} due
+          </span>
+        )}
+        <Link
+          href={`/trips/${trip.trip_id}`}
+          className="btn btn-primary"
+          style={{ padding: "7px 14px", fontSize: 13 }}
+        >
+          View Trip
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function AskCozyCompact() {
+  return (
+    <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
       <div>
         <p
           style={{
             margin: 0,
-            fontSize: 13,
+            fontSize: 11,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
             color: "var(--accent-dark)",
@@ -220,48 +316,88 @@ function AskCozyDashboardCard() {
         >
           Ask Cozy
         </p>
-
-        <h2 style={{ margin: "4px 0 0" }}>Need a quick travel answer?</h2>
-
-        <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.6 }}>
-          Ask Cozy can help with general travel questions, packing reminders, trip
-          prep, and what to ask your advisor next.
+        <p style={{ margin: "3px 0 0", fontWeight: 700, fontSize: 15 }}>
+          Got a travel question?
         </p>
       </div>
 
-      <form action="/ask-cozy" method="get" className="stack">
-        <label className="stack-sm">
-          <span className="label">Ask a general travel question</span>
-          <textarea
-            className="textarea"
-            name="question"
-            rows={3}
-            placeholder="Example: What should I double-check 30 days before travel?"
-          />
-        </label>
-
-        <button type="submit" className="btn btn-primary">
-          Ask Cozy
+      <form action="/ask-cozy" method="get" style={{ display: "flex", gap: 8 }}>
+        <input
+          className="input"
+          name="question"
+          placeholder="e.g. What should I pack for May in Florida?"
+          style={{ flex: 1, padding: "9px 13px", fontSize: 13 }}
+        />
+        <button
+          type="submit"
+          className="btn btn-primary"
+          style={{ padding: "9px 16px", fontSize: 13, whiteSpace: "nowrap" }}
+        >
+          Ask
         </button>
       </form>
 
-      <div
+      <p style={{ margin: 0, fontSize: 11, color: "#5e7e8f", lineHeight: 1.5 }}>
+        For booking-specific questions, use Concierge Messages so your advisor
+        can see the full context.
+      </p>
+    </div>
+  );
+}
+
+function QuickActions({ nextTripId }: { nextTripId: string | null }) {
+  const actions = [
+    { label: "My Trips", href: "/trips" },
+    { label: "Messages", href: "/messages" },
+    { label: "Invitations", href: "/invites" },
+    { label: "My Profile", href: "/profile" },
+    ...(nextTripId
+      ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }]
+      : []),
+  ];
+
+  return (
+    <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
+      <p
         style={{
-          padding: "12px",
-          borderRadius: 12,
-          background: "#fff7ed",
-          border: "1px solid #fed7aa",
-          color: "#9a3412",
-          lineHeight: 1.6,
+          margin: 0,
+          fontSize: 11,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "var(--accent-dark)",
+          fontWeight: 800,
         }}
       >
-        <strong>Quick note:</strong> Ask Cozy cannot see private trip records,
-        payments, passport uploads, or documents. Use Concierge Messages for
-        booking-specific questions.
+        Quick Actions
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {actions.map((action) => (
+          <Link
+            key={action.href}
+            href={action.href}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#f0f7f8",
+              color: "var(--accent-dark)",
+              border: "1px solid #e6f0f2",
+              borderRadius: 10,
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            {action.label}
+          </Link>
+        ))}
       </div>
     </div>
   );
 }
+
+// ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
@@ -271,68 +407,42 @@ async function getCurrentClientAccount() {
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    redirect("/login");
-  }
+  if (userError || !user) redirect("/login");
 
   const userEmail = user.email?.trim().toLowerCase();
+  if (!userEmail) throw new Error("Your login account does not have an email address.");
 
-  if (!userEmail) {
-    throw new Error("Your login account does not have an email address.");
-  }
-
-  const { data: clientAccountByEmail, error: clientEmailError } = await supabase
+  const { data: byEmail, error: emailError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name, preferred_name, email")
     .ilike("email", userEmail)
     .maybeSingle();
 
-  if (clientEmailError) {
-    throw new Error(clientEmailError.message);
-  }
+  if (emailError) throw new Error(emailError.message);
+  if (byEmail) return { supabase, user, clientAccount: byEmail as ClientAccountRow };
 
-  if (clientAccountByEmail) {
-    return {
-      supabase,
-      user,
-      clientAccount: clientAccountByEmail as ClientAccountRow,
-    };
-  }
-
-  const { data: userProfile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
     .select("id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
+  if (profileError) throw new Error(profileError.message);
+  if (!profile) throw new Error("User profile not found.");
 
-  if (!userProfile) {
-    throw new Error("User profile not found.");
-  }
-
-  const { data: clientAccountByProfile, error: clientProfileError } = await supabase
+  const { data: byProfile, error: profileAccountError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
-    .eq("user_profile_id", userProfile.id)
+    .select("id, first_name, last_name, preferred_name, email")
+    .eq("user_profile_id", profile.id)
     .maybeSingle();
 
-  if (clientProfileError) {
-    throw new Error(clientProfileError.message);
-  }
+  if (profileAccountError) throw new Error(profileAccountError.message);
+  if (!byProfile) throw new Error("Client account not found.");
 
-  if (!clientAccountByProfile) {
-    throw new Error("Client account not found.");
-  }
-
-  return {
-    supabase,
-    user,
-    clientAccount: clientAccountByProfile as ClientAccountRow,
-  };
+  return { supabase, user, clientAccount: byProfile as ClientAccountRow };
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function ClientDashboardPage() {
   let clientContext: Awaited<ReturnType<typeof getCurrentClientAccount>>;
@@ -341,10 +451,7 @@ export default async function ClientDashboardPage() {
     clientContext = await getCurrentClientAccount();
   } catch (error) {
     return (
-      <PageShell
-        title="Client Dashboard"
-        subtitle="We could not load your Cozy Concierge dashboard."
-      >
+      <PageShell title="Dashboard" subtitle="We could not load your dashboard.">
         <div className="card">
           <p>
             <strong>Error:</strong>{" "}
@@ -357,286 +464,199 @@ export default async function ClientDashboardPage() {
 
   const { supabase, clientAccount } = clientContext;
 
-  const { data: trips, error } = await supabase
-    .from("client_trip_summaries")
-    .select(
-      "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date",
-    )
-    .eq("client_account_id", clientAccount.id)
-    .order("departure_date", { ascending: true });
+  const [tripsResult, threadsResult, invitesResult] = await Promise.all([
+    supabase
+      .from("client_trip_summaries")
+      .select(
+        "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date",
+      )
+      .eq("client_account_id", clientAccount.id)
+      .order("departure_date", { ascending: true }),
 
-  const { data: messageThreads } = await supabase
-    .from("message_threads")
-    .select("id, status, client_unread_count, last_message_at")
-    .eq("client_account_id", clientAccount.id)
-    .order("last_message_at", { ascending: false });
+    supabase
+      .from("message_threads")
+      .select("id, status, client_unread_count, last_message_at")
+      .eq("client_account_id", clientAccount.id)
+      .order("last_message_at", { ascending: false }),
 
-  const clientEmail = clientAccount.email?.trim().toLowerCase() ?? "";
+    clientAccount.email
+      ? supabase
+          .from("trip_members")
+          .select("id, trip_id, invite_email, invite_name, role, invite_status, created_at")
+          .ilike("invite_email", clientAccount.email)
+          .eq("invite_status", "invited")
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as TripInviteRow[] }),
+  ]);
 
-  const { data: pendingInvites } = clientEmail
-    ? await supabase
-        .from("trip_members")
-        .select(
-          "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
-        )
-        .ilike("invite_email", clientEmail)
-        .eq("invite_status", "invited")
-        .order("created_at", { ascending: false })
-    : { data: [] as TripInviteRow[] };
-
-  const { data: sharedTripMemberships } = await supabase
-    .from("trip_members")
-    .select(
-      "id, trip_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
-    )
-    .eq("client_account_id", clientAccount.id)
-    .eq("invite_status", "active")
-    .neq("role", "owner")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return (
-      <PageShell
-        title="Client Dashboard"
-        subtitle="We could not load your trip dashboard."
-      >
-        <div className="card">
-          <p>
-            <strong>Error loading dashboard:</strong>
-          </p>
-          <pre>{JSON.stringify(error, null, 2)}</pre>
-        </div>
-      </PageShell>
-    );
-  }
-
-  const rows = (trips ?? []) as TripRow[];
+  const rows = (tripsResult.data ?? []) as TripRow[];
+  const messageThreads = (threadsResult.data ?? []) as MessageThreadRow[];
+  const pendingInvites = (invitesResult.data ?? []) as TripInviteRow[];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const upcomingTrips = rows.filter((trip) => {
-    if (!trip.departure_date) return false;
-
-    const departureDate = new Date(`${trip.departure_date}T00:00:00`);
-
-    return departureDate >= today;
+  const upcomingTrips = rows.filter((t) => {
+    if (!t.departure_date) return false;
+    return new Date(`${t.departure_date}T00:00:00`) >= today;
   });
 
   const nextTrip = upcomingTrips[0] ?? null;
 
-  const totalBalanceDue = rows.reduce((total, trip) => {
-    return total + (typeof trip.balance_due === "number" ? trip.balance_due : 0);
-  }, 0);
-
-  const nextPaymentTrip =
-    rows
-      .filter((trip) => trip.final_payment_due_date)
-      .sort((a, b) =>
-        String(a.final_payment_due_date).localeCompare(
-          String(b.final_payment_due_date),
-        ),
-      )[0] ?? null;
-
-  const clientName = getClientDisplayName(clientAccount);
-
-  const messageThreadRows = (messageThreads ?? []) as MessageThreadRow[];
-
-  const unreadMessages = messageThreadRows.reduce(
-    (sum, thread) => sum + Number(thread.client_unread_count ?? 0),
+  const totalBalance = rows.reduce(
+    (sum, t) => sum + (typeof t.balance_due === "number" ? t.balance_due : 0),
     0,
   );
 
-  const openMessageThreads = messageThreadRows.filter(
-    (thread) => thread.status === "open",
-  ).length;
+  const nextPaymentTrip =
+    rows
+      .filter((t) => t.final_payment_due_date && (t.balance_due ?? 0) > 0)
+      .sort((a, b) =>
+        String(a.final_payment_due_date).localeCompare(String(b.final_payment_due_date)),
+      )[0] ?? null;
 
-  const pendingInviteRows = (pendingInvites ?? []) as TripInviteRow[];
-  const sharedTripRows = (sharedTripMemberships ?? []) as TripInviteRow[];
-  const nextInviteTrip = pendingInviteRows[0]
-    ? getInviteTrip(pendingInviteRows[0])
-    : null;
+  const unreadMessages = messageThreads.reduce(
+    (sum, t) => sum + Number(t.client_unread_count ?? 0),
+    0,
+  );
+
+  const openThreads = messageThreads.filter((t) => t.status === "open").length;
+
+  const preferredName = getPreferredName(clientAccount);
 
   return (
     <PageShell
-      title={`Welcome back, ${clientName}`}
-      subtitle="Your Cozy Concierge dashboard for trips, messages, invitations, payments, and travel details."
+      title={`Welcome back, ${preferredName}`}
+      subtitle={getTodayLabel()}
     >
+      {/* Metrics row */}
+      <div className="grid grid-3">
+        <MetricCard
+          label="Upcoming Trips"
+          value={upcomingTrips.length}
+          helper={
+            nextTrip
+              ? `Next: ${nextTrip.trip_name ?? "Trip"} · ${formatDateShort(nextTrip.departure_date) ?? ""}`
+              : "No upcoming trips yet."
+          }
+        />
+        <MetricCard
+          label="Balance Due"
+          value={formatMoney(totalBalance)}
+          helper={
+            nextPaymentTrip
+              ? `Final payment due ${formatDateLong(nextPaymentTrip.final_payment_due_date)}`
+              : "No outstanding balance."
+          }
+          tone={totalBalance > 0 ? "warning" : "neutral"}
+        />
+        <MetricCard
+          label="Messages"
+          value={openThreads}
+          helper={
+            unreadMessages > 0
+              ? `${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}`
+              : "No unread messages."
+          }
+          tone={unreadMessages > 0 ? "warning" : "neutral"}
+        />
+      </div>
+
+      {/* Advisor card */}
+      <AdvisorCard unreadCount={unreadMessages} />
+
+      {/* Upcoming trips */}
       <div
         className="card stack"
-        style={{
-          border: "1px solid #e6f0f2",
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-        }}
+        style={{ border: "1px solid #e6f0f2" }}
       >
-        <p
+        <div
           style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
           }}
         >
-          Cozy Concierge
-        </p>
-
-        <h2 style={{ margin: 0 }}>Travel Snapshot</h2>
-
-        <div className="grid grid-3">
-          <SummaryCard
-            label="Upcoming Trips"
-            value={upcomingTrips.length}
-            helper={
-              nextTrip
-                ? `Next trip: ${nextTrip.trip_name ?? nextTrip.destinations ?? "Trip"}`
-                : "No upcoming trips yet."
-            }
-          />
-
-          <SummaryCard
-            label="Balance Due"
-            value={formatMoney(totalBalanceDue)}
-            helper={
-              nextPaymentTrip
-                ? `Next final payment: ${formatDate(nextPaymentTrip.final_payment_due_date)}`
-                : "No final payment due date on file."
-            }
-          />
-
-          <SummaryCard
-            label="Travel Invitations"
-            value={pendingInviteRows.length}
-            helper={
-              pendingInviteRows.length > 0
-                ? "Review shared trip access."
-                : sharedTripRows.length > 0
-                  ? `${sharedTripRows.length} shared trip${
-                      sharedTripRows.length === 1 ? "" : "s"
-                    } accepted.`
-                  : "No pending invitations."
-            }
-          />
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--accent-dark)",
+                fontWeight: 800,
+              }}
+            >
+              My Trips
+            </p>
+            <h2 style={{ margin: "3px 0 0" }}>Upcoming Adventures</h2>
+          </div>
+          <Link
+            href="/trips"
+            className="btn btn-outline"
+            style={{ padding: "8px 14px", fontSize: 13 }}
+          >
+            View All Trips
+          </Link>
         </div>
-      </div>
-
-      <AskCozyDashboardCard />
-
-      <div className="grid grid-2">
-        <ActionCard
-          title="Travel Invitations"
-          description={
-            nextInviteTrip
-              ? `You have a pending invite for ${
-                  nextInviteTrip.trip_name ?? "a shared trip"
-                }${
-                  nextInviteTrip.destinations
-                    ? ` — ${nextInviteTrip.destinations}`
-                    : ""
-                }.`
-              : sharedTripRows.length > 0
-                ? `${sharedTripRows.length} shared trip${
-                    sharedTripRows.length === 1 ? "" : "s"
-                  } accepted.`
-                : "Accept shared trip access from family, friends, and fellow travelers."
-          }
-          href="/invites"
-          cta={
-            pendingInviteRows.length > 0
-              ? `Review ${pendingInviteRows.length} Invitation${
-                  pendingInviteRows.length === 1 ? "" : "s"
-                }`
-              : "Open Invitations"
-          }
-          tone={pendingInviteRows.length > 0 ? "warning" : "good"}
-        />
-
-        <ActionCard
-          title="Concierge Messages"
-          description={
-            unreadMessages > 0
-              ? `You have ${unreadMessages} unread advisor ${
-                  unreadMessages === 1 ? "reply" : "replies"
-                }.`
-              : `You have ${openMessageThreads} open message ${
-                  openMessageThreads === 1 ? "thread" : "threads"
-                }.`
-          }
-          href="/messages"
-          cta={unreadMessages > 0 ? "Read Messages" : "Open Messages"}
-          tone={unreadMessages > 0 ? "warning" : "good"}
-        />
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Quick Actions</h2>
-
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Link href="/trips" className="btn btn-primary">
-            View My Trips
-          </Link>
-
-          <Link href="/travel-request" className="btn btn-primary">
-            Request New Travel Quote
-          </Link>
-
-          <Link href="/invites" className="btn btn-primary">
-            Travel Invitations
-          </Link>
-
-          {nextTrip ? (
-            <Link href={`/trips/${nextTrip.trip_id}`} className="btn btn-primary">
-              Open Next Trip
-            </Link>
-          ) : null}
-        </div>
-
-        <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
-          Need to reach your advisor? Use the Concierge Messages card above so the conversation stays connected to your client account.
-        </p>
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ margin: 0 }}>Upcoming Trips</h2>
 
         {upcomingTrips.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>
-            No upcoming trips found yet.
+          <p style={{ margin: 0, color: "#5e7e8f", lineHeight: 1.6 }}>
+            No upcoming trips yet.{" "}
+            <Link href="/travel-request" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>
+              Request a quote
+            </Link>{" "}
+            to start planning your next adventure.
           </p>
         ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 860 }}>
-              <thead>
-                <tr>
-                  <th>Trip</th>
-                  <th>Destination</th>
-                  <th>Departure</th>
-                  <th>Return</th>
-                  <th>Status</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {upcomingTrips.slice(0, 5).map((trip) => (
-                  <tr key={trip.trip_id}>
-                    <td>{trip.trip_name ?? "Trip"}</td>
-                    <td>{trip.destinations ?? "Not provided"}</td>
-                    <td>{formatDate(trip.departure_date)}</td>
-                    <td>{formatDate(trip.return_date)}</td>
-                    <td>
-                      <StatusBadge status={trip.trip_status} />
-                    </td>
-                    <td>
-                      <Link href={`/trips/${trip.trip_id}`}>Open</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ paddingTop: 4 }}>
+            {upcomingTrips.slice(0, 5).map((trip) => (
+              <TripCard key={trip.trip_id} trip={trip} />
+            ))}
           </div>
         )}
+      </div>
+
+      {/* Pending invites banner */}
+      {pendingInvites.length > 0 && (
+        <div
+          className="card"
+          style={{
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontWeight: 800, color: "#854f0b" }}>
+              {pendingInvites.length} Pending Travel Invitation
+              {pendingInvites.length === 1 ? "" : "s"}
+            </p>
+            <p style={{ margin: "3px 0 0", fontSize: 13, color: "#92400e" }}>
+              You have been invited to join a shared trip.
+            </p>
+          </div>
+          <Link
+            href="/invites"
+            className="btn btn-primary"
+            style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}
+          >
+            Review Invitations
+          </Link>
+        </div>
+      )}
+
+      {/* Ask Cozy + Quick Actions */}
+      <div className="grid grid-2">
+        <AskCozyCompact />
+        <QuickActions nextTripId={nextTrip?.trip_id ?? null} />
       </div>
     </PageShell>
   );

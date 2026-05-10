@@ -1,0 +1,929 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type TripRow = {
+  id: string;
+  client_account_id: string;
+  trip_name: string | null;
+  destinations: string | null;
+  departure_date: string | null;
+  return_date: string | null;
+  trip_status: string | null;
+  balance_due: number | null;
+  final_payment_due_date: string | null;
+  occasion?: string | null;
+};
+
+type ProposalRow = {
+  id: string;
+  proposal_title: string | null;
+  proposal_welcome_text: string | null;
+  proposal_closing_text: string | null;
+  planning_fee: number | null;
+  total_price: number | null;
+};
+
+type TripNoteRow = {
+  id: string;
+  note_type: string;
+  title: string | null;
+  content: string | null;
+};
+
+type TripMemberRow = {
+  id: string;
+  invite_email: string | null;
+  invite_name: string | null;
+  role: string;
+  invite_status: string;
+  display_name: string;
+  email: string | null;
+};
+
+type DocumentRow = {
+  id: string;
+  file_name: string;
+  created_at: string | null;
+  signedUrl: string | null;
+};
+
+type ClientDocumentRow = {
+  id: string;
+  document_type: string | null;
+  title: string | null;
+  file_name: string | null;
+  uploaded_at: string | null;
+  notes: string | null;
+  signedUrl: string | null;
+};
+
+type TimelineGroup = {
+  dateKey: string;
+  dateLabel: string;
+  events: { icon: string; title: string; details: string; time?: string }[];
+};
+
+type HotelData = {
+  name: string | null;
+  address: string | null;
+  stars: string | number | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  roomCategory: string | null;
+  roomDescription: string | null;
+  hotelDescription: string | null;
+  confirmationNumber: string | null;
+  nightlyRate: number | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+  supplier: string | null;
+} | null;
+
+type FlightData = {
+  flightType: string | null;
+  supplier: string | null;
+  travelerCount: number | null;
+  rateClass: string | null;
+  airlineLocator: string | null;
+  confirmationNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+  outbound: {
+    route: string;
+    flight: string;
+    departure: string;
+    arrival: string;
+    cabinClass: string | null;
+    seat: string | null;
+  } | null;
+  returnFlight: {
+    route: string;
+    flight: string;
+    departure: string;
+    arrival: string;
+    cabinClass: string | null;
+    seat: string | null;
+  } | null;
+} | null;
+
+type CruiseData = {
+  cruiseLine: string | null;
+  shipName: string | null;
+  sailingDate: string | null;
+  returnDate: string | null;
+  departurePort: string | null;
+  arrivalPort: string | null;
+  cabinCategory: string | null;
+  cabinNumber: string | null;
+  diningSeating: string | null;
+  description: string | null;
+  confirmationNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+  supplier: string | null;
+} | null;
+
+type TransferData = {
+  supplier: string | null;
+  pickupDatetime: string | null;
+  passengerCount: number | null;
+  pickupLocation: string | null;
+  dropoffLocation: string | null;
+  vehicleType: string | null;
+  notes: string | null;
+  confirmationNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+} | null;
+
+type ActivityData = {
+  name: string | null;
+  supplier: string | null;
+  datetime: string | null;
+  location: string | null;
+  participantCount: number | null;
+  notes: string | null;
+  confirmationNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+} | null;
+
+type InsuranceData = {
+  provider: string | null;
+  planName: string | null;
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  travelersCount: number | null;
+  claimPhone: string | null;
+  notes: string | null;
+  policyNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+} | null;
+
+type TripDetailClientProps = {
+  trip: TripRow;
+  proposal: ProposalRow | null;
+  clientNote: TripNoteRow | null;
+  clientReminder: TripNoteRow | null;
+  tripMembers: TripMemberRow[];
+  isPrimaryClient: boolean;
+  canManageTravelCircle: boolean;
+  documents: DocumentRow[];
+  clientDocuments: ClientDocumentRow[];
+  timelineGroups: TimelineGroup[];
+  hotel: HotelData;
+  flight: FlightData;
+  cruise: CruiseData;
+  transfer: TransferData;
+  activity: ActivityData;
+  insurance: InsuranceData;
+  advisorEmail: string;
+  agencyWebsite: string;
+  onInviteCompanion: (formData: FormData) => Promise<void>;
+  onRemoveCompanion: (formData: FormData) => Promise<void>;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(value: string | number | null | undefined, fallback = "Not provided") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function fmtMoney(value: number | null | undefined) {
+  if (typeof value !== "number") return "$0.00";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function fmtDate(value: string | null | undefined, fallback = "Not set") {
+  if (!value) return fallback;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function fmtDateTime(value: string | null | undefined, fallback = "Not provided") {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// ─── UI Primitives ────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+  const s = status ?? "draft";
+  const colors: Record<string, { bg: string; color: string }> = {
+    confirmed: { bg: "#eaf3de", color: "#3b6d11" },
+    active: { bg: "#eaf3de", color: "#3b6d11" },
+    completed: { bg: "#f0f7f8", color: "#123f5b" },
+    cancelled: { bg: "#fef2f2", color: "#991b1b" },
+    draft: { bg: "#f0f7f8", color: "#123f5b" },
+  };
+  const style = colors[s] ?? colors.draft;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 12px", background: style.bg, color: style.color, fontWeight: 700, fontSize: 13 }}>
+      {s}
+    </span>
+  );
+}
+
+function InfoItem({ label, value }: { label: string; value: string | number | null | undefined }) {
+  const display = fmt(value);
+  const isEmpty = display === "Not provided";
+  return (
+    <div style={{ padding: "12px", border: "1px solid #eef2f5", borderRadius: 12, background: "#fbfdfe" }}>
+      <span className="label">{label}</span>
+      <p style={{ margin: "6px 0 0", lineHeight: 1.45, color: isEmpty ? "#aab8c2" : "inherit", fontStyle: isEmpty ? "italic" : "normal" }}>{display}</p>
+    </div>
+  );
+}
+
+function PriceItem({ label, value }: { label: string; value: number | null | undefined }) {
+  return <InfoItem label={label} value={fmtMoney(value)} />;
+}
+
+function SectionCard({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle?: string; children: ReactNode }) {
+  return (
+    <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
+      <div>
+        {eyebrow && <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>{eyebrow}</p>}
+        <h2 style={{ margin: eyebrow ? "4px 0 0" : 0 }}>{title}</h2>
+        {subtitle && <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 14 }}>{subtitle}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Collapsible({ title, eyebrow, subtitle, children, defaultOpen = false }: { title: string; eyebrow?: string; subtitle?: string; children: ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ border: "1px solid #e6f0f2", borderRadius: 16, background: "#ffffff", overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ width: "100%", cursor: "pointer", padding: "14px 16px", background: "#f7fbfc", borderBottom: open ? "1px solid #e6f0f2" : "none", color: "var(--accent-dark)", fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "center", border: "none", textAlign: "left" }}
+      >
+        <div>
+          {eyebrow && <span style={{ display: "block", marginBottom: 2, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase" }}>{eyebrow}</span>}
+          <span style={{ fontSize: 15 }}>{title}</span>
+          {subtitle && <span style={{ display: "block", marginTop: 2, color: "#667085", fontWeight: 500, fontSize: 13 }}>{subtitle}</span>}
+        </div>
+        <span style={{ fontSize: 18, marginLeft: 12 }}>{open ? "−" : "+"}</span>
+      </button>
+      {open && <div className="card stack" style={{ border: "none", borderRadius: 0 }}>{children}</div>}
+    </div>
+  );
+}
+
+function ChecklistItem({ children }: { children: ReactNode }) {
+  return (
+    <li style={{ display: "flex", gap: 10, alignItems: "flex-start", lineHeight: 1.5, listStyle: "none" }}>
+      <span aria-hidden style={{ width: 22, height: 22, minWidth: 22, borderRadius: 999, background: "#f0f7f8", color: "var(--accent-dark)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13, marginTop: 1 }}>✓</span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function TravelCompanionBadge({ role }: { role: string }) {
+  const map: Record<string, { bg: string; color: string; label: string }> = {
+    owner: { bg: "#ecfdf3", color: "#027a48", label: "Owner" },
+    contributor: { bg: "#f0f7f8", color: "var(--accent-dark)", label: "Contributor" },
+    viewer: { bg: "#f8fafc", color: "#475569", label: "Viewer" },
+  };
+  const style = map[role] ?? map.viewer;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 10px", background: style.bg, color: style.color, fontWeight: 800, fontSize: 12 }}>
+      {style.label}
+    </span>
+  );
+}
+
+// ─── Tab definitions ──────────────────────────────────────────────────────────
+
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "itinerary", label: "Itinerary" },
+  { id: "documents", label: "Documents" },
+  { id: "travel-circle", label: "Travel Circle" },
+  { id: "help", label: "Help" },
+] as const;
+
+type TabId = typeof TABS[number]["id"];
+
+// ─── Tab panels ───────────────────────────────────────────────────────────────
+
+function OverviewTab({ trip, proposal, clientNote, clientReminder }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null }) {
+  return (
+    <div className="stack">
+      {clientReminder && (
+        <div className="card stack" style={{ borderLeft: "4px solid var(--accent-dark)", background: "#f7fbfc", borderRadius: "0 16px 16px 0" }}>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Important Reminder</p>
+          <h3 style={{ margin: "4px 0 0" }}>{clientReminder.title ?? "Reminders Before You Travel"}</h3>
+          <p style={{ margin: 0, lineHeight: 1.65, color: "#374151" }}>{clientReminder.content}</p>
+        </div>
+      )}
+
+      <div className="grid grid-3">
+        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
+          <span className="label">Balance Due</span>
+          <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800, color: (trip.balance_due ?? 0) > 0 ? "#6b3a08" : "var(--accent-dark)" }}>{fmtMoney(trip.balance_due)}</p>
+        </div>
+        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
+          <span className="label">Final Payment Due</span>
+          <p style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 700 }}>{fmtDate(trip.final_payment_due_date, "Not set")}</p>
+        </div>
+        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
+          <span className="label">Trip Status</span>
+          <p style={{ marginTop: 8 }}><StatusBadge status={trip.trip_status} /></p>
+        </div>
+      </div>
+
+      <SectionCard eyebrow="Overview" title="Trip Details">
+        <div className="grid grid-2">
+          <InfoItem label="Trip Name" value={trip.trip_name} />
+          <InfoItem label="Destinations" value={trip.destinations} />
+          <InfoItem label="Departure" value={fmtDate(trip.departure_date)} />
+          <InfoItem label="Return" value={fmtDate(trip.return_date)} />
+          {trip.occasion && <InfoItem label="Occasion" value={trip.occasion} />}
+        </div>
+      </SectionCard>
+
+      {proposal && (
+        <SectionCard eyebrow="Proposal" title="Proposal Summary">
+          <div className="grid grid-2">
+            <InfoItem label="Proposal Title" value={proposal.proposal_title} />
+            <PriceItem label="Planning Fee" value={proposal.planning_fee} />
+            <PriceItem label="Total Price" value={proposal.total_price} />
+          </div>
+          {proposal.proposal_welcome_text && (
+            <div>
+              <span className="label">Welcome Note</span>
+              <p style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_welcome_text}</p>
+            </div>
+          )}
+          {proposal.proposal_closing_text && (
+            <div>
+              <span className="label">Closing Note</span>
+              <p style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_closing_text}</p>
+            </div>
+          )}
+        </SectionCard>
+      )}
+
+      {clientNote && (
+        <div className="card stack" style={{ borderLeft: "4px solid var(--accent-dark)", borderRadius: "0 16px 16px 0" }}>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Advisor Note</p>
+          <h3 style={{ margin: "4px 0 0" }}>{clientNote.title ?? "Notes from Your Advisor"}</h3>
+          <p style={{ lineHeight: 1.65, margin: 0, color: "#374151" }}>{clientNote.content}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, activity, insurance }: { timelineGroups: TimelineGroup[]; hotel: HotelData; flight: FlightData; cruise: CruiseData; transfer: TransferData; activity: ActivityData; insurance: InsuranceData }) {
+  const hasAnyComponent = hotel || flight || cruise || transfer || activity || insurance;
+
+  return (
+    <div className="stack">
+      {timelineGroups.length > 0 ? (
+        <SectionCard eyebrow="Timeline" title="Day-by-Day Overview">
+          <div style={{ display: "grid", gap: 16 }}>
+            {timelineGroups.map((group, i) => (
+              <div key={group.dateKey} style={{ border: "1px solid #eef2f5", borderRadius: 16, overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px", background: "#f7fbfc", borderBottom: "1px solid #e6f0f2" }}>
+                  <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Day {i + 1}</p>
+                  <h3 style={{ margin: "3px 0 0" }}>{group.dateLabel}</h3>
+                </div>
+                <div style={{ display: "grid", gap: 10, padding: 12 }}>
+                  {group.events.map((event, j) => (
+                    <div key={j} style={{ display: "grid", gridTemplateColumns: "42px 1fr", gap: 12, alignItems: "start", padding: 12, border: "1px solid #eef2f5", borderRadius: 14, background: "#fbfdfe" }}>
+                      <div aria-hidden style={{ width: 42, height: 42, borderRadius: 999, background: "#f0f7f8", color: "var(--accent-dark)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{event.icon}</div>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 800 }}>{event.title}</p>
+                        <p style={{ margin: "4px 0 0", color: "var(--accent-dark)", fontWeight: 700, fontSize: 13 }}>{event.time ?? group.dateLabel}</p>
+                        {event.details && <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 13 }}>{event.details}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ) : (
+        <div className="card" style={{ border: "1px solid #e6f0f2", color: "#667085" }}>
+          <p style={{ margin: 0 }}>No timeline events yet. Your itinerary will appear here once your advisor adds trip components.</p>
+        </div>
+      )}
+
+      {hasAnyComponent && (
+        <SectionCard eyebrow="Components" title="Trip Details">
+          <div className="stack">
+            {hotel && (
+              <Collapsible eyebrow="Stay" title="Hotel" subtitle={hotel.name ?? undefined} defaultOpen>
+                <div className="grid grid-2">
+                  <InfoItem label="Hotel" value={hotel.name} />
+                  <InfoItem label="Supplier" value={hotel.supplier} />
+                  <InfoItem label="Status" value={hotel.bookingStatus} />
+                  <InfoItem label="Address" value={hotel.address} />
+                  <InfoItem label="Stars" value={hotel.stars} />
+                  <InfoItem label="Check-in" value={fmtDate(hotel.checkIn)} />
+                  <InfoItem label="Check-out" value={fmtDate(hotel.checkOut)} />
+                  <InfoItem label="Room Category" value={hotel.roomCategory} />
+                  <InfoItem label="Confirmation" value={hotel.confirmationNumber} />
+                  <PriceItem label="Nightly Rate" value={hotel.nightlyRate} />
+                  <PriceItem label="Total" value={hotel.totalPrice} />
+                </div>
+                {hotel.roomDescription && <InfoItem label="Room Description" value={hotel.roomDescription} />}
+                {hotel.hotelDescription && <InfoItem label="Hotel Description" value={hotel.hotelDescription} />}
+              </Collapsible>
+            )}
+
+            {flight && (
+              <Collapsible eyebrow="Flights" title="Air Travel" defaultOpen>
+                <div className="grid grid-2">
+                  <InfoItem label="Flight Type" value={flight.flightType} />
+                  <InfoItem label="Airline" value={flight.supplier} />
+                  <InfoItem label="Status" value={flight.bookingStatus} />
+                  <InfoItem label="Travelers" value={flight.travelerCount} />
+                  <InfoItem label="Rate Class" value={flight.rateClass} />
+                  <InfoItem label="Locator" value={flight.airlineLocator} />
+                  <InfoItem label="Confirmation" value={flight.confirmationNumber} />
+                  <PriceItem label="Total" value={flight.totalPrice} />
+                </div>
+                {flight.outbound && (
+                  <div className="card stack" style={{ background: "#f7fbfc" }}>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>Outbound</p>
+                    <div className="grid grid-2">
+                      <InfoItem label="Route" value={flight.outbound.route} />
+                      <InfoItem label="Flight" value={flight.outbound.flight} />
+                      <InfoItem label="Departure" value={flight.outbound.departure} />
+                      <InfoItem label="Arrival" value={flight.outbound.arrival} />
+                      <InfoItem label="Cabin" value={flight.outbound.cabinClass} />
+                      <InfoItem label="Seat" value={flight.outbound.seat} />
+                    </div>
+                  </div>
+                )}
+                {flight.returnFlight && (
+                  <div className="card stack" style={{ background: "#f7fbfc" }}>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>Return</p>
+                    <div className="grid grid-2">
+                      <InfoItem label="Route" value={flight.returnFlight.route} />
+                      <InfoItem label="Flight" value={flight.returnFlight.flight} />
+                      <InfoItem label="Departure" value={flight.returnFlight.departure} />
+                      <InfoItem label="Arrival" value={flight.returnFlight.arrival} />
+                      <InfoItem label="Cabin" value={flight.returnFlight.cabinClass} />
+                      <InfoItem label="Seat" value={flight.returnFlight.seat} />
+                    </div>
+                  </div>
+                )}
+              </Collapsible>
+            )}
+
+            {cruise && (
+              <Collapsible eyebrow="Sailing" title="Cruise" subtitle={cruise.shipName ?? undefined}>
+                <div className="grid grid-2">
+                  <InfoItem label="Cruise Line" value={cruise.cruiseLine} />
+                  <InfoItem label="Ship" value={cruise.shipName} />
+                  <InfoItem label="Status" value={cruise.bookingStatus} />
+                  <InfoItem label="Confirmation" value={cruise.confirmationNumber} />
+                  <InfoItem label="Sailing Date" value={fmtDate(cruise.sailingDate)} />
+                  <InfoItem label="Return" value={fmtDate(cruise.returnDate)} />
+                  <InfoItem label="Departure Port" value={cruise.departurePort} />
+                  <InfoItem label="Arrival Port" value={cruise.arrivalPort} />
+                  <InfoItem label="Cabin Category" value={cruise.cabinCategory} />
+                  <InfoItem label="Cabin Number" value={cruise.cabinNumber} />
+                  <InfoItem label="Dining" value={cruise.diningSeating} />
+                  <PriceItem label="Total" value={cruise.totalPrice} />
+                </div>
+                {cruise.description && <InfoItem label="Description" value={cruise.description} />}
+              </Collapsible>
+            )}
+
+            {transfer && (
+              <Collapsible eyebrow="Ground" title="Transfer">
+                <div className="grid grid-2">
+                  <InfoItem label="Supplier" value={transfer.supplier} />
+                  <InfoItem label="Status" value={transfer.bookingStatus} />
+                  <InfoItem label="Pickup" value={fmtDateTime(transfer.pickupDatetime)} />
+                  <InfoItem label="Passengers" value={transfer.passengerCount} />
+                  <InfoItem label="Pickup Location" value={transfer.pickupLocation} />
+                  <InfoItem label="Dropoff" value={transfer.dropoffLocation} />
+                  <InfoItem label="Vehicle" value={transfer.vehicleType} />
+                  <InfoItem label="Confirmation" value={transfer.confirmationNumber} />
+                  <PriceItem label="Total" value={transfer.totalPrice} />
+                </div>
+                {transfer.notes && <InfoItem label="Notes" value={transfer.notes} />}
+              </Collapsible>
+            )}
+
+            {activity && (
+              <Collapsible eyebrow="Experience" title="Activity" subtitle={activity.name ?? undefined}>
+                <div className="grid grid-2">
+                  <InfoItem label="Activity" value={activity.name} />
+                  <InfoItem label="Supplier" value={activity.supplier} />
+                  <InfoItem label="Status" value={activity.bookingStatus} />
+                  <InfoItem label="Date & Time" value={fmtDateTime(activity.datetime)} />
+                  <InfoItem label="Location" value={activity.location} />
+                  <InfoItem label="Participants" value={activity.participantCount} />
+                  <InfoItem label="Confirmation" value={activity.confirmationNumber} />
+                  <PriceItem label="Total" value={activity.totalPrice} />
+                </div>
+                {activity.notes && <InfoItem label="Notes" value={activity.notes} />}
+              </Collapsible>
+            )}
+
+            {insurance && (
+              <Collapsible eyebrow="Protection" title="Travel Insurance">
+                <div className="grid grid-2">
+                  <InfoItem label="Provider" value={insurance.provider} />
+                  <InfoItem label="Plan" value={insurance.planName} />
+                  <InfoItem label="Status" value={insurance.bookingStatus} />
+                  <InfoItem label="Policy Number" value={insurance.policyNumber} />
+                  <InfoItem label="Coverage Start" value={fmtDate(insurance.coverageStart)} />
+                  <InfoItem label="Coverage End" value={fmtDate(insurance.coverageEnd)} />
+                  <InfoItem label="Travelers Covered" value={insurance.travelersCount} />
+                  <InfoItem label="Claims Phone" value={insurance.claimPhone} />
+                  <PriceItem label="Total Premium" value={insurance.totalPrice} />
+                </div>
+                {insurance.notes && <InfoItem label="Coverage Notes" value={insurance.notes} />}
+              </Collapsible>
+            )}
+          </div>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
+function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[] }) {
+  return (
+    <div className="stack">
+      <SectionCard eyebrow="Travel Documents" title="Identity & Document Checklist" subtitle="Review these before your departure date.">
+        <div className="grid grid-2">
+          <ul style={{ margin: 0, padding: 0, display: "grid", gap: 12 }}>
+            <ChecklistItem>Confirm all traveler names match exactly as shown on passports or government IDs.</ChecklistItem>
+            <ChecklistItem>Check passport expiration dates — many countries require 6+ months validity beyond your return date.</ChecklistItem>
+            <ChecklistItem>Review destination entry, visa, and travel document requirements.</ChecklistItem>
+          </ul>
+          <ul style={{ margin: 0, padding: 0, display: "grid", gap: 12 }}>
+            <ChecklistItem>Keep digital and printed copies of confirmations, insurance, and travel documents.</ChecklistItem>
+            <ChecklistItem>If minors are traveling without both parents, confirm whether consent documents are needed.</ChecklistItem>
+            <ChecklistItem>Contact your advisor if anything looks incorrect before departure.</ChecklistItem>
+          </ul>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href={`/trips/${tripId}/documents`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>View Shared Documents</Link>
+          <Link href="/profile/documents/upload" className="btn btn-outline" style={{ fontSize: 13, padding: "9px 16px" }}>Upload a Document</Link>
+        </div>
+      </SectionCard>
+
+      {documents.length > 0 && (
+        <SectionCard eyebrow="Files" title="Documents from Your Advisor">
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 500 }}>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Uploaded</th>
+                  <th>Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>{doc.file_name}</td>
+                    <td style={{ fontSize: 13, color: "#667085" }}>{fmtDateTime(doc.created_at, "")}</td>
+                    <td>
+                      {doc.signedUrl ? (
+                        <a href={doc.signedUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Open</a>
+                      ) : "Unavailable"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      )}
+
+      {clientDocuments.length > 0 && (
+        <SectionCard eyebrow="Your Uploads" title="Documents You've Uploaded">
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 500 }}>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Uploaded</th>
+                  <th>Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientDocuments.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>
+                      <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 10px", background: "#f0f7f8", color: "var(--accent-dark)", fontWeight: 700, fontSize: 12 }}>
+                        {doc.document_type ?? "Document"}
+                      </span>
+                    </td>
+                    <td>{doc.title ?? doc.file_name ?? "—"}</td>
+                    <td style={{ fontSize: 13, color: "#667085" }}>{fmtDateTime(doc.uploaded_at, "")}</td>
+                    <td>
+                      {doc.signedUrl ? (
+                        <a href={doc.signedUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Open</a>
+                      ) : "Unavailable"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      )}
+
+      {documents.length === 0 && clientDocuments.length === 0 && (
+        <div className="card" style={{ border: "1px solid #e6f0f2", color: "#667085" }}>
+          <p style={{ margin: 0 }}>No documents have been shared yet. Your advisor will upload documents here as your trip is finalized.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TravelCircleTab({ tripId, tripMembers, isPrimaryClient, canManageTravelCircle, onInviteCompanion, onRemoveCompanion }: { tripId: string; tripMembers: TripMemberRow[]; isPrimaryClient: boolean; canManageTravelCircle: boolean; onInviteCompanion: (f: FormData) => Promise<void>; onRemoveCompanion: (f: FormData) => Promise<void> }) {
+  const owners = tripMembers.filter((m) => m.role === "owner");
+  const companions = tripMembers.filter((m) => m.role !== "owner");
+
+  return (
+    <div className="stack">
+      <SectionCard eyebrow="Travel Companions" title="Your Travel Circle" subtitle="People who have shared access to this trip. Personal profile details and private documents remain protected.">
+        {tripMembers.length === 0 ? (
+          <p style={{ margin: 0, color: "#667085" }}>No Travel Companions added yet.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {[...owners, ...companions].map((member) => (
+              <div key={member.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px", borderRadius: 14, border: "1px solid #eef2f5", background: member.role === "owner" ? "#f0fdf4" : "#fbfdfe" }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 800 }}>{member.display_name}</p>
+                  <p style={{ margin: "3px 0 0", color: "#667085", fontSize: 13 }}>
+                    {member.email ?? "Email not provided"}
+                    {member.invite_status === "invited" ? " · Invitation pending" : ""}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <TravelCompanionBadge role={member.role} />
+                  {canManageTravelCircle && member.role !== "owner" && (
+                    <form action={onRemoveCompanion}>
+                      <input type="hidden" name="trip_id" value={tripId} />
+                      <input type="hidden" name="member_id" value={member.id} />
+                      <button type="submit" className="btn" style={{ padding: "6px 10px", fontSize: 12, background: "#fff", color: "#b42318", border: "1px solid #fecaca" }}>Remove</button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {canManageTravelCircle && (
+          <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 15 }}>Invite a Travel Companion</p>
+              <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>If they already have a Cozy Concierge account, access is connected right away. Otherwise the invite is saved as pending.</p>
+            </div>
+            <form action={onInviteCompanion} className="stack">
+              <input type="hidden" name="trip_id" value={tripId} />
+              <div className="grid grid-3">
+                <label className="stack-sm">
+                  <span className="label">Name</span>
+                  <input className="input" name="invite_name" placeholder="e.g. Pat Brown" />
+                </label>
+                <label className="stack-sm">
+                  <span className="label">Email</span>
+                  <input className="input" name="invite_email" type="email" required placeholder="traveler@example.com" />
+                </label>
+                <label className="stack-sm">
+                  <span className="label">Access Level</span>
+                  <select className="select" name="role" defaultValue="viewer">
+                    <option value="viewer">Viewer — read only</option>
+                    <option value="contributor">Contributor — can participate</option>
+                  </select>
+                </label>
+              </div>
+              <div>
+                <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Add Travel Companion</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {!canManageTravelCircle && (
+          <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>Only the lead traveler or your advisor can manage Travel Companions for this trip.</p>
+        )}
+      </SectionCard>
+
+      <SectionCard eyebrow="Concierge Messages" title="Send a Message" subtitle="Choose whether your message stays private or is shared with your Travel Circle.">
+        <div className="grid grid-2">
+          <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
+            <p style={{ margin: 0, fontWeight: 800 }}>Private Message</p>
+            <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.6 }}>For payments, personal details, documents, or anything between you and your advisor.</p>
+            <Link href={`/messages?tripId=${tripId}`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Message Advisor</Link>
+          </div>
+          <div className="card stack" style={{ border: "1px solid #fed7aa" }}>
+            <p style={{ margin: 0, fontWeight: 800 }}>Group Message</p>
+            <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.6 }}>For shared questions, meeting points, or anything your Travel Circle should also see.</p>
+            <Link href={`/messages?tripId=${tripId}&scope=group`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Message Travel Circle</Link>
+          </div>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+function HelpTab({ tripId, tripName, advisorEmail, agencyWebsite }: { tripId: string; tripName: string; advisorEmail: string; agencyWebsite: string }) {
+  const emailSubject = encodeURIComponent(`Question about ${tripName}`);
+  const emailBody = encodeURIComponent(`Hi Jeremy,\n\nI have a question about my trip: ${tripName}\n\n`);
+
+  return (
+    <div className="stack">
+      <SectionCard eyebrow="Your Advisor" title="Contact Information">
+        <div className="grid grid-2">
+          <InfoItem label="Advisor" value="Jeremy Brown" />
+          <InfoItem label="Agency" value="Cozy Adventure Vacations" />
+          <div style={{ padding: "12px", border: "1px solid #eef2f5", borderRadius: 12, background: "#fbfdfe" }}>
+            <span className="label">Email</span>
+            <p style={{ margin: "6px 0 0" }}>
+              <a href={`mailto:${advisorEmail}?subject=${emailSubject}&body=${emailBody}`} style={{ color: "var(--accent-dark)", fontWeight: 700, overflowWrap: "anywhere" }}>{advisorEmail}</a>
+            </p>
+          </div>
+          <div style={{ padding: "12px", border: "1px solid #eef2f5", borderRadius: 12, background: "#fbfdfe" }}>
+            <span className="label">Website</span>
+            <p style={{ margin: "6px 0 0" }}>
+              <a href={agencyWebsite} target="_blank" rel="noreferrer" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>CozyAdventureVacations.com</a>
+            </p>
+          </div>
+        </div>
+        <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+          <span className="label">In-Trip Support</span>
+          <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6, fontSize: 14 }}>For urgent supplier issues, contact the supplier first when possible, then notify your advisor so Cozy Adventure Vacations can help support next steps.</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard eyebrow="Ask Cozy" title="General Travel Questions">
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6, fontSize: 14 }}>Ask Cozy can help with packing tips, destination info, pre-travel prep, and general travel questions. For anything specific to your booking, use Concierge Messages.</p>
+        <div>
+          <Link href={`/ask-cozy?tripId=${tripId}`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Ask Cozy About This Trip</Link>
+        </div>
+      </SectionCard>
+
+      <SectionCard eyebrow="Before You Go" title="Questions Before You Travel?" subtitle="A quick message now can prevent a headache later.">
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6, fontSize: 14 }}>If names, dates, documents, payment details, or travel components do not look right, please contact your advisor before your departure date.</p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/messages" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Open Message Center</Link>
+          <Link href="/trips" className="btn btn-outline" style={{ fontSize: 13, padding: "9px 16px" }}>Back to My Trips</Link>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ─── Main client component ────────────────────────────────────────────────────
+
+export function TripDetailClient({
+  trip,
+  proposal,
+  clientNote,
+  clientReminder,
+  tripMembers,
+  isPrimaryClient,
+  canManageTravelCircle,
+  documents,
+  clientDocuments,
+  timelineGroups,
+  hotel,
+  flight,
+  cruise,
+  transfer,
+  activity,
+  insurance,
+  advisorEmail,
+  agencyWebsite,
+  onInviteCompanion,
+  onRemoveCompanion,
+}: TripDetailClientProps) {
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const activeLabel = TABS.find((t) => t.id === activeTab)?.label ?? "Overview";
+
+  return (
+    <div className="stack">
+      {/* Trip header */}
+      <div className="card stack" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 70%)", border: "1px solid #e6f0f2" }}>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Cozy Concierge</p>
+        <h1 style={{ margin: "4px 0 0", fontSize: 28 }}>{trip.trip_name ?? "Your Trip"}</h1>
+        <p style={{ margin: "4px 0 0", color: "#667085" }}>{trip.destinations ?? "Your travel details are ready when you are."}</p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+          <StatusBadge status={trip.trip_status} />
+          <span style={{ color: "#667085", fontSize: 14 }}>{fmtDate(trip.departure_date, "TBD")} → {fmtDate(trip.return_date, "TBD")}</span>
+        </div>
+      </div>
+
+      {/* Quick action bar */}
+      <div className="card" style={{ border: "1px solid #e6f0f2", padding: "14px 20px" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Link href={`/trips/${trip.id}/documents`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Documents</Link>
+          <Link href="/messages" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Messages</Link>
+          <Link href={`/trips/${trip.id}/request-payment`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Request Payment Link</Link>
+          <Link href={`/ask-cozy?tripId=${trip.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Ask Cozy</Link>
+          <Link href="/trips" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>← My Trips</Link>
+        </div>
+      </div>
+
+      {/* Tab bar — desktop */}
+      <div style={{ display: "flex", gap: 4, borderBottom: "2px solid #e6f0f2", overflowX: "auto" }} className="desktop-tabs">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              border: "none",
+              background: "none",
+              cursor: "pointer",
+              padding: "10px 18px",
+              fontWeight: activeTab === tab.id ? 800 : 600,
+              fontSize: 14,
+              color: activeTab === tab.id ? "var(--accent-dark)" : "#5e7e8f",
+              borderBottom: activeTab === tab.id ? "2px solid var(--accent-dark)" : "2px solid transparent",
+              marginBottom: -2,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab bar — mobile dropdown */}
+      <div className="mobile-tabs" style={{ display: "none" }}>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          style={{ width: "100%", padding: "12px 16px", background: "#f7fbfc", border: "1px solid #e6f0f2", borderRadius: 12, fontWeight: 700, color: "var(--accent-dark)", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", fontSize: 14 }}
+        >
+          <span>{activeLabel}</span>
+          <span>{mobileMenuOpen ? "▲" : "▼"}</span>
+        </button>
+        {mobileMenuOpen && (
+          <div style={{ border: "1px solid #e6f0f2", borderRadius: 12, background: "#fff", overflow: "hidden", marginTop: 4 }}>
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }}
+                style={{ width: "100%", padding: "12px 16px", background: activeTab === tab.id ? "#f0f7f8" : "#fff", border: "none", borderBottom: "1px solid #f0f5f8", fontWeight: activeTab === tab.id ? 800 : 600, color: activeTab === tab.id ? "var(--accent-dark)" : "#374151", cursor: "pointer", textAlign: "left", fontSize: 14 }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .desktop-tabs { display: none !important; }
+          .mobile-tabs { display: block !important; }
+        }
+      `}</style>
+
+      {/* Tab content */}
+      {activeTab === "overview" && (
+        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} />
+      )}
+      {activeTab === "itinerary" && (
+        <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} activity={activity} insurance={insurance} />
+      )}
+      {activeTab === "documents" && (
+        <DocumentsTab tripId={trip.id} documents={documents} clientDocuments={clientDocuments} />
+      )}
+      {activeTab === "travel-circle" && (
+        <TravelCircleTab tripId={trip.id} tripMembers={tripMembers} isPrimaryClient={isPrimaryClient} canManageTravelCircle={canManageTravelCircle} onInviteCompanion={onInviteCompanion} onRemoveCompanion={onRemoveCompanion} />
+      )}
+      {activeTab === "help" && (
+        <HelpTab tripId={trip.id} tripName={trip.trip_name ?? "Your Trip"} advisorEmail={advisorEmail} agencyWebsite={agencyWebsite} />
+      )}
+    </div>
+  );
+}
