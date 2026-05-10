@@ -1442,6 +1442,10 @@ async function updateTrip(formData: FormData) {
     balance_due: toMoneyNumber(formData.get("balance_due")),
     final_payment_due_date:
       String(formData.get("final_payment_due_date") ?? "").trim() || null,
+    deposit_amount: toMoneyNumber(formData.get("deposit_amount")),
+    deposit_due_date:
+      String(formData.get("deposit_due_date") ?? "").trim() || null,
+    deposit_paid: formData.get("deposit_paid") === "true",
   };
 
   if (!tripUpdates.trip_name) throw new Error("Trip name is required.");
@@ -3800,6 +3804,40 @@ export default async function AdminTripEditorPage({
                 defaultValue={trip.final_payment_due_date ?? ""}
               />
             </label>
+
+              <label>
+                <span className="label">Deposit Amount</span>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  name="deposit_amount"
+                  defaultValue={trip.deposit_amount ?? 0}
+                />
+              </label>
+
+              <label>
+                <span className="label">Deposit Due Date</span>
+                <input
+                  className="input"
+                  type="date"
+                  name="deposit_due_date"
+                  defaultValue={trip.deposit_due_date ?? ""}
+                />
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="checkbox"
+                  name="deposit_paid"
+                  value="true"
+                  defaultChecked={trip.deposit_paid === true}
+                />
+                <span className="label" style={{ margin: 0 }}>
+                  Deposit Paid
+                </span>
+              </label>
           </div>
         
 

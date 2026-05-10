@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { PaymentTimeline } from "./payment-timeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,10 @@ type TripRow = {
   balance_due: number | null;
   final_payment_due_date: string | null;
   occasion?: string | null;
+  total_paid: number | null;
+deposit_amount: number | null;
+deposit_due_date: string | null;
+deposit_paid: boolean | null;
 };
 
 type ProposalRow = {
@@ -334,20 +339,16 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder }: { trip: Tri
         </div>
       )}
 
-      <div className="grid grid-3">
-        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
-          <span className="label">Balance Due</span>
-          <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800, color: (trip.balance_due ?? 0) > 0 ? "#6b3a08" : "var(--accent-dark)" }}>{fmtMoney(trip.balance_due)}</p>
-        </div>
-        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
-          <span className="label">Final Payment Due</span>
-          <p style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 700 }}>{fmtDate(trip.final_payment_due_date, "Not set")}</p>
-        </div>
-        <div className="card" style={{ border: "1px solid #e6f0f2" }}>
-          <span className="label">Trip Status</span>
-          <p style={{ marginTop: 8 }}><StatusBadge status={trip.trip_status} /></p>
-        </div>
-      </div>
+      <PaymentTimeline
+  totalPaid={trip.total_paid ?? null}
+  balanceDue={trip.balance_due ?? null}
+  depositAmount={trip.deposit_amount ?? null}
+  depositDueDate={trip.deposit_due_date ?? null}
+  depositPaid={trip.deposit_paid ?? null}
+  finalPaymentDueDate={trip.final_payment_due_date ?? null}
+  departureDate={trip.departure_date ?? null}
+  tripStatus={trip.trip_status ?? null}
+/>
 
       <SectionCard eyebrow="Overview" title="Trip Details">
         <div className="grid grid-2">
