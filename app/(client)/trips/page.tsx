@@ -19,6 +19,9 @@ type TripSummaryRow = {
   destinations: string | null;
   trip_status: string | null;
   balance_due: number | null;
+  deposit_amount: number | null;
+  deposit_due_date: string | null;
+  deposit_paid: boolean | null;
   final_payment_due_date: string | null;
 };
 
@@ -40,6 +43,9 @@ type SharedTripRow = {
         return_date: string | null;
         trip_status: string | null;
         balance_due: number | null;
+        deposit_amount: number | null;
+        deposit_due_date: string | null;
+        deposit_paid: boolean | null;
         final_payment_due_date: string | null;
       }
     | Array<{
@@ -51,6 +57,9 @@ type SharedTripRow = {
         return_date: string | null;
         trip_status: string | null;
         balance_due: number | null;
+        deposit_amount: number | null;
+        deposit_due_date: string | null;
+        deposit_paid: boolean | null;
         final_payment_due_date: string | null;
       }>
     | null;
@@ -64,6 +73,9 @@ type DisplayTrip = {
   return_date: string | null;
   trip_status: string | null;
   balance_due: number | null;
+  deposit_amount: number | null;
+  deposit_due_date: string | null;
+  deposit_paid: boolean | null;
   final_payment_due_date: string | null;
   accessLabel: string;
   accessType: "primary" | "shared";
@@ -128,6 +140,52 @@ function getSharedTrip(member: SharedTripRow) {
   }
 
   return member.trips ?? null;
+}
+
+function isPastDue(value: string | null | undefined) {
+  if (!value) return false;
+
+  const date = new Date(`${value}T23:59:59`);
+  const today = new Date();
+
+  return !Number.isNaN(date.getTime()) && date.getTime() < today.getTime();
+}
+
+function getPaymentStatus(trip: DisplayTrip) {
+  const balanceDue = Number(trip.balance_due ?? 0);
+  const depositPaid = trip.deposit_paid === true;
+
+  if (balanceDue <= 0) {
+    return {
+      label: "Paid in Full",
+      tone: "good" as const,
+    };
+  }
+
+  if (!depositPaid && trip.deposit_due_date) {
+    return {
+      label: isPastDue(trip.deposit_due_date) ? "Deposit Past Due" : "Deposit Pending",
+      tone: "warning" as const,
+    };
+  }
+
+  if (trip.final_payment_due_date) {
+    return {
+      label: isPastDue(trip.final_payment_due_date) ? "Final Payment Past Due" : "Final Payment Due",
+      tone: "warning" as const,
+    };
+  }
+
+  return {
+    label: "Balance Due",
+    tone: "warning" as const,
+  };
+}
+
+function PaymentStatusBadge({ trip }: { trip: DisplayTrip }) {
+  const paymentStatus = getPaymentStatus(trip);
+
+  return <StatusBadge label={paymentStatus.label} tone={paymentStatus.tone} />;
 }
 
 function StatusBadge({
@@ -217,7 +275,10 @@ function TripCard({ trip }: { trip: DisplayTrip }) {
           </p>
         </div>
 
-        <StatusBadge label={trip.trip_status ?? "draft"} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <StatusBadge label={trip.trip_status ?? "draft"} />
+          <PaymentStatusBadge trip={trip} />
+        </div>
       </div>
 
       <div className="grid grid-2">
@@ -333,7 +394,7 @@ export default async function TripsPage() {
   const { data: ownedTrips, error: ownedTripsError } = await supabase
     .from("client_trip_summaries")
     .select(
-      "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date",
+      "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid",
     )
     .eq("client_account_id", clientAccount.id)
     .order("departure_date", { ascending: true });
@@ -357,7 +418,7 @@ export default async function TripsPage() {
   const { data: sharedTripMembers, error: sharedTripsError } = await supabase
     .from("trip_members" as any)
     .select(
-      "id, trip_id, client_account_id, role, invite_status, can_view_trip, created_at, trips(id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status, balance_due, final_payment_due_date)",
+      "id, trip_id, client_account_id, role, invite_status, can_view_trip, created_at, trips(id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid)",
     )
     .eq("client_account_id", clientAccount.id)
     .eq("invite_status", "active")
@@ -392,6 +453,9 @@ export default async function TripsPage() {
     return_date: trip.return_date,
     trip_status: trip.trip_status,
     balance_due: trip.balance_due,
+    deposit_amount: trip.deposit_amount,
+    deposit_due_date: trip.deposit_due_date,
+    deposit_paid: trip.deposit_paid,
     final_payment_due_date: trip.final_payment_due_date,
     accessType: "primary",
     accessLabel: "Primary Client",
@@ -414,6 +478,9 @@ export default async function TripsPage() {
           return_date: trip.return_date,
           trip_status: trip.trip_status,
           balance_due: trip.balance_due,
+          deposit_amount: trip.deposit_amount,
+          deposit_due_date: trip.deposit_due_date,
+          deposit_paid: trip.deposit_paid,
           final_payment_due_date: trip.final_payment_due_date,
           accessType: "shared",
           accessLabel: getRoleLabel(member.role),

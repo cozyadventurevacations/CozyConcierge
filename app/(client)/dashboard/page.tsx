@@ -23,6 +23,9 @@ type TripRow = {
   destinations: string | null;
   trip_status: string | null;
   balance_due: number | null;
+  deposit_amount: number | null;
+  deposit_due_date: string | null;
+  deposit_paid: boolean | null;
   final_payment_due_date: string | null;
 };
 
@@ -218,6 +221,74 @@ function AdvisorCard({ unreadCount }: { unreadCount: number }) {
   );
 }
 
+function isPastDue(value: string | null | undefined) {
+  if (!value) return false;
+
+  const date = new Date(`${value}T23:59:59`);
+  const today = new Date();
+
+  return !Number.isNaN(date.getTime()) && date.getTime() < today.getTime();
+}
+
+function getPaymentStatus(trip: TripRow) {
+  const balanceDue = Number(trip.balance_due ?? 0);
+  const depositPaid = trip.deposit_paid === true;
+
+  if (balanceDue <= 0) {
+    return {
+      label: "Paid in Full",
+      tone: "success" as const,
+    };
+  }
+
+  if (!depositPaid && trip.deposit_due_date) {
+    return {
+      label: isPastDue(trip.deposit_due_date) ? "Deposit Past Due" : "Deposit Pending",
+      tone: isPastDue(trip.deposit_due_date) ? "danger" as const : "warning" as const,
+    };
+  }
+
+  if (trip.final_payment_due_date) {
+    return {
+      label: isPastDue(trip.final_payment_due_date) ? "Final Payment Past Due" : "Final Payment Due",
+      tone: isPastDue(trip.final_payment_due_date) ? "danger" as const : "warning" as const,
+    };
+  }
+
+  return {
+    label: "Balance Due",
+    tone: "warning" as const,
+  };
+}
+
+function PaymentStatusBadge({ trip }: { trip: TripRow }) {
+  const status = getPaymentStatus(trip);
+
+  const styles = {
+    success: { background: "#ecfdf3", color: "#027a48" },
+    warning: { background: "#fff7ed", color: "#9a3412" },
+    danger: { background: "#fef2f2", color: "#991b1b" },
+  }[status.tone];
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "4px 10px",
+        background: styles.background,
+        color: styles.color,
+        fontWeight: 800,
+        fontSize: 12,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {status.label}
+    </span>
+  );
+}
+
 function TripStatusBadge({ status }: { status: string | null | undefined }) {
   const s = status ?? "draft";
   const colors: Record<string, { bg: string; color: string }> = {
@@ -278,6 +349,7 @@ function TripCard({ trip }: { trip: TripRow }) {
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <TripStatusBadge status={trip.trip_status} />
+        <PaymentStatusBadge trip={trip} />
         {hasBalance && (
           <span
             style={{
@@ -470,7 +542,7 @@ export default async function ClientDashboardPage() {
     supabase
       .from("client_trip_summaries")
       .select(
-        "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date",
+        "trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid",
       )
       .eq("client_account_id", clientAccount.id)
       .order("departure_date", { ascending: true }),
