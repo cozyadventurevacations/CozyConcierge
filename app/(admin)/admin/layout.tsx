@@ -9,28 +9,23 @@ export default async function AdminLayout({
 }) {
   const { supabase } = await requireAdmin();
 
-  const { count: unreadMessageThreads } = await supabase
+  // Badge counts only unread private threads
+  const { count: unreadPrivateThreads } = await supabase
     .from("message_threads")
     .select("id", { count: "exact", head: true })
     .eq("status", "open")
+    .eq("thread_type", "private")
     .gt("admin_unread_count", 0);
 
   const navItems = adminNav.map((item) =>
     item.href === "/admin/messages"
-      ? {
-          ...item,
-          badge: unreadMessageThreads ?? 0,
-        }
+      ? { ...item, badge: unreadPrivateThreads ?? 0 }
       : item,
   );
 
   return (
     <>
-      <AppHeader
-        navItems={navItems}
-        homeHref="/admin/dashboard"
-      />
-
+      <AppHeader navItems={navItems} homeHref="/admin/dashboard" />
       {children}
     </>
   );
