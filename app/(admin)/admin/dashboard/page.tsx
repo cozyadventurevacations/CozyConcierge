@@ -13,6 +13,14 @@ type TripRow = {
   balance_due?: number | null;
 };
 
+type PaymentAttentionTripRow = {
+  id: string;
+  balance_due: number | null;
+  deposit_due_date: string | null;
+  deposit_paid: boolean | null;
+  final_payment_due_date: string | null;
+};
+
 type QuoteRequestRow = {
   id: string;
   full_name: string | null;
@@ -128,6 +136,15 @@ function formatDate(value: string | null | undefined, fallback = "") {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function isPastDue(value: string | null | undefined) {
+  if (!value) return false;
+
+  const date = new Date(`${value}T23:59:59`);
+  const today = new Date();
+
+    return !Number.isNaN(date.getTime()) && date.getTime() < today.getTime();
 }
 
 function formatDateTime(value: string | null | undefined, fallback = "") {
@@ -397,6 +414,7 @@ export default async function AdminDashboardPage() {
   const [
     newQuoteRequestsResult,
     paymentRequestsResult,
+    paymentFollowUpsResult,
     finalPaymentsDueResult,
     departuresResult,
     recentClientDocsResult,
@@ -413,6 +431,10 @@ export default async function AdminDashboardPage() {
   ] = await Promise.all([
     supabase.from("quote_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
     supabase.from("payment_requests").select("id", { count: "exact", head: true }).in("status", ["new", "pending", "sent"]),
+    supabase
+      .from("trips")
+      .select("id, balance_due, deposit_due_date, deposit_paid, final_payment_due_date")
+      .gt("balance_due", 0),
     supabase.from("trips").select("id", { count: "exact", head: true }).gte("final_payment_due_date", todayStr).lte("final_payment_due_date", in7DaysStr),
     supabase.from("trips").select("id", { count: "exact", head: true }).gte("departure_date", todayStr).lte("departure_date", in14DaysStr),
     supabase
@@ -479,6 +501,7 @@ export default async function AdminDashboardPage() {
   ]);
 
   const upcomingCommissions = (upcomingCommissionsResult.data ?? []) as CommissionRow[];
+  const paymentAttentionTrips = (paymentFollowUpsResult.data ?? []) as PaymentAttentionTripRow[];
   const upcomingDepartures = (upcomingDeparturesResult.data ?? []) as TripRow[];
   const recentQuoteRequests = (recentQuoteRequestsResult.data ?? []) as QuoteRequestRow[];
   const upcomingFinalPayments = (upcomingFinalPaymentsResult.data ?? []) as TripRow[];
@@ -490,11 +513,27 @@ export default async function AdminDashboardPage() {
   const upcomingCommissionTotal = upcomingCommissions.reduce((sum, commission) => sum + getOutstandingCommission(commission), 0);
   const upcomingFinalPaymentTotal = upcomingFinalPayments.reduce((sum, trip) => sum + Number(trip.balance_due ?? 0), 0);
 
+  const depositPastDueCount = paymentAttentionTrips.filter(
+    (trip) => trip.deposit_paid !== true && isPastDue(trip.deposit_due_date),
+  ).length;
+
+  const finalPaymentPastDueCount = paymentAttentionTrips.filter(
+    (trip) =>
+      trip.deposit_paid === true &&
+      isPastDue(trip.final_payment_due_date),
+  ).length;
+
+  const paymentAttentionTotalBalance = paymentAttentionTrips.reduce(
+    (sum, trip) => sum + Number(trip.balance_due ?? 0),
+    0,
+  );
+
   const urgentOpsItems =
     Number(unreadMessageThreadsResult.count ?? 0) +
     overdueClientFollowUps.length +
     Number(newQuoteRequestsResult.count ?? 0) +
     Number(paymentRequestsResult.count ?? 0) +
+    paymentAttentionTrips.length +
     Number(finalPaymentsDueResult.count ?? 0);
 
   return (
@@ -531,6 +570,7 @@ export default async function AdminDashboardPage() {
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/admin/messages" className="btn btn-primary">Open Messages</Link>
+            <Link href="/admin/payment-follow-ups" className="btn btn-primary">Payment Follow-Ups</Link>
             <Link href="/admin/trips" className="btn btn-primary">Trips</Link>
             <Link href="/admin/quote-requests" className="btn btn-primary">Requests</Link>
           </div>
@@ -565,6 +605,8 @@ export default async function AdminDashboardPage() {
         <SummaryCard title="Client Messages" value={openMessageThreadsResult.count ?? 0} subtitle={`${unreadMessageThreadsResult.count ?? 0} unread`} href="/admin/messages" />
         <SummaryCard title="New Travel Requests" value={newQuoteRequestsResult.count ?? 0} subtitle="Requests waiting for review" href="/admin/quote-requests" />
         <SummaryCard title="Payment Requests" value={paymentRequestsResult.count ?? 0} subtitle="New, pending, or sent" href="/admin/payment-requests" />
+        <SummaryCard title="Payment Follow-Ups" value={paymentAttentionTrips.length} subtitle={`${formatMoney(paymentAttentionTotalBalance)} outstanding`} href="/admin/payment-follow-ups" />
+        <SummaryCard title="Past Due Payments" value={depositPastDueCount + finalPaymentPastDueCount} subtitle={`${depositPastDueCount} deposit · ${finalPaymentPastDueCount} final`} href="/admin/payment-follow-ups" />
         <SummaryCard title="Open Follow-Ups" value={openClientFollowUpsResult.count ?? 0} subtitle="Client notes still open" href="/admin/clients" />
         <SummaryCard title="Overdue Follow-Ups" value={overdueClientFollowUps.length} subtitle="Follow-ups past due" href="/admin/clients" />
         <SummaryCard title="Trips Departing" value={departuresResult.count ?? 0} subtitle="Next 14 days" href="/admin/trips" />
