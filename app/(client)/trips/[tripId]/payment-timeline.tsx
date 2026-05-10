@@ -84,7 +84,7 @@ function TimelineStep({
     <div
       style={{
         flex: 1,
-        minWidth: 220,
+        minWidth: 0,
         border: `1px solid ${colors.border}`,
         background: colors.background,
         borderRadius: 18,
@@ -108,7 +108,7 @@ function TimelineStep({
           {number}
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <p
             style={{
               margin: 0,
@@ -178,7 +178,7 @@ export function PaymentTimeline({
 
   return (
     <section className="card stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
           <p
             style={{
@@ -210,7 +210,7 @@ export function PaymentTimeline({
           </p>
         </div>
 
-        <div style={{ textAlign: "right" }}>
+        <div>
           <span className="badge">{tripStatus ?? "Trip status pending"}</span>
           <p
             style={{
@@ -224,8 +224,9 @@ export function PaymentTimeline({
         </div>
       </div>
 
+      {/* payment-timeline-steps class enables mobile stacking via globals.css */}
       <div
-        className="row"
+        className="payment-timeline-steps row"
         style={{
           alignItems: "stretch",
           gap: 14,

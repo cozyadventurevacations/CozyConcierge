@@ -41,6 +41,13 @@ select {
   padding: 24px;
 }
 
+/* ── Tighter padding on mobile ── */
+@media (max-width: 640px) {
+  .container {
+    padding: 16px;
+  }
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -48,11 +55,24 @@ select {
   padding: 20px;
 }
 
+/* ── Slightly tighter card padding on small screens ── */
+@media (max-width: 640px) {
+  .card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+}
+
 .grid {
   display: grid;
   gap: 16px;
 }
 
+/* ── Grid breakpoints ──
+   Desktop: 2, 3, 4 columns as specified
+   Tablet (641–900px): grid-2 stays 2, grid-3 becomes 2, grid-4 becomes 2
+   Mobile (≤640px): everything single column
+── */
 .grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -63,6 +83,21 @@ select {
 
 .grid-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stack {
@@ -90,6 +125,12 @@ select {
   margin: 0;
 }
 
+@media (max-width: 640px) {
+  .page-title {
+    font-size: 1.5rem;
+  }
+}
+
 .page-subtitle {
   color: var(--muted);
   margin: 8px 0 0;
@@ -112,6 +153,15 @@ select {
   background: white;
 }
 
+/* ── Larger tap targets on mobile ── */
+@media (max-width: 640px) {
+  .input,
+  .select {
+    padding: 14px;
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
+
 .textarea {
   min-height: 120px;
   resize: vertical;
@@ -127,6 +177,8 @@ select {
   align-items: center;
   justify-content: center;
   text-align: center;
+  /* Minimum tap target size for mobile */
+  min-height: 44px;
 }
 
 .btn-primary {
@@ -176,10 +228,48 @@ select {
   color: var(--muted);
 }
 
-@media (max-width: 900px) {
-  .grid-2,
-  .grid-3,
-  .grid-4 {
-    grid-template-columns: 1fr;
+/* ── Tighter table cells on mobile ── */
+@media (max-width: 640px) {
+  .table th,
+  .table td {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+}
+
+/* ── Payment timeline: stack vertically on mobile ── */
+@media (max-width: 640px) {
+  .payment-timeline-steps {
+    flex-direction: column !important;
+  }
+}
+
+/* ── Header nav: wrap gracefully ── */
+@media (max-width: 640px) {
+  .app-header-inner {
+    gap: 10px;
+  }
+
+  .app-header-nav {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .app-header-nav a {
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+}
+
+/* ── Advisor footer: more compact on mobile ── */
+@media (max-width: 640px) {
+  .advisor-footer {
+    padding: 10px 16px !important;
+    gap: 8px !important;
+  }
+
+  .advisor-footer p {
+    font-size: 13px !important;
   }
 }
