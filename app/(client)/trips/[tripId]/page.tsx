@@ -245,33 +245,42 @@ async function requestTripDeletion(formData: FormData) {
   }
 
   if (trip.deletion_requested_at) {
-    // Cancel the request
-    await supabase
+    const { error } = await supabase
       .from("trips")
       .update({ deletion_requested_at: null, deletion_requested_by: null })
       .eq("id", tripId);
-  } else {
-    // Submit request
-    await supabase
-      .from("trips")
-      .update({
-        deletion_requested_at: new Date().toISOString(),
-        deletion_requested_by: clientAccount.email ?? user.email ?? "client",
-      })
-      .eq("id", tripId);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/trips/${tripId}`);
+    redirect(`/trips/${tripId}?deletion=cancelled`);
   }
 
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      deletion_requested_at: new Date().toISOString(),
+      deletion_requested_by: clientAccount.email ?? user.email ?? "client",
+    })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
   revalidatePath(`/trips/${tripId}`);
+  redirect(`/trips/${tripId}?deletion=requested`);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function TripDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tripId: string }>;
+  searchParams: Promise<{ deletion?: string }>;
 }) {
   const { tripId } = await params;
+  const { deletion } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
@@ -522,6 +531,23 @@ export default async function TripDetailPage({
       title={trip.trip_name ?? "Trip Detail"}
       subtitle="Your travel details, all in one place."
     >
+      {deletion === "requested" && (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Deletion request sent.</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
+            Your advisor will review this request before anything is removed.
+          </p>
+        </div>
+      )}
+
+      {deletion === "cancelled" && (
+        <div className="card" style={{ border: "1px solid #e6f0f2", background: "#f7fbfc", color: "#475569" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Deletion request cancelled.</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
+            This trip will remain active in your portal.
+          </p>
+        </div>
+      )}
       {/* Deletion request status banner — primary client only */}
       {isPrimaryClient && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, border: deletionRequested ? "1px solid #fed7aa" : "1px solid #e6f0f2", background: deletionRequested ? "#fff7ed" : "#f7fbfc" }}>
