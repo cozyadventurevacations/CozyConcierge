@@ -216,6 +216,54 @@ async function removeTravelCompanion(formData: FormData) {
   revalidatePath(`/trips/${tripId}`);
 }
 
+async function requestTripDeletion(formData: FormData) {
+  "use server";
+
+  const supabase = await createServerSupabaseClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) redirect("/login");
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id, deletion_requested_at")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+
+  const { data: clientAccount } = await supabase
+    .from("client_accounts")
+    .select("id, email")
+    .ilike("email", user.email?.trim().toLowerCase() ?? "")
+    .maybeSingle();
+
+  if (!clientAccount || trip.client_account_id !== clientAccount.id) {
+    throw new Error("Only the primary traveler can request trip deletion.");
+  }
+
+  if (trip.deletion_requested_at) {
+    // Cancel the request
+    await supabase
+      .from("trips")
+      .update({ deletion_requested_at: null, deletion_requested_by: null })
+      .eq("id", tripId);
+  } else {
+    // Submit request
+    await supabase
+      .from("trips")
+      .update({
+        deletion_requested_at: new Date().toISOString(),
+        deletion_requested_by: clientAccount.email ?? user.email ?? "client",
+      })
+      .eq("id", tripId);
+  }
+
+  revalidatePath(`/trips/${tripId}`);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function TripDetailPage({
@@ -230,7 +278,6 @@ export default async function TripDetailPage({
   const advisorEmail = "jeremyb@cozyadventurevacations.com";
   const agencyWebsite = "https://www.cozyadventurevacations.com";
 
-  // Load trip
   const { data: trip, error: tripError } = await supabase
     .from("trips")
     .select("*")
@@ -241,6 +288,17 @@ export default async function TripDetailPage({
     return (
       <PageShell title="Trip Detail" subtitle="We could not load this trip.">
         <div className="card"><p>Trip not found or access denied.</p></div>
+      </PageShell>
+    );
+  }
+
+  // Block access to soft-deleted trips
+  if (trip.deleted_at) {
+    return (
+      <PageShell title="Trip Not Available" subtitle="This trip has been removed.">
+        <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
+          <p style={{ margin: 0 }}>This trip is no longer available. If you believe this is an error, please contact your advisor.</p>
+        </div>
       </PageShell>
     );
   }
@@ -268,7 +326,6 @@ export default async function TripDetailPage({
     canManageTravelCircle = memberAccess.can_manage_companions === true;
   }
 
-  // Load all data in parallel
   const [
     proposalResult,
     clientNoteResult,
@@ -295,7 +352,6 @@ export default async function TripDetailPage({
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
   ]);
 
-  // Load component details in parallel
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, activityDetails, insuranceDetails] = await Promise.all([
     airResult.data ? supabase.from("air_components").select("*").eq("component_id", airResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     hotelResult.data ? supabase.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
@@ -305,7 +361,6 @@ export default async function TripDetailPage({
     insuranceResult.data ? supabase.from("insurance_components").select("*").eq("component_id", insuranceResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
-  // Load flight segments
   let outboundSegment: any = null;
   let returnSegment: any = null;
   if (airResult.data) {
@@ -314,42 +369,33 @@ export default async function TripDetailPage({
       .select("*")
       .eq("air_component_id", airResult.data.id)
       .order("segment_order", { ascending: true });
-
     outboundSegment = segments?.find((s: any) => s.direction === "outbound") ?? null;
     returnSegment = segments?.find((s: any) => s.direction === "return") ?? null;
   }
 
-  // Load client documents with signed URLs
   const clientDocumentsResult = await supabase
     .from("client_documents")
     .select("id, document_type, title, file_name, uploaded_at, notes, storage_path")
     .eq("client_account_id", clientAccount.id)
     .order("uploaded_at", { ascending: false });
 
-  // Generate signed URLs for trip documents
   const tripDocs = (tripDocumentsResult.data ?? []) as any[];
   const documentsWithUrls = await Promise.all(
     tripDocs.map(async (doc: any) => {
-      const { data, error } = await supabaseAdmin.storage
-        .from("trip-documents")
-        .createSignedUrl(doc.storage_path, 3600);
+      const { data, error } = await supabaseAdmin.storage.from("trip-documents").createSignedUrl(doc.storage_path, 3600);
       return { ...doc, signedUrl: error ? null : data?.signedUrl ?? null };
     }),
   );
 
-  // Generate signed URLs for client documents
   const clientDocs = (clientDocumentsResult.data ?? []) as any[];
   const clientDocsWithUrls = await Promise.all(
     clientDocs.map(async (doc: any) => {
       if (!doc.storage_path) return { ...doc, signedUrl: null };
-      const { data, error } = await supabaseAdmin.storage
-        .from("client-documents")
-        .createSignedUrl(doc.storage_path, 3600);
+      const { data, error } = await supabaseAdmin.storage.from("client-documents").createSignedUrl(doc.storage_path, 3600);
       return { ...doc, signedUrl: error ? null : data?.signedUrl ?? null };
     }),
   );
 
-  // Build timeline
   type TimelineEvent = { dateValue: string; icon: string; title: string; details: string };
   const rawEvents: (TimelineEvent | null)[] = [
     hotelDetails.data?.check_in_date ? { dateValue: hotelDetails.data.check_in_date, icon: "🏨", title: "Hotel Check-in", details: hotelDetails.data.hotel_name ?? "Hotel stay begins" } : null,
@@ -379,7 +425,6 @@ export default async function TripDetailPage({
     return groups;
   }, []);
 
-  // Build trip members list
   const rawMembers = (tripMembersResult.data ?? []) as any[];
   const tripMembers = rawMembers
     .filter((m) => m.invite_status === "active" || m.invite_status === "invited")
@@ -389,75 +434,52 @@ export default async function TripDetailPage({
         ? `${account.first_name ?? ""} ${account.last_name ?? ""}`.trim() || account.email
         : m.invite_name || m.invite_email || "Invited Companion";
       return {
-        id: m.id,
-        invite_email: m.invite_email,
-        invite_name: m.invite_name,
-        role: m.role,
-        invite_status: m.invite_status,
-        display_name: name,
+        id: m.id, invite_email: m.invite_email, invite_name: m.invite_name,
+        role: m.role, invite_status: m.invite_status, display_name: name,
         email: account?.email ?? m.invite_email ?? null,
       };
     });
 
-  // Shape component data
   const hotel = hotelResult.data && hotelDetails.data ? {
-    name: hotelDetails.data.hotel_name ?? null,
-    address: hotelDetails.data.hotel_address ?? null,
-    stars: hotelDetails.data.hotel_star_rating ?? null,
-    checkIn: hotelDetails.data.check_in_date ?? null,
-    checkOut: hotelDetails.data.check_out_date ?? null,
-    roomCategory: hotelDetails.data.room_category ?? null,
-    roomDescription: hotelDetails.data.room_description ?? null,
-    hotelDescription: hotelDetails.data.hotel_description ?? null,
-    confirmationNumber: hotelResult.data.confirmation_number ?? null,
-    nightlyRate: hotelDetails.data.nightly_rate ?? null,
-    totalPrice: hotelResult.data.total_price ?? null,
-    bookingStatus: hotelResult.data.booking_status ?? null,
+    name: hotelDetails.data.hotel_name ?? null, address: hotelDetails.data.hotel_address ?? null,
+    stars: hotelDetails.data.hotel_star_rating ?? null, checkIn: hotelDetails.data.check_in_date ?? null,
+    checkOut: hotelDetails.data.check_out_date ?? null, roomCategory: hotelDetails.data.room_category ?? null,
+    roomDescription: hotelDetails.data.room_description ?? null, hotelDescription: hotelDetails.data.hotel_description ?? null,
+    confirmationNumber: hotelResult.data.confirmation_number ?? null, nightlyRate: hotelDetails.data.nightly_rate ?? null,
+    totalPrice: hotelResult.data.total_price ?? null, bookingStatus: hotelResult.data.booking_status ?? null,
     supplier: hotelResult.data.supplier_name ?? null,
   } : null;
 
   const flight = airResult.data && airDetails.data ? {
     flightType: airDetails.data.flight_type ?? null,
     supplier: airResult.data.supplier_name ?? outboundSegment?.carrier ?? null,
-    travelerCount: airDetails.data.traveler_count ?? null,
-    rateClass: airDetails.data.rate_class ?? null,
-    airlineLocator: airDetails.data.airline_locator ?? null,
-    confirmationNumber: airResult.data.confirmation_number ?? null,
-    totalPrice: airResult.data.total_price ?? null,
-    bookingStatus: airResult.data.booking_status ?? null,
+    travelerCount: airDetails.data.traveler_count ?? null, rateClass: airDetails.data.rate_class ?? null,
+    airlineLocator: airDetails.data.airline_locator ?? null, confirmationNumber: airResult.data.confirmation_number ?? null,
+    totalPrice: airResult.data.total_price ?? null, bookingStatus: airResult.data.booking_status ?? null,
     outbound: outboundSegment ? {
       route: `${outboundSegment.departure_airport_code ?? "?"} → ${outboundSegment.destination_airport_code ?? "?"}`,
       flight: `${outboundSegment.carrier ?? ""} ${outboundSegment.flight_number ?? ""}`.trim() || "Not provided",
       departure: fmtDateTime(outboundSegment.departure_datetime) ?? "Not provided",
       arrival: fmtDateTime(outboundSegment.arrival_datetime) ?? "Not provided",
-      cabinClass: outboundSegment.cabin_class ?? null,
-      seat: outboundSegment.seat_assignment ?? null,
+      cabinClass: outboundSegment.cabin_class ?? null, seat: outboundSegment.seat_assignment ?? null,
     } : null,
     returnFlight: returnSegment ? {
       route: `${returnSegment.departure_airport_code ?? "?"} → ${returnSegment.destination_airport_code ?? "?"}`,
       flight: `${returnSegment.carrier ?? ""} ${returnSegment.flight_number ?? ""}`.trim() || "Not provided",
       departure: fmtDateTime(returnSegment.departure_datetime) ?? "Not provided",
       arrival: fmtDateTime(returnSegment.arrival_datetime) ?? "Not provided",
-      cabinClass: returnSegment.cabin_class ?? null,
-      seat: returnSegment.seat_assignment ?? null,
+      cabinClass: returnSegment.cabin_class ?? null, seat: returnSegment.seat_assignment ?? null,
     } : null,
   } : null;
 
   const cruise = cruiseResult.data && cruiseDetails.data ? {
-    cruiseLine: cruiseDetails.data.cruise_line ?? null,
-    shipName: cruiseDetails.data.ship_name ?? null,
-    sailingDate: cruiseDetails.data.sailing_date ?? null,
-    returnDate: cruiseDetails.data.return_date ?? null,
-    departurePort: cruiseDetails.data.departure_port ?? null,
-    arrivalPort: cruiseDetails.data.arrival_port ?? null,
-    cabinCategory: cruiseDetails.data.cabin_category ?? null,
-    cabinNumber: cruiseDetails.data.cabin_number ?? null,
-    diningSeating: cruiseDetails.data.dining_seating ?? null,
-    description: cruiseDetails.data.cruise_description ?? null,
-    confirmationNumber: cruiseResult.data.confirmation_number ?? null,
-    totalPrice: cruiseResult.data.total_price ?? null,
-    bookingStatus: cruiseResult.data.booking_status ?? null,
-    supplier: cruiseResult.data.supplier_name ?? null,
+    cruiseLine: cruiseDetails.data.cruise_line ?? null, shipName: cruiseDetails.data.ship_name ?? null,
+    sailingDate: cruiseDetails.data.sailing_date ?? null, returnDate: cruiseDetails.data.return_date ?? null,
+    departurePort: cruiseDetails.data.departure_port ?? null, arrivalPort: cruiseDetails.data.arrival_port ?? null,
+    cabinCategory: cruiseDetails.data.cabin_category ?? null, cabinNumber: cruiseDetails.data.cabin_number ?? null,
+    diningSeating: cruiseDetails.data.dining_seating ?? null, description: cruiseDetails.data.cruise_description ?? null,
+    confirmationNumber: cruiseResult.data.confirmation_number ?? null, totalPrice: cruiseResult.data.total_price ?? null,
+    bookingStatus: cruiseResult.data.booking_status ?? null, supplier: cruiseResult.data.supplier_name ?? null,
   } : null;
 
   const transfer = transferResult.data && transferDetails.data ? {
@@ -474,20 +496,15 @@ export default async function TripDetailPage({
   } : null;
 
   const activity = activityResult.data && activityDetails.data ? {
-    name: activityDetails.data.activity_name ?? null,
-    supplier: activityResult.data.supplier_name ?? null,
-    datetime: activityDetails.data.activity_datetime ?? null,
-    location: activityDetails.data.location ?? null,
-    participantCount: activityDetails.data.participant_count ?? null,
-    notes: activityDetails.data.activity_notes ?? null,
+    name: activityDetails.data.activity_name ?? null, supplier: activityResult.data.supplier_name ?? null,
+    datetime: activityDetails.data.activity_datetime ?? null, location: activityDetails.data.location ?? null,
+    participantCount: activityDetails.data.participant_count ?? null, notes: activityDetails.data.activity_notes ?? null,
     confirmationNumber: activityResult.data.confirmation_number ?? null,
-    totalPrice: activityResult.data.total_price ?? null,
-    bookingStatus: activityResult.data.booking_status ?? null,
+    totalPrice: activityResult.data.total_price ?? null, bookingStatus: activityResult.data.booking_status ?? null,
   } : null;
 
   const insurance = insuranceResult.data && insuranceDetails.data ? {
-    provider: insuranceDetails.data.provider_name ?? null,
-    planName: insuranceDetails.data.plan_name ?? null,
+    provider: insuranceDetails.data.provider_name ?? null, planName: insuranceDetails.data.plan_name ?? null,
     coverageStart: insuranceDetails.data.coverage_start_date ?? null,
     coverageEnd: insuranceDetails.data.coverage_end_date ?? null,
     travelersCount: insuranceDetails.data.insured_traveler_count ?? null,
@@ -498,11 +515,51 @@ export default async function TripDetailPage({
     bookingStatus: insuranceResult.data.booking_status ?? null,
   } : null;
 
+  const deletionRequested = Boolean(trip.deletion_requested_at);
+
   return (
     <PageShell
       title={trip.trip_name ?? "Trip Detail"}
       subtitle="Your travel details, all in one place."
     >
+      {/* Deletion request status banner — primary client only */}
+      {isPrimaryClient && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, border: deletionRequested ? "1px solid #fed7aa" : "1px solid #e6f0f2", background: deletionRequested ? "#fff7ed" : "#f7fbfc" }}>
+          <div>
+            {deletionRequested ? (
+              <>
+                <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>⏳ Deletion Request Pending</p>
+                <p style={{ margin: "3px 0 0", fontSize: 13, color: "#9a3412", lineHeight: 1.5 }}>
+                  Your advisor has been notified. You can cancel this request if you change your mind.
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0, fontWeight: 700, color: "#667085", fontSize: 13 }}>Need to remove this trip?</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8", lineHeight: 1.4 }}>
+                  Submitting a request will notify your advisor who will review and confirm the deletion.
+                </p>
+              </>
+            )}
+          </div>
+          <form action={requestTripDeletion}>
+            <input type="hidden" name="trip_id" value={trip.id} />
+            <button
+              type="submit"
+              className="btn btn-outline"
+              style={{
+                fontSize: 13,
+                padding: "8px 14px",
+                color: deletionRequested ? "#9a3412" : "#667085",
+                borderColor: deletionRequested ? "#fed7aa" : "#e6f0f2",
+              }}
+            >
+              {deletionRequested ? "Cancel Deletion Request" : "Request Trip Deletion"}
+            </button>
+          </form>
+        </div>
+      )}
+
       <TripDetailClient
         trip={trip}
         proposal={proposalResult.data ?? null}

@@ -97,6 +97,141 @@ function getPreferredName(client: ClientAccountRow) {
   );
 }
 
+function getDaysUntilDeparture(departureDate: string | null | undefined): number | null {
+  if (!departureDate) return null;
+  const [year, month, day] = departureDate.split("-").map(Number);
+  const departure = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.ceil((departure.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return diff;
+}
+
+// ─── Countdown Banner ─────────────────────────────────────────────────────────
+
+function TripCountdownBanner({ trip }: { trip: TripRow }) {
+  const days = getDaysUntilDeparture(trip.departure_date);
+
+  if (days === null || days < 0 || days > 365) return null;
+
+  const isToday = days === 0;
+  const isTomorrow = days === 1;
+  const isVeryClose = days <= 7;
+  const isClose = days <= 30;
+
+  let emoji = "✈️";
+  let headline = "";
+  let subline = "";
+  let bgFrom = "#f0f7f8";
+  let bgTo = "#ffffff";
+  let borderColor = "#e6f0f2";
+  let accentColor = "var(--accent-dark)";
+  let numberColor = "var(--accent-dark)";
+
+  if (isToday) {
+    emoji = "🎉";
+    headline = "Today is the day!";
+    subline = `Your ${trip.trip_name ?? "adventure"} begins today. Safe travels!`;
+    bgFrom = "#f0fdf4";
+    bgTo = "#ffffff";
+    borderColor = "#bbf7d0";
+    accentColor = "#027a48";
+    numberColor = "#027a48";
+  } else if (isTomorrow) {
+    emoji = "🧳";
+    headline = "Departure is tomorrow!";
+    subline = `Time to pack — ${trip.trip_name ?? "your trip"} starts tomorrow.`;
+    bgFrom = "#f0fdf4";
+    bgTo = "#ffffff";
+    borderColor = "#bbf7d0";
+    accentColor = "#027a48";
+    numberColor = "#027a48";
+  } else if (isVeryClose) {
+    emoji = "🌟";
+    headline = `${days} days to go!`;
+    subline = `${trip.trip_name ?? "Your adventure"} is almost here${trip.destinations ? ` — ${trip.destinations}` : ""}.`;
+    bgFrom = "#fffbeb";
+    bgTo = "#ffffff";
+    borderColor = "#fde68a";
+    accentColor = "#92400e";
+    numberColor = "#92400e";
+  } else if (isClose) {
+    emoji = "📅";
+    headline = `${days} days until departure`;
+    subline = `${trip.trip_name ?? "Your trip"}${trip.destinations ? ` to ${trip.destinations}` : ""} is coming up soon.`;
+    bgFrom = "#eff6ff";
+    bgTo = "#ffffff";
+    borderColor = "#bfdbfe";
+    accentColor = "#1d4ed8";
+    numberColor = "#1d4ed8";
+  } else {
+    emoji = "✈️";
+    headline = `${days} days until departure`;
+    subline = `${trip.trip_name ?? "Your trip"}${trip.destinations ? ` to ${trip.destinations}` : ""}${trip.departure_date ? ` · ${formatDateShort(trip.departure_date)}` : ""}.`;
+    bgFrom = "#f7fbfc";
+    bgTo = "#ffffff";
+    borderColor = "#e6f0f2";
+    accentColor = "var(--accent-dark)";
+    numberColor = "var(--accent-dark)";
+  }
+
+  return (
+    <div
+      style={{
+        borderRadius: 20,
+        border: `1px solid ${borderColor}`,
+        background: `linear-gradient(135deg, ${bgFrom} 0%, ${bgTo} 70%)`,
+        padding: 20,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 16,
+        flexWrap: "wrap",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        {/* Big number */}
+        {!isToday && !isTomorrow && (
+          <div style={{ textAlign: "center", flexShrink: 0 }}>
+            <div style={{ fontSize: "3.5rem", fontWeight: 900, lineHeight: 1, color: numberColor }}>
+              {days}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: numberColor, opacity: 0.7 }}>
+              {days === 1 ? "day" : "days"}
+            </div>
+          </div>
+        )}
+
+        {isToday || isTomorrow ? (
+          <span style={{ fontSize: 40 }} aria-hidden>{emoji}</span>
+        ) : null}
+
+        {/* Text */}
+        <div>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: accentColor, fontWeight: 800 }}>
+            {isToday || isTomorrow ? "Trip Alert" : "Trip Countdown"}
+          </p>
+          <h2 style={{ margin: "4px 0 0", fontSize: "1.3rem", color: accentColor }}>
+            {headline}
+          </h2>
+          <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 14, lineHeight: 1.5 }}>
+            {subline}
+          </p>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <Link
+        href={`/trips/${trip.trip_id}`}
+        className="btn btn-primary"
+        style={{ fontSize: 13, padding: "9px 18px", background: accentColor, flexShrink: 0 }}
+      >
+        {isToday ? "View Trip Details" : "Open Trip →"}
+      </Link>
+    </div>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function MetricCard({
@@ -359,7 +494,6 @@ function WelcomeBanner({
         background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 70%)",
       }}
     >
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div>
           <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1d4ed8", fontWeight: 800 }}>
@@ -369,19 +503,12 @@ function WelcomeBanner({
             Hi {preferredName}, we&apos;re so glad you&apos;re here! 🎉
           </h2>
           <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.65, maxWidth: 620 }}>
-            Your personal travel concierge portal is ready. Here&apos;s a quick look at everything available to you — take a moment to explore, then dismiss this when you&apos;re ready.
+            Your personal travel concierge portal is ready. Here&apos;s a quick look at everything available to you.
           </p>
         </div>
-
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", border: "2px solid #bfdbfe", flexShrink: 0 }}>
-            <Image
-              src="/jeremy.jpg"
-              alt="Jeremy Brown"
-              width={56}
-              height={56}
-              style={{ objectFit: "cover", width: "100%", height: "100%" }}
-            />
+            <Image src="/jeremy.jpg" alt="Jeremy Brown" width={56} height={56} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
           </div>
           <div>
             <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>Jeremy Brown</p>
@@ -390,40 +517,28 @@ function WelcomeBanner({
         </div>
       </div>
 
-      {/* Mini tour grid */}
       <div className="grid grid-2" style={{ gap: 12 }}>
         {TOUR_ITEMS.map((item) => (
-          <div
-            key={item.href}
-            style={{ padding: 16, borderRadius: 14, border: "1px solid #dbeafe", background: "#ffffff", display: "flex", flexDirection: "column", gap: 8 }}
-          >
+          <div key={item.href} style={{ padding: 16, borderRadius: 14, border: "1px solid #dbeafe", background: "#ffffff", display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 24 }} aria-hidden>{item.icon}</span>
               <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: "var(--accent-dark)" }}>{item.title}</p>
             </div>
             <p style={{ margin: 0, fontSize: 13, color: "#667085", lineHeight: 1.55, flex: 1 }}>{item.description}</p>
-            <Link
-              href={item.href}
-              style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", padding: "7px 14px", borderRadius: 10, background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: 13, textDecoration: "none", border: "1px solid #bfdbfe" }}
-            >
+            <Link href={item.href} style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", padding: "7px 14px", borderRadius: 10, background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: 13, textDecoration: "none", border: "1px solid #bfdbfe" }}>
               {item.cta} →
             </Link>
           </div>
         ))}
       </div>
 
-      {/* Dismiss */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, paddingTop: 4, borderTop: "1px solid #dbeafe" }}>
         <p style={{ margin: 0, fontSize: 13, color: "#667085" }}>
           Your advisor Jeremy is here whenever you need anything.{" "}
           <Link href="/messages" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Send a message</Link> any time.
         </p>
         <form action={onDismiss}>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ background: "#1d4ed8", fontSize: 13, padding: "9px 18px" }}
-          >
+          <button type="submit" className="btn btn-primary" style={{ background: "#1d4ed8", fontSize: 13, padding: "9px 18px" }}>
             Got it — let&apos;s go! ✓
           </button>
         </form>
@@ -438,14 +553,12 @@ async function dismissWelcome() {
   "use server";
 
   const supabase = await createServerSupabaseClient();
-
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return;
 
   const userEmail = user.email?.trim().toLowerCase();
   if (!userEmail) return;
 
-  // Find client account by email first, then by user profile
   const { data: byEmail } = await supabase
     .from("client_accounts")
     .select("id")
@@ -467,7 +580,6 @@ async function dismissWelcome() {
         .select("id")
         .eq("user_profile_id", profile.id)
         .maybeSingle();
-
       clientAccountId = byProfile?.id ?? null;
     }
   }
@@ -486,7 +598,6 @@ async function dismissWelcome() {
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
-
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) redirect("/login");
 
@@ -534,10 +645,7 @@ export default async function ClientDashboardPage() {
     return (
       <PageShell title="Dashboard" subtitle="We could not load your dashboard.">
         <div className="card">
-          <p>
-            <strong>Error:</strong>{" "}
-            {error instanceof Error ? error.message : "Client account not found."}
-          </p>
+          <p><strong>Error:</strong> {error instanceof Error ? error.message : "Client account not found."}</p>
         </div>
       </PageShell>
     );
@@ -599,8 +707,6 @@ export default async function ClientDashboardPage() {
 
   const openThreads = messageThreads.filter((t) => t.status === "open").length;
   const preferredName = getPreferredName(clientAccount);
-
-  // Show welcome banner only if never dismissed
   const showWelcome = !clientAccount.welcome_dismissed_at;
 
   return (
@@ -610,11 +716,11 @@ export default async function ClientDashboardPage() {
     >
       {/* ── Welcome banner — first login only ── */}
       {showWelcome && (
-        <WelcomeBanner
-          preferredName={preferredName}
-          onDismiss={dismissWelcome}
-        />
+        <WelcomeBanner preferredName={preferredName} onDismiss={dismissWelcome} />
       )}
+
+      {/* ── Trip countdown — only when there's an upcoming trip ── */}
+      {nextTrip && <TripCountdownBanner trip={nextTrip} />}
 
       <div className="grid grid-3">
         <MetricCard
