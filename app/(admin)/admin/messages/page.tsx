@@ -47,10 +47,8 @@ type TripInfo = {
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
-
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-
   return date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
@@ -63,6 +61,20 @@ function formatDateTime(value: string | null | undefined, fallback = "Not provid
 function getClientName(client: ClientInfo | undefined | null) {
   if (!client) return "Client";
   return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || client.email || "Client";
+}
+
+// Safely highlight @advisor mentions in message body
+function renderMessageBody(body: string) {
+  const escaped = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br/>")
+    .replace(
+      /@advisor/gi,
+      '<mark style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:0 3px;font-weight:700;">@advisor</mark>',
+    );
+  return { __html: escaped };
 }
 
 function StatusPill({
@@ -100,7 +112,6 @@ function StatusPill({
 
 function ThreadTypePill({ threadType }: { threadType: string | null | undefined }) {
   const isGroup = threadType === "trip_group";
-
   return (
     <StatusPill
       label={isGroup ? "Travel Circle" : "Private"}
@@ -211,9 +222,7 @@ export default async function AdminMessagesPage({
     return (
       <PageShell title="Concierge Messages" subtitle="Client message inbox.">
         <div className="card">
-          <p>
-            <strong>Error loading messages:</strong>
-          </p>
+          <p><strong>Error loading messages:</strong></p>
           <pre>{JSON.stringify(threadsError, null, 2)}</pre>
         </div>
       </PageShell>
@@ -224,9 +233,7 @@ export default async function AdminMessagesPage({
   const selectedThread =
     threadRows.find((thread) => thread.id === threadId) ?? threadRows[0] ?? null;
 
-  const threadClientIds = threadRows
-    .map((thread) => thread.client_account_id)
-    .filter(Boolean);
+  const threadClientIds = threadRows.map((thread) => thread.client_account_id).filter(Boolean);
   const tripIds = Array.from(
     new Set(threadRows.map((thread) => thread.trip_id).filter(Boolean)),
   ) as string[];
@@ -244,9 +251,7 @@ export default async function AdminMessagesPage({
       return (
         <PageShell title="Concierge Messages" subtitle="Client message inbox.">
           <div className="card">
-            <p>
-              <strong>Error loading thread:</strong>
-            </p>
+            <p><strong>Error loading thread:</strong></p>
             <pre>{JSON.stringify(messagesError, null, 2)}</pre>
           </div>
         </PageShell>
@@ -303,35 +308,20 @@ export default async function AdminMessagesPage({
   const groupCount = threadRows.filter((thread) => thread.thread_type === "trip_group").length;
   const privateCount = threadRows.filter((thread) => thread.thread_type !== "trip_group").length;
 
-  const selectedClient = selectedThread
-    ? clientMap.get(selectedThread.client_account_id)
-    : null;
-  const selectedTrip = selectedThread?.trip_id
-    ? tripMap.get(selectedThread.trip_id)
-    : null;
+  const selectedClient = selectedThread ? clientMap.get(selectedThread.client_account_id) : null;
+  const selectedTrip = selectedThread?.trip_id ? tripMap.get(selectedThread.trip_id) : null;
 
   return (
     <PageShell
       title="Concierge Messages"
       subtitle="Read and reply to private client messages and Travel Circle group conversations from one inbox."
     >
+      {/* ── Banner ── */}
       <div
         className="card stack"
-        style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-          border: "1px solid #e6f0f2",
-        }}
+        style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)", border: "1px solid #e6f0f2" }}
       >
-        <p
-          style={{
-            margin: 0,
-            fontSize: 13,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--accent-dark)",
-            fontWeight: 800,
-          }}
-        >
+        <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
           Cozy Concierge
         </p>
         <h2 style={{ margin: 0 }}>Message Inbox</h2>
@@ -354,28 +344,17 @@ export default async function AdminMessagesPage({
           </div>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-          <Link href="/admin/messages" className="btn btn-primary">
-            All
-          </Link>
-          <Link href="/admin/messages?status=open" className="btn btn-primary">
-            Open
-          </Link>
-          <Link href="/admin/messages?type=private" className="btn btn-primary">
-            Private
-          </Link>
-          <Link href="/admin/messages?type=trip_group" className="btn btn-primary">
-            Travel Circle
-          </Link>
-          <Link href="/admin/messages?status=resolved" className="btn btn-primary">
-            Resolved
-          </Link>
-          <Link href="/admin/dashboard" className="btn btn-primary">
-            Admin Dashboard
-          </Link>
+          <Link href="/admin/messages" className="btn btn-primary">All</Link>
+          <Link href="/admin/messages?status=open" className="btn btn-primary">Open</Link>
+          <Link href="/admin/messages?type=private" className="btn btn-primary">Private</Link>
+          <Link href="/admin/messages?type=trip_group" className="btn btn-primary">Travel Circle</Link>
+          <Link href="/admin/messages?status=resolved" className="btn btn-primary">Resolved</Link>
+          <Link href="/admin/dashboard" className="btn btn-primary">Admin Dashboard</Link>
         </div>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
+        {/* ── Thread list ── */}
         <div className="card stack">
           <h2 style={{ margin: 0 }}>Threads</h2>
           {threadRows.length === 0 ? (
@@ -398,14 +377,10 @@ export default async function AdminMessagesPage({
                       display: "block",
                       padding: "12px",
                       borderRadius: 12,
-                      border:
-                        selectedThread?.id === thread.id
-                          ? "2px solid var(--accent-dark)"
-                          : "1px solid #e6f0f2",
+                      border: selectedThread?.id === thread.id ? "2px solid var(--accent-dark)" : "1px solid #e6f0f2",
                       textDecoration: "none",
                       color: "inherit",
-                      background:
-                        selectedThread?.id === thread.id ? "#f7fbfc" : "#ffffff",
+                      background: selectedThread?.id === thread.id ? "#f7fbfc" : "#ffffff",
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -413,9 +388,7 @@ export default async function AdminMessagesPage({
                       <ThreadTypePill threadType={thread.thread_type} />
                     </div>
                     <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13 }}>
-                      {thread.thread_type === "trip_group"
-                        ? "Travel Circle Group"
-                        : getClientName(client)}
+                      {thread.thread_type === "trip_group" ? "Travel Circle Group" : getClientName(client)}
                       {trip ? ` • ${trip.trip_name ?? "Trip"}` : ""}
                     </p>
                     <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13 }}>
@@ -433,6 +406,7 @@ export default async function AdminMessagesPage({
           )}
         </div>
 
+        {/* ── Conversation ── */}
         <div className="card stack">
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <div>
@@ -455,11 +429,10 @@ export default async function AdminMessagesPage({
             <p style={{ margin: 0, color: "#667085" }}>Choose a thread to read and reply.</p>
           ) : (
             <>
+              {/* Client / trip info card */}
               <div className="card" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
                 <p style={{ margin: 0 }}>
-                  <strong>
-                    {selectedThread.thread_type === "trip_group" ? "Primary Client:" : "Client:"}
-                  </strong>{" "}
+                  <strong>{selectedThread.thread_type === "trip_group" ? "Primary Client:" : "Client:"}</strong>{" "}
                   {getClientName(selectedClient)}
                 </p>
                 {selectedThread.trip_id ? (
@@ -484,12 +457,14 @@ export default async function AdminMessagesPage({
                 </div>
               </div>
 
+              {/* Messages */}
               <div style={{ display: "grid", gap: 12 }}>
                 {messageRows.map((message) => {
                   const isAdmin = message.sender_type === "admin";
                   const senderClientId = message.sender_client_account_id ?? message.client_account_id;
                   const senderClient = clientMap.get(senderClientId);
                   const senderLabel = isAdmin ? "You" : getClientName(senderClient);
+                  const hasMention = /@advisor/i.test(message.body);
 
                   return (
                     <div
@@ -499,16 +474,24 @@ export default async function AdminMessagesPage({
                         maxWidth: "78%",
                         padding: "12px",
                         borderRadius: 14,
-                        border: "1px solid #e6f0f2",
-                        background: isAdmin ? "#f0f7f8" : "#ffffff",
+                        border: hasMention && !isAdmin ? "1px solid #fef08a" : "1px solid #e6f0f2",
+                        background: isAdmin ? "#f0f7f8" : hasMention ? "#fefce8" : "#ffffff",
                       }}
                     >
-                      <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
-                        {senderLabel}
-                      </p>
-                      <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
-                        {message.body}
-                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+                          {senderLabel}
+                        </p>
+                        {hasMention && !isAdmin && (
+                          <span style={{ fontSize: 11, fontWeight: 800, background: "#fef9c3", color: "#854d0e", borderRadius: 999, padding: "2px 8px", border: "1px solid #fef08a" }}>
+                            @advisor mention
+                          </span>
+                        )}
+                      </div>
+                      <p
+                        style={{ margin: "6px 0 0", lineHeight: 1.55 }}
+                        dangerouslySetInnerHTML={renderMessageBody(message.body)}
+                      />
                       <p style={{ margin: "8px 0 0", color: "#667085", fontSize: 13 }}>
                         {formatDateTime(message.created_at)}
                       </p>
@@ -517,38 +500,32 @@ export default async function AdminMessagesPage({
                 })}
               </div>
 
+              {/* Reply form */}
               <form action={replyAsAdmin} className="stack">
                 <input type="hidden" name="thread_id" value={selectedThread.id} />
                 <label>
                   <span className="label">Reply</span>
                   <textarea className="textarea" name="body" rows={5} placeholder="Type your reply..." />
                 </label>
-                <button type="submit" className="btn btn-primary">
-                  Send Reply
-                </button>
+                <button type="submit" className="btn btn-primary">Send Reply</button>
               </form>
 
+              {/* Status actions */}
               <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
                 <form action={updateThreadStatus}>
                   <input type="hidden" name="thread_id" value={selectedThread.id} />
                   <input type="hidden" name="status" value="open" />
-                  <button type="submit" className="btn btn-primary">
-                    Mark Open
-                  </button>
+                  <button type="submit" className="btn btn-primary">Mark Open</button>
                 </form>
                 <form action={updateThreadStatus}>
                   <input type="hidden" name="thread_id" value={selectedThread.id} />
                   <input type="hidden" name="status" value="resolved" />
-                  <button type="submit" className="btn btn-primary">
-                    Mark Resolved
-                  </button>
+                  <button type="submit" className="btn btn-primary">Mark Resolved</button>
                 </form>
                 <form action={updateThreadStatus}>
                   <input type="hidden" name="thread_id" value={selectedThread.id} />
                   <input type="hidden" name="status" value="archived" />
-                  <button type="submit" className="btn btn-primary">
-                    Archive
-                  </button>
+                  <button type="submit" className="btn btn-primary">Archive</button>
                 </form>
               </div>
             </>

@@ -48,6 +48,13 @@ type MessageRow = {
   created_at: string | null;
 };
 
+type TripMemberSummary = {
+  id: string;
+  display_name: string;
+  role: string;
+  invite_status: string;
+};
+
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
   const date = new Date(value);
@@ -84,33 +91,24 @@ function getClientDisplayName(client: ClientAccount) {
   return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Traveler";
 }
 
-function StatusPill({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "good" | "warning" | "neutral";
-}) {
+function getInitials(name: string) {
+  const parts = name.trim().split(" ");
+  if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+function containsAdvisorMention(body: string) {
+  return /@advisor/i.test(body);
+}
+
+function StatusPill({ label, tone = "neutral" }: { label: string; tone?: "good" | "warning" | "neutral" }) {
   const styles = {
     good: { background: "#ecfdf3", color: "#027a48" },
     warning: { background: "#fff7ed", color: "#c2410c" },
     neutral: { background: "#f0f7f8", color: "var(--accent-dark)" },
   }[tone];
-
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        borderRadius: 999,
-        padding: "5px 10px",
-        background: styles.background,
-        color: styles.color,
-        fontWeight: 800,
-        fontSize: 13,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "5px 10px", background: styles.background, color: styles.color, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap" }}>
       {label}
     </span>
   );
@@ -118,41 +116,80 @@ function StatusPill({
 
 function ThreadTypePill({ threadType }: { threadType: string | null | undefined }) {
   const isGroup = threadType === "trip_group";
-  return (
-    <StatusPill
-      label={isGroup ? "Travel Circle" : "Private"}
-      tone={isGroup ? "warning" : "neutral"}
-    />
-  );
+  return <StatusPill label={isGroup ? "Travel Circle" : "Private"} tone={isGroup ? "warning" : "neutral"} />;
 }
 
-function MessageHelpCard({
-  title,
-  description,
-  tone = "neutral",
-}: {
-  title: string;
-  description: string;
-  tone?: "warning" | "neutral";
-}) {
+function MessageHelpCard({ title, description, tone = "neutral" }: { title: string; description: string; tone?: "warning" | "neutral" }) {
   const styles = {
     warning: { background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" },
     neutral: { background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#667085" },
   }[tone];
-
   return (
-    <div
-      style={{
-        padding: "12px",
-        borderRadius: 12,
-        background: styles.background,
-        border: styles.border,
-        color: styles.color,
-        lineHeight: 1.55,
-      }}
-    >
+    <div style={{ padding: "12px", borderRadius: 12, background: styles.background, border: styles.border, color: styles.color, lineHeight: 1.55 }}>
       <strong>{title}</strong>
       <p style={{ margin: "4px 0 0" }}>{description}</p>
+    </div>
+  );
+}
+
+// ── Travel Circle members strip ───────────────────────────────────────────────
+
+function TravelCircleMembersStrip({
+  members,
+  advisorInvited,
+}: {
+  members: TripMemberSummary[];
+  advisorInvited: boolean;
+}) {
+  if (members.length === 0 && !advisorInvited) return null;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 14px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+      <span style={{ fontSize: 12, color: "#667085", fontWeight: 700, whiteSpace: "nowrap" }}>In this circle:</span>
+
+      {members.map((member) => {
+        const initials = getInitials(member.display_name);
+        const isPending = member.invite_status === "invited";
+        return (
+          <div
+            key={member.id}
+            title={`${member.display_name}${isPending ? " (pending)" : ""}`}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <div style={{
+              width: 28,
+              height: 28,
+              borderRadius: 999,
+              background: isPending ? "#f0f7f8" : "var(--accent-dark)",
+              color: isPending ? "var(--accent-dark)" : "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              fontWeight: 800,
+              border: isPending ? "1px dashed var(--accent-dark)" : "none",
+              flexShrink: 0,
+            }}>
+              {initials}
+            </div>
+            <span style={{ fontSize: 12, color: isPending ? "#94a3b8" : "var(--accent-dark)", fontWeight: 600, whiteSpace: "nowrap" }}>
+              {member.display_name}
+              {isPending ? " (pending)" : ""}
+            </span>
+          </div>
+        );
+      })}
+
+      {advisorInvited && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 999, background: "#ecfdf3", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#027a48", flexShrink: 0 }}>
+            JB
+          </div>
+          <span style={{ fontSize: 12, color: "#027a48", fontWeight: 600, whiteSpace: "nowrap" }}>
+            Advisor
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -161,7 +198,6 @@ function MessageHelpCard({
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
-
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) redirect("/login");
 
@@ -175,9 +211,7 @@ async function getCurrentClientAccount() {
     .maybeSingle();
 
   if (clientEmailError) throw new Error(clientEmailError.message);
-  if (clientAccountByEmail) {
-    return { supabase, user, clientAccount: clientAccountByEmail as ClientAccount };
-  }
+  if (clientAccountByEmail) return { supabase, user, clientAccount: clientAccountByEmail as ClientAccount };
 
   const { data: userProfile, error: profileError } = await supabase
     .from("user_profiles")
@@ -312,7 +346,6 @@ async function createClientMessageThread(formData: FormData) {
 
   if (!body) throw new Error("Message is required.");
 
-  // ── Travel Circle group thread ──────────────────────────────────────────────
   if (threadType === "trip_group") {
     if (!tripId) throw new Error("Choose a related trip for a Travel Circle message.");
 
@@ -338,7 +371,6 @@ async function createClientMessageThread(formData: FormData) {
     const threadId = existingGroupThread?.id;
 
     if (threadId) {
-      // Add message to existing thread — do NOT notify admin unless invited
       const { error: messageError } = await supabase.from("messages" as any).insert({
         thread_id: threadId,
         client_account_id: clientAccount.id,
@@ -353,16 +385,15 @@ async function createClientMessageThread(formData: FormData) {
 
       if (messageError) throw new Error(messageError.message);
 
-      // Only increment admin unread if advisor has been invited to this thread
       const advisorInvited = Boolean(existingGroupThread.advisor_invited_at);
+      const mentionsAdvisor = containsAdvisorMention(body);
+      const shouldNotifyAdmin = advisorInvited || mentionsAdvisor;
 
       const { error: updateError } = await supabase
         .from("message_threads" as any)
         .update({
           status: existingGroupThread.status === "archived" ? "open" : existingGroupThread.status,
-          ...(advisorInvited
-            ? { admin_unread_count: Number(existingGroupThread.admin_unread_count ?? 0) + 1 }
-            : {}),
+          ...(shouldNotifyAdmin ? { admin_unread_count: Number(existingGroupThread.admin_unread_count ?? 0) + 1 } : {}),
           last_message_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -370,26 +401,12 @@ async function createClientMessageThread(formData: FormData) {
 
       if (updateError) throw new Error(updateError.message);
 
-      // Only send email notification if advisor was invited
-      if (advisorInvited) {
-        await sendNewClientMessageNotification({
-          threadId,
-          threadType: "trip_group",
-          subject: groupSubject,
-          senderName: getClientDisplayName(clientAccount),
-          senderEmail: clientAccount.email,
-          tripName: trip?.trip_name ?? null,
-          destinations: trip?.destinations ?? null,
-          departureDate: trip?.departure_date ?? null,
-          bodyPreview: body,
-        });
-      }
-
       revalidatePath("/messages");
       redirect(`/messages?threadId=${threadId}`);
     }
 
-    // Create new group thread — no admin notification, no admin_unread_count
+    const mentionsAdvisor = containsAdvisorMention(body);
+
     const { data: newThread, error: threadError } = await supabase
       .from("message_threads" as any)
       .insert({
@@ -400,17 +417,15 @@ async function createClientMessageThread(formData: FormData) {
         priority: "normal",
         thread_type: "trip_group",
         created_by_client_account_id: clientAccount.id,
-        admin_unread_count: 0,   // admin not notified until invited
+        admin_unread_count: mentionsAdvisor ? 1 : 0,
         client_unread_count: 0,
-        advisor_invited_at: null, // not invited yet
+        advisor_invited_at: null,
         last_message_at: new Date().toISOString(),
       })
       .select("id")
       .single();
 
-    if (threadError || !newThread) {
-      throw new Error(threadError?.message ?? "Could not create Travel Circle thread.");
-    }
+    if (threadError || !newThread) throw new Error(threadError?.message ?? "Could not create Travel Circle thread.");
 
     const { error: messageError } = await supabase.from("messages" as any).insert({
       thread_id: newThread.id,
@@ -426,30 +441,21 @@ async function createClientMessageThread(formData: FormData) {
 
     if (messageError) throw new Error(messageError.message);
 
-    // No email notification — admin hasn't been invited yet
-
     revalidatePath("/messages");
     redirect(`/messages?threadId=${newThread.id}`);
   }
 
-  // ── Private thread ──────────────────────────────────────────────────────────
   if (!subject) throw new Error("Subject is required.");
 
-  let privateTrip: {
-    trip_name: string | null;
-    destinations: string | null;
-    departure_date: string | null;
-  } | null = null;
+  let privateTrip: { trip_name: string | null; destinations: string | null; departure_date: string | null } | null = null;
 
   if (tripId) {
     await assertCanUseTripMessages(supabase, clientAccount.id, tripId, false);
-
     const { data: relatedTrip } = await supabase
       .from("trips")
       .select("trip_name, destinations, departure_date")
       .eq("id", tripId)
       .maybeSingle();
-
     privateTrip = relatedTrip ?? null;
   }
 
@@ -463,16 +469,14 @@ async function createClientMessageThread(formData: FormData) {
       priority: "normal",
       thread_type: "private",
       created_by_client_account_id: clientAccount.id,
-      admin_unread_count: 1,   // private messages always notify admin
+      admin_unread_count: 1,
       client_unread_count: 0,
       last_message_at: new Date().toISOString(),
     })
     .select("id")
     .single();
 
-  if (threadError || !thread) {
-    throw new Error(threadError?.message ?? "Could not create message thread.");
-  }
+  if (threadError || !thread) throw new Error(threadError?.message ?? "Could not create message thread.");
 
   const { error: messageError } = await supabase.from("messages" as any).insert({
     thread_id: thread.id,
@@ -521,9 +525,7 @@ async function replyToClientThread(formData: FormData) {
     .eq("id", threadId)
     .single();
 
-  if (threadError || !thread) {
-    throw new Error(threadError?.message ?? "Message thread not found.");
-  }
+  if (threadError || !thread) throw new Error(threadError?.message ?? "Message thread not found.");
 
   const isGroupThread = thread.thread_type === "trip_group";
 
@@ -548,16 +550,15 @@ async function replyToClientThread(formData: FormData) {
 
   if (messageError) throw new Error(messageError.message);
 
-  // For group threads: only notify admin if advisor has been invited
   const advisorInvited = isGroupThread ? Boolean(thread.advisor_invited_at) : true;
+  const mentionsAdvisor = isGroupThread ? containsAdvisorMention(body) : false;
+  const shouldNotifyAdmin = advisorInvited || mentionsAdvisor;
 
   const { error: updateError } = await supabase
     .from("message_threads" as any)
     .update({
       status: thread.status === "archived" ? "open" : thread.status,
-      ...(advisorInvited
-        ? { admin_unread_count: Number(thread.admin_unread_count ?? 0) + 1 }
-        : {}),
+      ...(shouldNotifyAdmin ? { admin_unread_count: Number(thread.admin_unread_count ?? 0) + 1 } : {}),
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -566,11 +567,7 @@ async function replyToClientThread(formData: FormData) {
   if (updateError) throw new Error(updateError.message);
 
   if (advisorInvited) {
-    let replyTrip: {
-      trip_name: string | null;
-      destinations: string | null;
-      departure_date: string | null;
-    } | null = null;
+    let replyTrip: { trip_name: string | null; destinations: string | null; departure_date: string | null } | null = null;
 
     if (thread.trip_id) {
       const { data: relatedTrip } = await supabase
@@ -608,37 +605,18 @@ async function inviteAdvisorToThread(formData: FormData) {
 
   if (!threadId) throw new Error("Missing thread ID.");
 
-  // Fetch thread and verify ownership
   const { data: thread, error: threadError } = await supabase
     .from("message_threads" as any)
     .select("id, client_account_id, trip_id, subject, thread_type, advisor_invited_at, admin_unread_count")
     .eq("id", threadId)
     .single();
 
-  if (threadError || !thread) {
-    throw new Error(threadError?.message ?? "Thread not found.");
-  }
+  if (threadError || !thread) throw new Error(threadError?.message ?? "Thread not found.");
+  if (thread.client_account_id !== clientAccount.id) throw new Error("Only the trip owner can invite the advisor.");
+  if (thread.advisor_invited_at) redirect(`/messages?threadId=${threadId}`);
+  if (thread.thread_type !== "trip_group") throw new Error("Advisor invite is only available for Travel Circle threads.");
 
-  // Only the thread owner can invite the advisor
-  if (thread.client_account_id !== clientAccount.id) {
-    throw new Error("Only the trip owner can invite the advisor.");
-  }
-
-  // Already invited — do nothing
-  if (thread.advisor_invited_at) {
-    redirect(`/messages?threadId=${threadId}`);
-  }
-
-  // Verify group thread
-  if (thread.thread_type !== "trip_group") {
-    throw new Error("Advisor invite is only available for Travel Circle threads.");
-  }
-
-  let trip: {
-    trip_name: string | null;
-    destinations: string | null;
-    departure_date: string | null;
-  } | null = null;
+  let trip: { trip_name: string | null; destinations: string | null; departure_date: string | null } | null = null;
 
   if (tripId ?? thread.trip_id) {
     const { data: tripData } = await supabase
@@ -649,7 +627,6 @@ async function inviteAdvisorToThread(formData: FormData) {
     trip = tripData ?? null;
   }
 
-  // Mark thread as advisor invited + notify admin
   const { error: updateError } = await supabase
     .from("message_threads" as any)
     .update({
@@ -661,7 +638,6 @@ async function inviteAdvisorToThread(formData: FormData) {
 
   if (updateError) throw new Error(updateError.message);
 
-  // Send one-time notification email to admin
   await sendNewClientMessageNotification({
     threadId,
     threadType: "trip_group",
@@ -673,6 +649,38 @@ async function inviteAdvisorToThread(formData: FormData) {
     departureDate: trip?.departure_date ?? null,
     bodyPreview: `${getClientDisplayName(clientAccount)} has invited you to join this Travel Circle conversation.`,
   });
+
+  revalidatePath("/messages");
+  redirect(`/messages?threadId=${threadId}`);
+}
+
+async function notifyAdvisorInThread(formData: FormData) {
+  "use server";
+
+  const { supabase } = await getCurrentClientAccount();
+
+  const threadId = String(formData.get("thread_id") ?? "").trim();
+  if (!threadId) throw new Error("Missing thread ID.");
+
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .select("id, thread_type, advisor_invited_at, admin_unread_count")
+    .eq("id", threadId)
+    .single();
+
+  if (threadError || !thread) throw new Error(threadError?.message ?? "Thread not found.");
+  if (thread.thread_type !== "trip_group") throw new Error("Notify is only for Travel Circle threads.");
+  if (thread.advisor_invited_at) redirect(`/messages?threadId=${threadId}`);
+
+  const { error: updateError } = await supabase
+    .from("message_threads" as any)
+    .update({
+      admin_unread_count: Number(thread.admin_unread_count ?? 0) + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", threadId);
+
+  if (updateError) throw new Error(updateError.message);
 
   revalidatePath("/messages");
   redirect(`/messages?threadId=${threadId}`);
@@ -691,12 +699,7 @@ export default async function ClientMessagesPage({
     scope?: string;
   }>;
 }) {
-  const {
-    threadId,
-    tripId: requestedTripId,
-    subject: requestedSubject,
-    scope,
-  } = await searchParams;
+  const { threadId, tripId: requestedTripId, subject: requestedSubject, scope } = await searchParams;
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
@@ -834,6 +837,31 @@ export default async function ClientMessagesPage({
     }
   }
 
+  // ── Load Travel Circle members for selected group thread ──────────────────
+  let travelCircleMembers: TripMemberSummary[] = [];
+
+  if (selectedThread?.thread_type === "trip_group" && selectedThread.trip_id) {
+    const { data: memberRows } = await supabase
+      .from("trip_members" as any)
+      .select("id, client_account_id, invite_email, invite_name, role, invite_status, client_accounts!trip_members_client_account_id_fkey(id, first_name, last_name, email)")
+      .eq("trip_id", selectedThread.trip_id)
+      .neq("invite_status", "removed")
+      .order("created_at", { ascending: true });
+
+    travelCircleMembers = ((memberRows ?? []) as any[]).map((m) => {
+      const account = Array.isArray(m.client_accounts) ? m.client_accounts[0] : m.client_accounts;
+      const name = account
+        ? `${account.first_name ?? ""} ${account.last_name ?? ""}`.trim() || account.email
+        : m.invite_name || m.invite_email || "Companion";
+      return {
+        id: m.id,
+        display_name: name,
+        role: m.role,
+        invite_status: m.invite_status,
+      };
+    });
+  }
+
   const senderClientIds = Array.from(
     new Set(
       messageRows
@@ -859,31 +887,17 @@ export default async function ClientMessagesPage({
 
   const privateThreadCount = threadRows.filter((t) => t.thread_type !== "trip_group").length;
   const groupThreadCount = threadRows.filter((t) => t.thread_type === "trip_group").length;
-  const unreadReplyCount = threadRows.reduce(
-    (sum, thread) => sum + Number(thread.client_unread_count ?? 0),
-    0,
-  );
+  const unreadReplyCount = threadRows.reduce((sum, thread) => sum + Number(thread.client_unread_count ?? 0), 0);
 
   const isGroupThread = selectedThread?.thread_type === "trip_group";
   const advisorAlreadyInvited = Boolean(selectedThread?.advisor_invited_at);
   const isThreadOwner = selectedThread?.client_account_id === clientAccount.id;
 
   return (
-    <PageShell
-      title="Concierge Messages"
-      subtitle={`Your secure message center, ${clientName}.`}
-    >
+    <PageShell title="Concierge Messages" subtitle={`Your secure message center, ${clientName}.`}>
       {/* ── Banner ── */}
-      <div
-        className="card stack"
-        style={{
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
-          border: "1px solid #e6f0f2",
-        }}
-      >
-        <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
-          Cozy Concierge
-        </p>
+      <div className="card stack" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)", border: "1px solid #e6f0f2" }}>
+        <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Cozy Concierge</p>
         <h2 style={{ margin: 0 }}>Message Center</h2>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Send a private message to your advisor or use Travel Circle messages for approved companions on a shared trip.
@@ -902,7 +916,6 @@ export default async function ClientMessagesPage({
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
             Private messages stay between you and your advisor. Travel Circle messages are visible to approved companions on the selected trip.
           </p>
-
           <form action={createClientMessageThread} className="stack">
             <label>
               <span className="label">Message Type</span>
@@ -911,7 +924,6 @@ export default async function ClientMessagesPage({
                 <option value="trip_group">Travel Circle Group Message</option>
               </select>
             </label>
-
             <label>
               <span className="label">Related Trip</span>
               <select className="select" name="trip_id" defaultValue={defaultTripId}>
@@ -925,22 +937,14 @@ export default async function ClientMessagesPage({
                 ))}
               </select>
             </label>
-
             <label>
               <span className="label">Subject</span>
-              <input
-                className="input"
-                name="subject"
-                defaultValue={defaultSubject}
-                placeholder="Example: Question about my final payment"
-              />
+              <input className="input" name="subject" defaultValue={defaultSubject} placeholder="Example: Question about my final payment" />
             </label>
-
             <label>
               <span className="label">Message</span>
               <textarea className="textarea" name="body" rows={6} placeholder="Type your message here..." />
             </label>
-
             <button type="submit" className="btn btn-primary">Send Message</button>
           </form>
         </div>
@@ -1010,13 +1014,26 @@ export default async function ClientMessagesPage({
         </div>
 
         {!selectedThread ? (
-          <p style={{ margin: 0, color: "#667085" }}>Choose a message thread or start a new message.</p>
+          <p style={{ margin: 0, color: "#667085" }}>Choose a thread to read and reply.</p>
         ) : (
           <>
+            {/* ── Travel Circle members strip ── */}
+            {isGroupThread && (
+              <TravelCircleMembersStrip
+                members={travelCircleMembers}
+                advisorInvited={advisorAlreadyInvited}
+              />
+            )}
+
             {/* Thread type notice */}
             {isGroupThread ? (
               <div style={{ padding: "12px", borderRadius: 12, border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", lineHeight: 1.5 }}>
                 <strong>Travel Circle conversation:</strong> Messages here are shared with approved companions who have access to this trip.
+                {!advisorAlreadyInvited && (
+                  <span style={{ display: "block", marginTop: 4, fontSize: 13 }}>
+                    Tip: Type <strong>@advisor</strong> in your message to ping your advisor, or use the Notify Advisor button below.
+                  </span>
+                )}
               </div>
             ) : (
               <div style={{ padding: "12px", borderRadius: 12, border: "1px solid #e6f0f2", background: "#f7fbfc", color: "#667085", lineHeight: 1.5 }}>
@@ -1024,38 +1041,29 @@ export default async function ClientMessagesPage({
               </div>
             )}
 
-            {/* Invite Advisor button — group threads only, owner only, not yet invited */}
+            {/* Invite / Notify Advisor */}
             {isGroupThread && isThreadOwner && !advisorAlreadyInvited ? (
-              <div
-                style={{
-                  padding: "14px",
-                  borderRadius: 12,
-                  border: "1px solid #e6f0f2",
-                  background: "#f7fbfc",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ padding: "14px", borderRadius: 12, border: "1px solid #e6f0f2", background: "#f7fbfc", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
-                  <p style={{ margin: 0, fontWeight: 800 }}>Invite Your Advisor</p>
+                  <p style={{ margin: 0, fontWeight: 800 }}>Involve Your Advisor</p>
                   <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                    Your advisor isn&apos;t in this conversation yet. Invite them if you have a question or need help.
+                    <strong>Notify once</strong> — pings your advisor without adding them permanently. <strong>Invite</strong> — adds them so they see every future message.
                   </p>
                 </div>
-                <form action={inviteAdvisorToThread}>
-                  <input type="hidden" name="thread_id" value={selectedThread.id} />
-                  <input type="hidden" name="trip_id" value={selectedThread.trip_id ?? ""} />
-                  <button type="submit" className="btn btn-primary">
-                    Invite Advisor
-                  </button>
-                </form>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <form action={notifyAdvisorInThread}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13 }}>Notify Advisor Once</button>
+                  </form>
+                  <form action={inviteAdvisorToThread}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <input type="hidden" name="trip_id" value={selectedThread.trip_id ?? ""} />
+                    <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>Invite Advisor</button>
+                  </form>
+                </div>
               </div>
             ) : null}
 
-            {/* Advisor invited confirmation */}
             {isGroupThread && advisorAlreadyInvited ? (
               <div style={{ padding: "12px", borderRadius: 12, border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", lineHeight: 1.5, fontSize: 13 }}>
                 Your advisor has been invited to this conversation and will be notified of new messages.
@@ -1082,6 +1090,11 @@ export default async function ClientMessagesPage({
                   ? getClientDisplayName(senderClient)
                   : "Travel Companion";
 
+                const bodyWithMention = message.body.replace(
+                  /@advisor/gi,
+                  '<mark style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:0 3px;font-weight:700;">@advisor</mark>',
+                );
+
                 return (
                   <div
                     key={message.id}
@@ -1095,7 +1108,10 @@ export default async function ClientMessagesPage({
                     }}
                   >
                     <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>{senderLabel}</p>
-                    <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{message.body}</p>
+                    <p
+                      style={{ margin: "6px 0 0", lineHeight: 1.55 }}
+                      dangerouslySetInnerHTML={{ __html: bodyWithMention.replace(/\n/g, "<br/>") }}
+                    />
                     <p style={{ margin: "8px 0 0", color: "#667085", fontSize: 13 }}>{formatDateTime(message.created_at)}</p>
                   </div>
                 );
@@ -1107,7 +1123,16 @@ export default async function ClientMessagesPage({
               <input type="hidden" name="thread_id" value={selectedThread.id} />
               <label>
                 <span className="label">Reply</span>
-                <textarea className="textarea" name="body" rows={5} placeholder="Type your reply..." />
+                <textarea
+                  className="textarea"
+                  name="body"
+                  rows={5}
+                  placeholder={
+                    isGroupThread && !advisorAlreadyInvited
+                      ? "Type your reply... Use @advisor to notify your advisor."
+                      : "Type your reply..."
+                  }
+                />
               </label>
               <button type="submit" className="btn btn-primary">Send Reply</button>
             </form>
