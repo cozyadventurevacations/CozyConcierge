@@ -401,6 +401,62 @@ function TripCard({ trip }: { trip: TripRow }) {
   );
 }
 
+function TripReadinessCard({
+  trip,
+  passportUploaded,
+  sharedDocumentCount,
+}: {
+  trip: TripRow | null;
+  passportUploaded: boolean;
+  sharedDocumentCount: number;
+}) {
+  if (!trip) return null;
+
+  const items = [
+    { label: "Trip dates confirmed", complete: Boolean(trip.departure_date && trip.return_date) },
+    { label: "Passport uploaded", complete: passportUploaded },
+    { label: "Payment complete", complete: Number(trip.balance_due ?? 0) <= 0 },
+    { label: "Travel documents shared", complete: sharedDocumentCount > 0 },
+  ];
+  const completeCount = items.filter((item) => item.complete).length;
+  const percent = Math.round((completeCount / items.length) * 100);
+  const tone = percent >= 100 ? "#027a48" : percent >= 50 ? "var(--accent-dark)" : "#9a3412";
+
+  return (
+    <div className="card stack" style={{ border: percent >= 100 ? "1px solid #bbf7d0" : "1px solid #e6f0f2", background: percent >= 100 ? "#f0fdf4" : "#ffffff" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: tone, fontWeight: 800 }}>
+            Trip Readiness
+          </p>
+          <h2 style={{ margin: "4px 0 0" }}>{percent}% ready for {trip.trip_name ?? "your trip"}</h2>
+          <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 14 }}>
+            A quick check of the essentials before departure.
+          </p>
+        </div>
+        <div style={{ minWidth: 140 }}>
+          <div style={{ height: 10, borderRadius: 999, background: "#e6f0f2", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${percent}%`, background: tone }} />
+          </div>
+          <p style={{ margin: "6px 0 0", textAlign: "right", fontSize: 12, color: tone, fontWeight: 800 }}>{completeCount} of {items.length} complete</p>
+        </div>
+      </div>
+      <div className="grid grid-4" style={{ gap: 10 }}>
+        {items.map((item) => (
+          <div key={item.label} style={{ padding: 12, borderRadius: 12, border: "1px solid #e6f0f2", background: item.complete ? "#f0fdf4" : "#fff7ed" }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: item.complete ? "#027a48" : "#9a3412" }}>
+              {item.complete ? "✓" : "○"} {item.label}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Link href={`/trips/${trip.trip_id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Review Trip</Link>
+        {!passportUploaded && <Link href="/profile/passport-upload" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Upload Passport</Link>}
+      </div>
+    </div>
+  );
+}
 function AskCozyCompact() {
   return (
     <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
@@ -690,6 +746,24 @@ export default async function ClientDashboardPage() {
 
   const nextTrip = upcomingTrips[0] ?? null;
 
+  const [passportUploadResult, sharedDocumentsResult] = await Promise.all([
+    supabase
+      .from("client_documents")
+      .select("id", { count: "exact", head: true })
+      .eq("client_account_id", clientAccount.id)
+      .ilike("document_type", "passport"),
+    nextTrip
+      ? supabase
+          .from("trip_documents")
+          .select("id", { count: "exact", head: true })
+          .eq("trip_id", nextTrip.trip_id)
+          .eq("visibility", "client")
+      : Promise.resolve({ count: 0 }),
+  ]);
+
+  const passportUploaded = Number(passportUploadResult.count ?? 0) > 0;
+  const sharedDocumentCount = Number(sharedDocumentsResult.count ?? 0);
+
   const totalBalance = rows.reduce(
     (sum, t) => sum + (typeof t.balance_due === "number" ? t.balance_due : 0),
     0,
@@ -743,6 +817,12 @@ export default async function ClientDashboardPage() {
       </div>
 
       <AdvisorCard unreadCount={unreadMessages} />
+
+      <TripReadinessCard
+        trip={nextTrip}
+        passportUploaded={passportUploaded}
+        sharedDocumentCount={sharedDocumentCount}
+      />
 
       <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>

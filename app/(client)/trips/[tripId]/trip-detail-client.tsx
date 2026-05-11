@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState } from "react";
@@ -15,6 +16,7 @@ type TripRow = {
   departure_date: string | null;
   return_date: string | null;
   trip_status: string | null;
+  cover_image_url?: string | null;
   balance_due: number | null;
   final_payment_due_date: string | null;
   occasion?: string | null;
@@ -226,6 +228,127 @@ function fmtDateTime(value: string | null | undefined, fallback = "Not provided"
 
 // ─── UI Primitives ────────────────────────────────────────────────────────────
 
+function getTripProgressStep(status: string | null | undefined, trip: TripRow) {
+  const normalized = status ?? "draft";
+  if (normalized === "travel_complete" || normalized === "completed") return 4;
+  if (trip.departure_date) {
+    const departure = new Date(`${trip.departure_date}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (!Number.isNaN(departure.getTime()) && departure <= today) return 4;
+  }
+  if (normalized === "paid_in_full" || Number(trip.balance_due ?? 0) <= 0) return 3;
+  if (normalized === "confirmed" || normalized === "pending_final_payment") return 2;
+  if (normalized === "reserved") return 1;
+  if (normalized === "quoted") return 0;
+  return 0;
+}
+
+function TripStatusTimeline({ trip }: { trip: TripRow }) {
+  const activeStep = getTripProgressStep(trip.trip_status, trip);
+  const steps = [
+    { label: "Quote", helper: "Options prepared" },
+    { label: "Reserved", helper: "Space held" },
+    { label: "Confirmed", helper: "Booking secured" },
+    { label: "Paid", helper: "Balance complete" },
+    { label: "Travel", helper: "Ready to go" },
+  ];
+
+  return (
+    <div className="card stack" style={{ border: "1px solid #e6f0f2", background: "#ffffff" }}>
+      <div>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
+          Trip Progress
+        </p>
+        <h2 style={{ margin: "4px 0 0" }}>Where Your Trip Stands</h2>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8 }} className="trip-status-timeline">
+        {steps.map((step, index) => {
+          const isDone = index < activeStep;
+          const isCurrent = index === activeStep;
+          return (
+            <div
+              key={step.label}
+              style={{
+                padding: "12px 10px",
+                borderRadius: 14,
+                border: isCurrent ? "1px solid #62a9cf" : "1px solid #e6f0f2",
+                background: isDone ? "#ecfdf3" : isCurrent ? "#f0f7f8" : "#ffffff",
+                color: isDone ? "#027a48" : isCurrent ? "var(--accent-dark)" : "#667085",
+                textAlign: "center",
+                minHeight: 92,
+              }}
+            >
+              <div style={{ width: 28, height: 28, borderRadius: 999, margin: "0 auto 8px", display: "inline-flex", alignItems: "center", justifyContent: "center", background: isDone ? "#027a48" : isCurrent ? "var(--accent-dark)" : "#e6f0f2", color: isDone || isCurrent ? "#ffffff" : "#667085", fontWeight: 900 }}>
+                {isDone ? "✓" : index + 1}
+              </div>
+              <p style={{ margin: 0, fontWeight: 900, fontSize: 13 }}>{step.label}</p>
+              <p style={{ margin: "4px 0 0", fontSize: 11, lineHeight: 1.35 }}>{step.helper}</p>
+            </div>
+          );
+        })}
+      </div>
+      <style>{`
+        @media (max-width: 760px) {
+          .trip-status-timeline { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+function TripCoverHero({ trip }: { trip: TripRow }) {
+  const hasCover = Boolean(trip.cover_image_url);
+
+  return (
+    <div
+      style={{
+        minHeight: 260,
+        borderRadius: 20,
+        overflow: "hidden",
+        border: "1px solid #e6f0f2",
+        background: hasCover
+          ? "#123f5b"
+          : "linear-gradient(135deg, #f0f7f8 0%, #ffffff 70%)",
+        position: "relative",
+        display: "flex",
+        alignItems: "stretch",
+      }}
+    >
+      {hasCover ? (
+        <img
+          src={trip.cover_image_url ?? ""}
+          alt={trip.trip_name ?? "Trip cover image"}
+          style={{ width: "100%", height: 320, objectFit: "cover", display: "block" }}
+        />
+      ) : (
+        <div style={{ width: "100%", minHeight: 260, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+          <img src="/cozy-logo.png" alt="Cozy Adventure Vacations" style={{ width: "min(260px, 70%)", height: "auto", opacity: 0.92 }} />
+        </div>
+      )}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: hasCover
+            ? "linear-gradient(180deg, rgba(18, 63, 91, 0.05) 0%, rgba(18, 63, 91, 0.72) 100%)"
+            : "linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(240,247,248,0.82) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+      <div style={{ position: "absolute", left: 24, right: 24, bottom: 22, color: hasCover ? "#ffffff" : "var(--accent-dark)" }}>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 900 }}>
+          Cozy Concierge Trip
+        </p>
+        <h1 style={{ margin: "6px 0 0", fontSize: "clamp(1.7rem, 4vw, 2.7rem)", lineHeight: 1.05 }}>
+          {trip.trip_name ?? "Your Trip"}
+        </h1>
+        <p style={{ margin: "6px 0 0", fontSize: 15, opacity: 0.92 }}>
+          {trip.destinations ?? "Your travel details are ready when you are."}
+        </p>
+      </div>
+    </div>
+  );
+}
 function StatusBadge({ status }: { status: string | null | undefined }) {
   const s = status ?? "draft";
   const colors: Record<string, { bg: string; color: string }> = {
@@ -931,16 +1054,16 @@ export function TripDetailClient({
 
   return (
     <div className="stack">
-      {/* Trip header */}
-      <div className="card stack" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 70%)", border: "1px solid #e6f0f2" }}>
-        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Cozy Concierge</p>
-        <h1 style={{ margin: "4px 0 0", fontSize: 28 }}>{trip.trip_name ?? "Your Trip"}</h1>
-        <p style={{ margin: "4px 0 0", color: "#667085" }}>{trip.destinations ?? "Your travel details are ready when you are."}</p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+      <TripCoverHero trip={trip} />
+
+      {/* Trip summary */}
+      <div className="card" style={{ background: "#ffffff", border: "1px solid #e6f0f2", padding: "14px 20px" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <StatusBadge status={trip.trip_status} />
           <span style={{ color: "#667085", fontSize: 14 }}>{fmtDate(trip.departure_date, "TBD")} → {fmtDate(trip.return_date, "TBD")}</span>
         </div>
       </div>
+      <TripStatusTimeline trip={trip} />
 
       {/* Quick action bar */}
       <div className="card" style={{ border: "1px solid #e6f0f2", padding: "14px 20px" }}>

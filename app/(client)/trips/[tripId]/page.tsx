@@ -524,6 +524,19 @@ export default async function TripDetailPage({
     bookingStatus: insuranceResult.data.booking_status ?? null,
   } : null;
 
+  let coverImageUrl: string | null = null;
+  if (trip.cover_image_path) {
+    const { data: coverData } = await supabaseAdmin.storage
+      .from("trip-documents")
+      .createSignedUrl(trip.cover_image_path, 3600);
+    coverImageUrl = coverData?.signedUrl ?? null;
+  }
+
+  const tripForClient = {
+    ...trip,
+    cover_image_url: coverImageUrl,
+  };
+
   const deletionRequested = Boolean(trip.deletion_requested_at);
 
   return (
@@ -587,7 +600,7 @@ export default async function TripDetailPage({
       )}
 
       <TripDetailClient
-        trip={trip}
+        trip={tripForClient}
         proposal={proposalResult.data ?? null}
         clientNote={clientNoteResult.data ?? null}
         clientReminder={clientReminderResult.data ?? null}

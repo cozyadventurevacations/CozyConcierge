@@ -1460,6 +1460,33 @@ async function updateTrip(formData: FormData) {
 
   if (tripError) throw new Error(tripError.message);
 
+  const coverImage = formData.get("cover_image") as File | null;
+  if (coverImage && coverImage.size > 0) {
+    if (!coverImage.type.startsWith("image/")) {
+      throw new Error("Trip cover image must be an image file.");
+    }
+
+    const ext = coverImage.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeExt = ["jpg", "jpeg", "png", "webp"].includes(ext) ? ext : "jpg";
+    const coverImagePath = `trip-covers/${tripId}/cover-${Date.now()}.${safeExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("trip-documents")
+      .upload(coverImagePath, coverImage, {
+        upsert: true,
+        contentType: coverImage.type || "image/jpeg",
+      });
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { error: coverUpdateError } = await supabase
+      .from("trips")
+      .update({ cover_image_path: coverImagePath })
+      .eq("id", tripId);
+
+    if (coverUpdateError) throw new Error(coverUpdateError.message);
+  }
+
   const proposalUpdates = {
     planning_fee: toMoneyNumber(formData.get("planning_fee")),
     total_price: toMoneyNumber(formData.get("total_price")),
@@ -3840,6 +3867,30 @@ export default async function AdminTripEditorPage({
               </label>
           </div>
         
+
+          <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Trip Cover Image</h3>
+              <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                This appears as the full-width image banner at the top of the client trip page.
+                {trip.cover_image_path ? " A cover image is currently saved." : " No cover image has been uploaded yet."}
+              </p>
+            </div>
+            <label className="stack-sm">
+              <span className="label">Upload Cover Image</span>
+              <input
+                className="input"
+                type="file"
+                name="cover_image"
+                accept="image/jpeg,image/png,image/webp"
+              />
+            </label>
+            {trip.cover_image_path && (
+              <p style={{ margin: 0, color: "#027a48", fontSize: 12, fontWeight: 700 }}>
+                Cover image on file.
+              </p>
+            )}
+          </div>
 
           <SectionSaveButton label="Trip Overview" />
         </CollapsibleSection>
