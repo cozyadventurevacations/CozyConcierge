@@ -213,16 +213,29 @@ function SummaryCard({
   tone?: "neutral" | "warning";
 }) {
   const bg = tone === "warning" ? "#fff7ed" : "#ffffff";
-  const border = tone === "warning" ? "1px solid #fed7aa" : "1px solid #e6f0f2";
+  const border = tone === "warning" ? "1px solid #fdba74" : "1px solid #dbeafe";
+  const accent = tone === "warning" ? "#c2410c" : "#123f5b";
 
   return (
     <Link
       href={href}
-      className="card stack"
-      style={{ textDecoration: "none", color: "inherit", background: bg, border }}
+      style={{
+        textDecoration: "none",
+        color: "inherit",
+        background: bg,
+        border,
+        borderRadius: 14,
+        padding: 18,
+        boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+        minHeight: 132,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        gap: 10,
+      }}
     >
-      <span className="label">{title}</span>
-      <strong style={{ fontSize: "2rem", lineHeight: 1 }}>{value}</strong>
+      <span className="label" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</span>
+      <strong style={{ fontSize: "2rem", lineHeight: 1, color: accent }}>{value}</strong>
       {subtitle ? <span style={{ color: "#64748b", lineHeight: 1.45 }}>{subtitle}</span> : null}
     </Link>
   );
@@ -242,20 +255,32 @@ function OpsHighlightCard({
   tone?: "neutral" | "warning" | "danger" | "good";
 }) {
   const styles = {
-    neutral: { background: "#ffffff", border: "1px solid #e6f0f2" },
-    warning: { background: "#fff7ed", border: "1px solid #fed7aa" },
-    danger: { background: "#fff1f2", border: "1px solid #fecdd3" },
-    good: { background: "#f0fdf4", border: "1px solid #bbf7d0" },
+    neutral: { background: "#ffffff", border: "1px solid #dbeafe", accent: "#123f5b" },
+    warning: { background: "#fff7ed", border: "1px solid #fdba74", accent: "#c2410c" },
+    danger: { background: "#fff1f2", border: "1px solid #fecdd3", accent: "#be123c" },
+    good: { background: "#f0fdf4", border: "1px solid #bbf7d0", accent: "#027a48" },
   }[tone];
 
   return (
     <Link
       href={href}
-      className="card stack"
-      style={{ textDecoration: "none", color: "inherit", background: styles.background, border: styles.border }}
+      style={{
+        textDecoration: "none",
+        color: "inherit",
+        background: styles.background,
+        border: styles.border,
+        borderRadius: 16,
+        padding: 18,
+        minHeight: 150,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        gap: 10,
+        boxShadow: "0 12px 30px rgba(15, 23, 42, 0.07)",
+      }}
     >
-      <span className="label">{title}</span>
-      <strong style={{ fontSize: "2rem", lineHeight: 1 }}>{value}</strong>
+      <span className="label" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</span>
+      <strong style={{ fontSize: "2.35rem", lineHeight: 1, color: styles.accent }}>{value}</strong>
       <span style={{ color: "#64748b", lineHeight: 1.45 }}>{helper}</span>
     </Link>
   );
@@ -263,9 +288,14 @@ function OpsHighlightCard({
 
 function SectionTitle({ title, href, linkLabel }: { title: string; href: string; linkLabel: string }) {
   return (
-    <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <h2 style={{ margin: 0 }}>{title}</h2>
-      <Link href={href} className="btn btn-primary">{linkLabel}</Link>
+    <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+      <div>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b", fontWeight: 800 }}>
+          Work Queue
+        </p>
+        <h2 style={{ margin: "4px 0 0", fontSize: 20 }}>{title}</h2>
+      </div>
+      <Link href={href} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 12px" }}>{linkLabel}</Link>
     </div>
   );
 }
@@ -289,17 +319,18 @@ function CompactListItem({
     <div
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "space-between",
-        padding: "12px 14px",
+        padding: "14px 16px",
         border: "1px solid #e6f0f2",
-        borderRadius: 12,
-        background: tone === "warning" ? "#fff7ed" : "#f7fbfc",
+        borderRadius: 14,
+        background: tone === "warning" ? "#fff7ed" : "#ffffff",
         gap: 12,
         flexWrap: "wrap",
+        boxShadow: tone === "warning" ? "0 10px 24px rgba(194, 65, 12, 0.08)" : "0 8px 20px rgba(15, 23, 42, 0.04)",
       }}
     >
-      <div style={{ minWidth: 240 }}>
+      <div style={{ minWidth: 240, flex: "1 1 360px" }}>
         <p style={{ margin: 0, fontWeight: 800 }}>{title}</p>
         {subtitle ? <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>{subtitle}</p> : null}
         {children}
@@ -506,7 +537,7 @@ export default async function AdminDashboardPage({
   return (
     <PageShell
       title="Admin Dashboard"
-      subtitle={`Operations overview Â· ${today.toLocaleDateString("en-US", {
+      subtitle={`Operations overview - ${today.toLocaleDateString("en-US", {
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -521,10 +552,14 @@ export default async function AdminDashboardPage({
 
       {/* â”€â”€ Command Center banner â”€â”€ */}
       <div
-        className="card stack"
         style={{
-          border: "1px solid #e6f0f2",
-          background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)",
+          border: "1px solid #dbeafe",
+          borderRadius: 18,
+          padding: 22,
+          background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 62%, #fff7ed 100%)",
+          boxShadow: "0 18px 46px rgba(15, 23, 42, 0.08)",
+          display: "grid",
+          gap: 18,
         }}
       >
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -532,15 +567,15 @@ export default async function AdminDashboardPage({
             <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
               Cozy Concierge Command Center
             </p>
-            <h2 style={{ margin: "6px 0 0" }}>Today&apos;s Priority Work</h2>
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+            <h2 style={{ margin: "6px 0 0", fontSize: 28, lineHeight: 1.15 }}>Today&apos;s Priority Work</h2>
+            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6, maxWidth: 660 }}>
               Start with final payments due soon, deletion requests, unread private messages, and upcoming departures.
             </p>
           </div>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/admin/trips" className="btn btn-primary">Final Payments</Link>
+            <Link href="/admin/trips?filter=deletion-requested" className="btn btn-outline">Deletion Requests</Link>
             <Link href="/admin/messages?type=private" className="btn btn-primary">Private Messages</Link>
-            <Link href="/admin/trips" className="btn btn-primary">Trips</Link>
           </div>
         </div>
 
@@ -569,7 +604,7 @@ export default async function AdminDashboardPage({
         </div>
       </div>
 
-      {/* â”€â”€ Summary grid â”€â”€ */}
+      {/* Summary grid */}
       <div className="grid grid-3">
         <SummaryCard
           title="Final Payments Due Soon"
@@ -624,7 +659,8 @@ export default async function AdminDashboardPage({
         />
       </div>
 
-      {/* â”€â”€ 1. Final Payments Due in 21 Days â”€â”€ */}
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+      {/* Final Payments Due in 21 Days */}
       <div className="card stack">
         <SectionTitle title="Final Payments Due in 21 Days" href="/admin/trips" linkLabel="View All Trips" />
         {finalPaymentsDue21Result.error ? (
@@ -637,7 +673,7 @@ export default async function AdminDashboardPage({
               <CompactListItem
                 key={trip.id}
                 title={trip.trip_name ?? "Trip"}
-                subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} Â· Departing ${formatDate(trip.departure_date)}`}
+                subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} - Departing ${formatDate(trip.departure_date)}`}
                 href={`/admin/trips/${trip.id}`}
                 cta="Open Trip"
                 tone="warning"
@@ -647,7 +683,7 @@ export default async function AdminDashboardPage({
         )}
       </div>
 
-      {/* â”€â”€ 2. Private Messages â”€â”€ */}
+      {/* Private Messages */}
       <div className="card stack">
         <SectionTitle title="Private Client Messages" href="/admin/messages?type=private" linkLabel="Open Message Inbox" />
         {privateMessageThreadsResult.error ? (
@@ -664,7 +700,7 @@ export default async function AdminDashboardPage({
                 <CompactListItem
                   key={thread.id}
                   title={getMessageClientDisplayName(thread)}
-                  subtitle={`${thread.subject}${trip?.trip_name ? ` Â· ${trip.trip_name}` : ""} Â· Last message ${formatDateTime(thread.last_message_at)}`}
+                  subtitle={`${thread.subject}${trip?.trip_name ? ` - ${trip.trip_name}` : ""} - Last message ${formatDateTime(thread.last_message_at)}`}
                   href={`/admin/messages?threadId=${thread.id}&type=private`}
                   cta="Open Thread"
                   tone={hasUnread ? "warning" : "neutral"}
@@ -723,8 +759,10 @@ export default async function AdminDashboardPage({
           </div>
         )}
       </div>
+      </div>
 
-      {/* â”€â”€ 3. Client Follow-Ups â”€â”€ */}
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+      {/* Client Follow-Ups */}
       <div className="card stack">
         <SectionTitle title="Upcoming Client Follow-Ups" href="/admin/clients" linkLabel="View Clients" />
         {upcomingClientFollowUpsResult.error ? (
@@ -741,7 +779,7 @@ export default async function AdminDashboardPage({
                 <CompactListItem
                   key={followUp.id}
                   title={getClientDisplayName(followUp)}
-                  subtitle={`${followUp.title ?? followUp.note_type} Â· ${formatDate(followUp.follow_up_date)}`}
+                  subtitle={`${followUp.title ?? followUp.note_type} - ${formatDate(followUp.follow_up_date)}`}
                   href={client?.id ? `/admin/clients/${client.id}` : undefined}
                   cta="Open Client"
                   tone={isDueSoon ? "warning" : "neutral"}
@@ -756,7 +794,7 @@ export default async function AdminDashboardPage({
         )}
       </div>
 
-      {/* â”€â”€ 4. Upcoming Departures â”€â”€ */}
+      {/* Upcoming Departures */}
       <div className="card stack">
         <SectionTitle title="Upcoming Departures" href="/admin/trips" linkLabel="View Trips" />
         {upcomingDeparturesResult.error ? (
@@ -769,7 +807,7 @@ export default async function AdminDashboardPage({
               <CompactListItem
                 key={trip.id}
                 title={trip.trip_name ?? "Trip"}
-                subtitle={`${trip.destinations ?? "Not set"} Â· ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
+                subtitle={`${trip.destinations ?? "Not set"} - ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
                 href={`/admin/trips/${trip.id}`}
                 cta="Open Trip"
               >
@@ -780,6 +818,7 @@ export default async function AdminDashboardPage({
             ))}
           </div>
         )}
+      </div>
       </div>
     </PageShell>
   );
