@@ -3,6 +3,7 @@ export const adminNav = [
   { href: "/admin/trips", label: "Trips" },
   { href: "/admin/clients", label: "Clients" },
   { href: "/admin/suppliers", label: "Suppliers" },
+  { href: "/admin/commissions", label: "Commissions" },
   { href: "/admin/messages", label: "Messages" },
   { href: "/logout", label: "Logout" },
 ];
