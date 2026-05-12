@@ -113,11 +113,32 @@ async function submitTravelRequest(formData: FormData) {
   redirect("/trips?travel_request=submitted");
 }
 
-function StepBadge({ step, title }: { step: string; title: string }) {
+function StepBadge({ step, title, helper }: { step: string; title: string; helper: string }) {
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-      <span style={{ width: 30, height: 30, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--accent-dark)", color: "#ffffff", fontWeight: 900, fontSize: 13 }}>{step}</span>
-      <h2 style={{ margin: 0 }}>{title}</h2>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <span style={{ width: 34, height: 34, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--accent-dark)", color: "#ffffff", fontWeight: 900, fontSize: 13, flexShrink: 0 }}>{step}</span>
+      <div>
+        <h2 style={{ margin: 0 }}>{title}</h2>
+        <p style={{ margin: "5px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 14 }}>{helper}</p>
+      </div>
+    </div>
+  );
+}
+
+function IntakeSection({ step, title, helper, children }: { step: string; title: string; helper: string; children: React.ReactNode }) {
+  return (
+    <section className="card stack" style={{ border: "1px solid #e6f0f2", boxShadow: "0 12px 30px rgba(18, 63, 91, 0.04)" }}>
+      <StepBadge step={step} title={title} helper={helper} />
+      {children}
+    </section>
+  );
+}
+
+function ExpectationCard({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #e6f0f2" }}>
+      <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>{title}</p>
+      <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>{detail}</p>
     </div>
   );
 }
@@ -139,72 +160,76 @@ export default async function TravelRequestPage() {
   const defaultName = `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim();
 
   return (
-    <PageShell title="Request Travel Planning" subtitle="Tell us what you have in mind, and we will turn it into a planning conversation.">
+    <PageShell title="Request Travel Planning" subtitle="Share the spark. We will help shape it into a trip worth looking forward to.">
       <form action={submitTravelRequest} className="stack" style={{ maxWidth: 1120 }}>
-        <div className="card stack" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)", border: "1px solid #d9ecf2" }}>
-          <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Cozy Concierge Intake</p>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(260px, 0.7fr)", gap: 18, alignItems: "start" }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: 30 }}>Let us know where you would love to go.</h2>
-              <p style={{ margin: "10px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                Share the essentials now. Your advisor can refine dates, budget, details, and options with you afterward.
+        <section className="card" style={{ background: "linear-gradient(135deg, #eef7fb 0%, #ffffff 64%, #f7fbfc 100%)", border: "1px solid #d9ecf2", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.25fr) minmax(280px, 0.75fr)", gap: 20, alignItems: "stretch" }}>
+            <div className="stack" style={{ justifyContent: "center" }}>
+              <p style={{ margin: 0, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Cozy Concierge Intake</p>
+              <h2 style={{ margin: 0, fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.05 }}>Tell us what kind of getaway you have in mind.</h2>
+              <p style={{ margin: 0, color: "#5e7e8f", lineHeight: 1.65, maxWidth: 680 }}>
+                You do not need every answer yet. Dates, destination ideas, travel style, and a few preferences are enough for Jeremy to start shaping thoughtful options.
               </p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ borderRadius: 999, padding: "7px 11px", background: "#ffffff", border: "1px solid #dbeafe", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>Personal planning</span>
+                <span style={{ borderRadius: 999, padding: "7px 11px", background: "#ffffff", border: "1px solid #dbeafe", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>No pressure</span>
+                <span style={{ borderRadius: 999, padding: "7px 11px", background: "#ffffff", border: "1px solid #dbeafe", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>Advisor reviewed</span>
+              </div>
             </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              {["Trip basics", "Travel style", "Budget and vision"].map((item) => (
-                <div key={item} style={{ padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: "1px solid #e6f0f2", fontWeight: 800, color: "var(--accent-dark)" }}>{item}</div>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        <div className="card stack">
-          <StepBadge step="1" title="Contact Information" />
+            <aside className="stack" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid #e6f0f2", borderRadius: 18, padding: 16 }}>
+              <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>What happens next</p>
+              <ExpectationCard title="1. Jeremy reviews it" detail="Your request lands with your advisor, not a generic queue." />
+              <ExpectationCard title="2. Details get refined" detail="Flexible dates, budget, pace, room type, and must-dos can all be adjusted together." />
+              <ExpectationCard title="3. Options are prepared" detail="You will receive next steps or a planning conversation based on what you share here." />
+            </aside>
+          </div>
+        </section>
+
+        <IntakeSection step="1" title="Contact Information" helper="This lets your advisor follow up in the way you prefer.">
           <div className="grid grid-2">
             <label className="stack-sm"><span className="label">Name</span><input className="input" name="full_name" defaultValue={defaultName} required /></label>
             <label className="stack-sm"><span className="label">Email</span><input className="input" type="email" name="email" defaultValue={clientAccount.email ?? ""} required /></label>
             <label className="stack-sm"><span className="label">Phone Number</span><input className="input" name="phone_number" defaultValue={clientAccount.phone_primary ?? ""} required /></label>
             <label className="stack-sm"><span className="label">Preferred Contact Method</span><select className="select" name="preferred_contact_method" defaultValue="email" required><option value="email">Email</option><option value="text">Text</option><option value="phone">Phone</option></select></label>
           </div>
-        </div>
+        </IntakeSection>
 
-        <div className="card stack">
-          <StepBadge step="2" title="Trip Basics" />
+        <IntakeSection step="2" title="Trip Basics" helper="Share the dates and travelers. Flexible windows are welcome.">
           <div className="grid grid-2">
             <label className="stack-sm"><span className="label">Departure Date</span><input className="input" type="date" name="departure_date" required /></label>
             <label className="stack-sm"><span className="label">Return Date</span><input className="input" type="date" name="return_date" required /></label>
             <label className="stack-sm"><span className="label">Number of Travelers</span><input className="input" type="number" name="number_of_travelers" min="1" defaultValue="1" required /></label>
             <label className="stack-sm"><span className="label">Traveler Ages</span><input className="input" name="traveler_ages" placeholder="45, 43, 12" /></label>
           </div>
-          <label className="stack-sm"><span className="label">Optional Travel Dates</span><textarea className="textarea" name="optional_travel_dates" rows={3} placeholder="Flexible dates or alternate travel windows" /></label>
-        </div>
+          <label className="stack-sm"><span className="label">Optional Travel Dates</span><textarea className="textarea" name="optional_travel_dates" rows={3} placeholder="Flexible dates, alternate travel windows, school breaks, or dates to avoid" /></label>
+        </IntakeSection>
 
-        <div className="card stack">
-          <StepBadge step="3" title="Type of Travel" />
+        <IntakeSection step="3" title="Type of Travel" helper="Choose everything that might apply. Your advisor can narrow it down later.">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
             {travelTypes.map((type) => (
-              <label key={type.value} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", border: "1px solid #e6f0f2", borderRadius: 12, background: "#ffffff", cursor: "pointer", lineHeight: 1.35, fontWeight: 700 }}>
+              <label key={type.value} style={{ display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "1px solid #e6f0f2", borderRadius: 12, background: "#ffffff", cursor: "pointer", lineHeight: 1.35, fontWeight: 800, color: "var(--accent-dark)" }}>
                 <input type="checkbox" name="travel_types_requested" value={type.value} />
                 <span>{type.label}</span>
               </label>
             ))}
           </div>
-        </div>
+        </IntakeSection>
 
-        <div className="card stack">
-          <StepBadge step="4" title="Destination, Budget & Vision" />
+        <IntakeSection step="4" title="Destination, Budget & Vision" helper="The more personality you add here, the better the first round of ideas can be.">
           <div className="grid grid-2">
             <label className="stack-sm"><span className="label">Destination(s)</span><input className="input" name="destinations" placeholder="Alaska cruise, Walt Disney World, Italy" required /></label>
             <label className="stack-sm"><span className="label">Budget</span><select className="select" name="budget" defaultValue=""><option value="">Select a budget range</option><option value="Under $2,500">Under $2,500</option><option value="$2,500-$5,000">$2,500-$5,000</option><option value="$5,000-$10,000">$5,000-$10,000</option><option value="$10,000+">$10,000+</option><option value="Prefer to discuss">Prefer to discuss</option></select></label>
           </div>
-          <label className="stack-sm"><span className="label">Tell Us About Your Trip</span><textarea className="textarea" name="trip_vision_notes" rows={5} placeholder="Must-dos, must-avoids, celebrations, accessibility needs, or travel preferences" /></label>
+          <label className="stack-sm"><span className="label">Tell Us About Your Trip</span><textarea className="textarea" name="trip_vision_notes" rows={6} placeholder="Must-dos, must-avoids, celebrations, accessibility needs, resort style, dining preferences, pace, or anything you want Jeremy to know" /></label>
           <label className="stack-sm"><span className="label">Zoom Call Availability</span><textarea className="textarea" name="zoom_call_availability" rows={3} placeholder="Weeknights after 6pm, Tuesday mornings, weekends only" /></label>
-        </div>
+        </IntakeSection>
 
-        <div className="card" style={{ background: "#f7fbfc", border: "1px solid #d9ecf2", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Ready to send?</h2>
-            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>Your advisor will review this and follow up with next steps.</p>
+        <div className="card" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)", border: "1px solid #d9ecf2", display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ maxWidth: 640 }}>
+            <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Ready for review</p>
+            <h2 style={{ margin: "4px 0 0" }}>Send your planning request</h2>
+            <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>Your advisor will review this and follow up with next steps. You can always refine details later.</p>
           </div>
           <div className="row">
             <button type="submit" className="btn btn-primary">Submit Travel Request</button>
