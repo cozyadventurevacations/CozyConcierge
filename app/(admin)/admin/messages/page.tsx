@@ -500,6 +500,36 @@ export default async function AdminMessagesPage({
                 })}
               </div>
 
+              <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Quick Replies</h3>
+                  <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                    Send a common concierge response without retyping it.
+                  </p>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <form action={replyAsAdmin}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <input type="hidden" name="body" value="Thank you for the message. I am reviewing this and will follow up shortly." />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Reviewing</button>
+                  </form>
+                  <form action={replyAsAdmin}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <input type="hidden" name="body" value="Thanks for the update. I have this noted on your trip file." />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Noted</button>
+                  </form>
+                  <form action={replyAsAdmin}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <input type="hidden" name="body" value="Could you please upload the requested document when you have a moment? That will help me keep everything moving." />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Document Request</button>
+                  </form>
+                  <form action={replyAsAdmin}>
+                    <input type="hidden" name="thread_id" value={selectedThread.id} />
+                    <input type="hidden" name="body" value="Your payment reminder is on my radar. Please let me know if you need the payment link resent." />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Payment Reminder</button>
+                  </form>
+                </div>
+              </div>
               {/* Reply form */}
               <form action={replyAsAdmin} className="stack">
                 <input type="hidden" name="thread_id" value={selectedThread.id} />
@@ -535,3 +565,4 @@ export default async function AdminMessagesPage({
     </PageShell>
   );
 }
+

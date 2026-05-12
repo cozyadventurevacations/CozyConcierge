@@ -18,13 +18,15 @@ type CommissionRow = {
   created_at: string | null;
 };
 
+type CommissionFilter = "all" | "expected" | "overdue" | "outstanding" | "received";
+
 function formatMoney(value: number | null | undefined) {
-  if (typeof value !== "number") return "—";
+  if (typeof value !== "number") return "-";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "-";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split("-").map(Number);
     return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -34,6 +36,29 @@ function formatDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isPastDue(value: string | null | undefined) {
+  if (!value) return false;
+  const date = new Date(`${value}T23:59:59`);
+  return !Number.isNaN(date.getTime()) && date.getTime() < Date.now();
+}
+
+function normalizeStatus(value: string | null | undefined) {
+  return (value ?? "expected").toLowerCase();
+}
+
+function outstandingAmount(commission: CommissionRow) {
+  return Math.max(0, Number(commission.expected_commission_amount ?? 0) - Number(commission.received_commission_amount ?? 0));
+}
+
+function isReceived(commission: CommissionRow) {
+  const status = normalizeStatus(commission.commission_status);
+  return status === "received" || outstandingAmount(commission) <= 0;
+}
+
+function isOverdueCommission(commission: CommissionRow) {
+  return !isReceived(commission) && isPastDue(commission.expected_payment_date);
 }
 
 function commissionMatchesSearch(commission: CommissionRow, searchTerm: string) {
@@ -54,48 +79,68 @@ function commissionMatchesSearch(commission: CommissionRow, searchTerm: string) 
   return haystack.includes(searchTerm.toLowerCase());
 }
 
+function commissionMatchesFilter(commission: CommissionRow, filter: CommissionFilter) {
+  const status = normalizeStatus(commission.commission_status);
+  if (filter === "all") return true;
+  if (filter === "expected") return ["expected", "pending", "invoiced", "partial"].includes(status) && !isReceived(commission);
+  if (filter === "overdue") return isOverdueCommission(commission);
+  if (filter === "outstanding") return outstandingAmount(commission) > 0;
+  if (filter === "received") return isReceived(commission);
+  return true;
+}
+
 const statusColors: Record<string, { background: string; color: string }> = {
-  expected:   { background: "#fff7ed", color: "#c2410c" },
-  pending:    { background: "#fff7ed", color: "#c2410c" },
-  invoiced:   { background: "#e6f0fb", color: "#185fa5" },
-  partial:    { background: "#f5f3ff", color: "#6d28d9" },
-  received:   { background: "#ecfdf3", color: "#027a48" },
-  cancelled:  { background: "#fff1f2", color: "#be123c" },
-  disputed:   { background: "#fff1f2", color: "#be123c" },
+  expected: { background: "#fff7ed", color: "#c2410c" },
+  pending: { background: "#fff7ed", color: "#c2410c" },
+  invoiced: { background: "#e6f0fb", color: "#185fa5" },
+  partial: { background: "#f5f3ff", color: "#6d28d9" },
+  received: { background: "#ecfdf3", color: "#027a48" },
+  cancelled: { background: "#fff1f2", color: "#be123c" },
+  disputed: { background: "#fff1f2", color: "#be123c" },
 };
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
   const label = status ?? "expected";
   const colors = statusColors[label.toLowerCase()] ?? { background: "#f0f7f8", color: "var(--accent-dark)" };
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", borderRadius: 999,
-      padding: "4px 10px", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap",
-      background: colors.background, color: colors.color,
-    }}>
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 10px", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", background: colors.background, color: colors.color }}>
       {label}
     </span>
   );
 }
 
-function SearchBox({ defaultValue }: { defaultValue: string }) {
+function SummaryCard({ label, value, helper, tone = "neutral" }: { label: string; value: string | number; helper: string; tone?: "neutral" | "warning" | "good" | "danger" }) {
+  const colors = {
+    neutral: { border: "#e6f0f2", background: "#ffffff", color: "var(--accent-dark)" },
+    warning: { border: "#fed7aa", background: "#fff7ed", color: "#c2410c" },
+    danger: { border: "#fecaca", background: "#fff1f2", color: "#be123c" },
+    good: { border: "#bbf7d0", background: "#ecfdf3", color: "#027a48" },
+  }[tone];
+
   return (
-    <form
-      action="/admin/commissions"
-      style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}
-    >
-      <input
-        name="q"
-        type="search"
-        placeholder="Search by client, trip, supplier, booking number, status..."
-        defaultValue={defaultValue}
-        className="input"
-        style={{ flex: "1 1 320px", minWidth: 260 }}
-      />
+    <div className="card" style={{ border: `1px solid ${colors.border}`, background: colors.background }}>
+      <span className="label">{label}</span>
+      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: colors.color }}>{value}</p>
+      <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>{helper}</p>
+    </div>
+  );
+}
+
+function FilterLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+  return (
+    <Link href={href} className={active ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "8px 12px", fontSize: 13 }}>
+      {children}
+    </Link>
+  );
+}
+
+function SearchBox({ defaultValue, filter }: { defaultValue: string; filter: CommissionFilter }) {
+  return (
+    <form action="/admin/commissions" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <input type="hidden" name="filter" value={filter} />
+      <input name="q" type="search" placeholder="Search by client, trip, supplier, booking number, status..." defaultValue={defaultValue} className="input" style={{ flex: "1 1 320px", minWidth: 260 }} />
       <button type="submit" className="btn btn-primary">Search</button>
-      {defaultValue ? (
-        <Link href="/admin/commissions" className="btn btn-primary">Clear</Link>
-      ) : null}
+      {defaultValue ? <Link href={`/admin/commissions?filter=${filter}`} className="btn btn-outline">Clear</Link> : null}
     </form>
   );
 }
@@ -103,10 +148,11 @@ function SearchBox({ defaultValue }: { defaultValue: string }) {
 export default async function AdminCommissionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; filter?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, filter: rawFilter } = await searchParams;
   const searchTerm = String(q ?? "").trim();
+  const activeFilter = (["all", "expected", "overdue", "outstanding", "received"].includes(String(rawFilter)) ? rawFilter : "all") as CommissionFilter;
 
   const { supabase } = await requireAdmin();
 
@@ -118,56 +164,56 @@ export default async function AdminCommissionsPage({
   if (error) {
     return (
       <PageShell title="Commissions" subtitle="Track expected and received agency commissions.">
-        <div className="card">
-          <p><strong>Error loading commissions:</strong></p>
-          <pre>{JSON.stringify(error, null, 2)}</pre>
-        </div>
+        <div className="card"><p><strong>Error loading commissions:</strong></p><pre>{JSON.stringify(error, null, 2)}</pre></div>
       </PageShell>
     );
   }
 
   const allRows = (commissions ?? []) as CommissionRow[];
-  const rows = allRows.filter((commission) => commissionMatchesSearch(commission, searchTerm));
+  const rows = allRows
+    .filter((commission) => commissionMatchesFilter(commission, activeFilter))
+    .filter((commission) => commissionMatchesSearch(commission, searchTerm));
 
-  const expectedTotal = rows.reduce((sum, c) => sum + Number(c.expected_commission_amount ?? 0), 0);
-  const receivedTotal = rows.reduce((sum, c) => sum + Number(c.received_commission_amount ?? 0), 0);
-  const outstandingTotal = expectedTotal - receivedTotal;
+  const expectedTotal = allRows.reduce((sum, c) => sum + Number(c.expected_commission_amount ?? 0), 0);
+  const receivedTotal = allRows.reduce((sum, c) => sum + Number(c.received_commission_amount ?? 0), 0);
+  const outstandingTotal = allRows.reduce((sum, c) => sum + outstandingAmount(c), 0);
+  const overdueRows = allRows.filter(isOverdueCommission);
+  const expectedThisMonth = allRows.filter((c) => {
+    if (!c.expected_payment_date || isReceived(c)) return false;
+    const date = new Date(`${c.expected_payment_date}T00:00:00`);
+    const now = new Date();
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  });
+  const expectedThisMonthTotal = expectedThisMonth.reduce((sum, c) => sum + outstandingAmount(c), 0);
+
+  const base = "/admin/commissions";
 
   return (
     <PageShell title="Commissions" subtitle="Track expected and received agency commissions.">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <p style={{ margin: 0, color: "#64748b" }}>
-          Showing {rows.length} of {allRows.length} commission record{allRows.length === 1 ? "" : "s"}.
-        </p>
-        <Link href="/admin/commissions/new" className="btn btn-primary">
-          Add New Commission
-        </Link>
+        <p style={{ margin: 0, color: "#64748b" }}>Showing {rows.length} of {allRows.length} commission record{allRows.length === 1 ? "" : "s"}.</p>
+        <Link href="/admin/commissions/new" className="btn btn-primary">Add New Commission</Link>
       </div>
 
-      <div className="grid grid-3">
-        <div className="card">
-          <span className="label">Expected</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{formatMoney(expectedTotal)}</p>
-        </div>
-        <div className="card">
-          <span className="label">Received</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{formatMoney(receivedTotal)}</p>
-        </div>
-        <div className="card">
-          <span className="label">Outstanding</span>
-          <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{formatMoney(outstandingTotal)}</p>
-        </div>
+      <div className="grid grid-4">
+        <SummaryCard label="Expected This Month" value={formatMoney(expectedThisMonthTotal)} helper={`${expectedThisMonth.length} open item${expectedThisMonth.length === 1 ? "" : "s"}`} tone={expectedThisMonth.length > 0 ? "warning" : "neutral"} />
+        <SummaryCard label="Overdue" value={formatMoney(overdueRows.reduce((sum, c) => sum + outstandingAmount(c), 0))} helper={`${overdueRows.length} need follow-up`} tone={overdueRows.length > 0 ? "danger" : "good"} />
+        <SummaryCard label="Received" value={formatMoney(receivedTotal)} helper="All-time received" tone="good" />
+        <SummaryCard label="Outstanding" value={formatMoney(outstandingTotal)} helper={`${formatMoney(expectedTotal)} expected total`} tone={outstandingTotal > 0 ? "warning" : "good"} />
       </div>
 
       <div className="card stack">
-        <SearchBox defaultValue={searchTerm} />
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <FilterLink href={base} active={activeFilter === "all"}>All</FilterLink>
+          <FilterLink href={`${base}?filter=expected`} active={activeFilter === "expected"}>Expected</FilterLink>
+          <FilterLink href={`${base}?filter=overdue`} active={activeFilter === "overdue"}>Overdue</FilterLink>
+          <FilterLink href={`${base}?filter=outstanding`} active={activeFilter === "outstanding"}>Outstanding</FilterLink>
+          <FilterLink href={`${base}?filter=received`} active={activeFilter === "received"}>Received</FilterLink>
+        </div>
+        <SearchBox defaultValue={searchTerm} filter={activeFilter} />
 
         {rows.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>
-            {searchTerm
-              ? "No commissions found. Try clearing the search or using a broader term."
-              : "No commission records yet. Add commissions to track expected payments, received amounts, and booking numbers."}
-          </p>
+          <p style={{ margin: 0, color: "#64748b" }}>{searchTerm ? "No commissions found. Try clearing the search or using a broader term." : "No commission records match this view."}</p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 1180 }}>
@@ -181,35 +227,34 @@ export default async function AdminCommissionsPage({
                   <th>Status</th>
                   <th>Expected</th>
                   <th>Received</th>
+                  <th>Outstanding</th>
                   <th>Expected Date</th>
-                  <th>Received Date</th>
                   <th>Open</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((commission) => (
-                  <tr key={commission.id}>
-                    <td>{commission.commission_name}</td>
-                    <td>{commission.client_name_snapshot ?? "—"}</td>
-                    <td>{commission.trip_name_snapshot ?? "—"}</td>
-                    <td>{commission.supplier_name_snapshot ?? "—"}</td>
-                    <td>{commission.booking_number ?? "—"}</td>
-                    <td><StatusBadge status={commission.commission_status} /></td>
-                    <td>{formatMoney(commission.expected_commission_amount)}</td>
-                    <td>{formatMoney(commission.received_commission_amount)}</td>
-                    <td>{formatDate(commission.expected_payment_date)}</td>
-                    <td>{formatDate(commission.received_payment_date)}</td>
-                    <td>
-                      <Link
-                        href={`/admin/commissions/${commission.id}`}
-                        className="btn btn-primary"
-                        style={{ fontSize: 13, padding: "5px 12px" }}
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((commission) => {
+                  const overdue = isOverdueCommission(commission);
+                  return (
+                    <tr key={commission.id} style={{ background: overdue ? "#fff7ed" : undefined }}>
+                      <td><strong>{commission.commission_name}</strong></td>
+                      <td>{commission.client_name_snapshot ?? "-"}</td>
+                      <td>{commission.trip_name_snapshot ?? "-"}</td>
+                      <td>{commission.supplier_name_snapshot ?? "-"}</td>
+                      <td>{commission.booking_number ?? "-"}</td>
+                      <td><StatusBadge status={commission.commission_status} /></td>
+                      <td>{formatMoney(commission.expected_commission_amount)}</td>
+                      <td>{formatMoney(commission.received_commission_amount)}</td>
+                      <td style={{ fontWeight: overdue ? 900 : 700, color: overdue ? "#c2410c" : undefined }}>{formatMoney(outstandingAmount(commission))}</td>
+                      <td>
+                        <span style={{ color: overdue ? "#c2410c" : undefined, fontWeight: overdue ? 800 : undefined }}>
+                          {formatDate(commission.expected_payment_date)}
+                        </span>
+                      </td>
+                      <td><Link href={`/admin/commissions/${commission.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -18,6 +18,8 @@ function formatMoney(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+type TripFilter = "all" | "upcoming" | "payment-due" | "deletion-requested" | "completed";
+
 function isPastDue(value: string | null | undefined) {
   if (!value) return false;
   const date = new Date(`${value}T23:59:59`);
@@ -107,6 +109,38 @@ function PaymentBadge({ trip }: { trip: TripRow }) {
       {label}
     </span>
   );
+}
+
+
+function daysUntil(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function isPaymentDue(trip: TripRow) {
+  const balanceDue = Number(trip.balance_due ?? 0);
+  if (balanceDue <= 0) return false;
+  return isPastDue(trip.deposit_due_date) || isPastDue(trip.final_payment_due_date) || Boolean(trip.final_payment_due_date && Number(daysUntil(trip.final_payment_due_date) ?? 999) <= 21);
+}
+
+function tripMatchesFilter(trip: TripRow, filter: TripFilter) {
+  if (filter === "all") return true;
+  if (filter === "upcoming") return Number(daysUntil(trip.departure_date) ?? -1) >= 0;
+  if (filter === "payment-due") return isPaymentDue(trip);
+  if (filter === "deletion-requested") return Boolean(trip.deletion_requested_at);
+  if (filter === "completed") return ["completed", "travel_complete", "complete"].includes((trip.trip_status ?? "").toLowerCase());
+  return true;
+}
+
+function FilterLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+  return <Link href={href} className={active ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "8px 12px", fontSize: 13 }}>{children}</Link>;
+}
+
+function SummaryCard({ label, value, helper, tone = "neutral" }: { label: string; value: string | number; helper: string; tone?: "neutral" | "warning" | "good" }) {
+  const colors = tone === "warning" ? { border: "#fed7aa", background: "#fff7ed", color: "#c2410c" } : tone === "good" ? { border: "#bbf7d0", background: "#ecfdf3", color: "#027a48" } : { border: "#e6f0f2", background: "#ffffff", color: "var(--accent-dark)" };
+  return <div className="card" style={{ border: `1px solid ${colors.border}`, background: colors.background }}><span className="label">{label}</span><p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: colors.color }}>{value}</p><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>{helper}</p></div>;
 }
 
 type TripRow = {
@@ -216,10 +250,11 @@ async function restoreTrip(formData: FormData) {
 export default async function AdminTripsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; filter?: string }>;
 }) {
-  const { view } = await searchParams;
+  const { view, filter: rawFilter } = await searchParams;
   const showDeleted = view === "deleted";
+  const activeFilter = (["all", "upcoming", "payment-due", "deletion-requested", "completed"].includes(String(rawFilter)) ? rawFilter : "all") as TripFilter;
 
   const { supabase } = await requireAdmin();
 
@@ -246,7 +281,11 @@ export default async function AdminTripsPage({
     );
   }
 
-  const tripRows = (trips ?? []) as TripRow[];
+  const allTripRows = (trips ?? []) as TripRow[];
+  const tripRows = showDeleted ? allTripRows : allTripRows.filter((trip) => tripMatchesFilter(trip, activeFilter));
+  const upcomingCount = allTripRows.filter((trip) => tripMatchesFilter(trip, "upcoming")).length;
+  const paymentDueCount = allTripRows.filter((trip) => tripMatchesFilter(trip, "payment-due")).length;
+  const completedCount = allTripRows.filter((trip) => tripMatchesFilter(trip, "completed")).length;
 
   // Count pending deletion requests (only on active trips view)
   const { data: deletionRequests } = await supabase
@@ -284,6 +323,24 @@ export default async function AdminTripsPage({
         )}
       </div>
 
+      {!showDeleted && (
+        <div className="grid grid-4">
+          <SummaryCard label="Upcoming" value={upcomingCount} helper="Departure date ahead" />
+          <SummaryCard label="Payment Due" value={paymentDueCount} helper="Past due or due within 21 days" tone={paymentDueCount > 0 ? "warning" : "good"} />
+          <SummaryCard label="Deletion Requests" value={deletionRequestCount} helper="Client requested deletion" tone={deletionRequestCount > 0 ? "warning" : "good"} />
+          <SummaryCard label="Completed" value={completedCount} helper="Completed trip records" />
+        </div>
+      )}
+
+      {!showDeleted && (
+        <div className="card row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <FilterLink href="/admin/trips" active={activeFilter === "all"}>All</FilterLink>
+          <FilterLink href="/admin/trips?filter=upcoming" active={activeFilter === "upcoming"}>Upcoming</FilterLink>
+          <FilterLink href="/admin/trips?filter=payment-due" active={activeFilter === "payment-due"}>Payment Due</FilterLink>
+          <FilterLink href="/admin/trips?filter=deletion-requested" active={activeFilter === "deletion-requested"}>Deletion Requested</FilterLink>
+          <FilterLink href="/admin/trips?filter=completed" active={activeFilter === "completed"}>Completed</FilterLink>
+        </div>
+      )}
       {/* Deletion requests banner */}
       {!showDeleted && tripRows.some((t) => t.deletion_requested_at) && (
         <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
@@ -412,3 +469,5 @@ export default async function AdminTripsPage({
     </PageShell>
   );
 }
+
+
