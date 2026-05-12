@@ -3165,6 +3165,38 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
+        <span id="trip-timeline" />
+        <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
+          {tripMilestonesError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading trip milestones:</strong>
+              </p>
+              <pre>{JSON.stringify(tripMilestonesError, null, 2)}</pre>
+            </div>
+          ) : milestoneRows.length === 0 ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                No milestones found for this trip yet. Refresh this page after running
+                the trip_milestones SQL setup if this message continues to appear.
+              </p>
+            </div>
+          ) : (
+            <>
+              <TripMilestoneProgress milestones={milestoneRows} />
+
+              <MilestoneChecklist milestones={milestoneRows} />
+            </>
+          )}
+        </CollapsibleSection>
+
         <span id="trip-messages" />
         <div
           className="card stack"
@@ -3701,39 +3733,8 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
-        <span id="trip-timeline" />
-        <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
-          {tripMilestonesError ? (
-            <div className="card">
-              <p>
-                <strong>Error loading trip milestones:</strong>
-              </p>
-              <pre>{JSON.stringify(tripMilestonesError, null, 2)}</pre>
-            </div>
-          ) : milestoneRows.length === 0 ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#f7fbfc",
-                border: "1px solid #e6f0f2",
-              }}
-            >
-              <p style={{ margin: 0 }}>
-                No milestones found for this trip yet. Refresh this page after running
-                the trip_milestones SQL setup if this message continues to appear.
-              </p>
-            </div>
-          ) : (
-            <>
-              <TripMilestoneProgress milestones={milestoneRows} />
-
-              <MilestoneChecklist milestones={milestoneRows} />
-            </>
-          )}
-        </CollapsibleSection>
         <span id="trip-overview" />
-        <CollapsibleSection title="Trip Overview" defaultOpen>
+        <CollapsibleSection title="Trip Overview">
           <div className="grid grid-2">
             <label>
               <span className="label">Trip Name</span>
