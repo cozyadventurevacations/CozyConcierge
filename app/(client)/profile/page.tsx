@@ -38,6 +38,11 @@ type ClientAccount = {
   emergency_contact_relationship: string | null;
   emergency_contact_phone: string | null;
   notes: string | null;
+  notify_new_messages: boolean | null;
+  notify_payment_reminders: boolean | null;
+  notify_trip_updates: boolean | null;
+  notify_travel_circle_invites: boolean | null;
+  notification_preferences_updated_at: string | null;
   created_at: string | null;
 };
 
@@ -125,6 +130,10 @@ function getPassportStatus(expirationDate: string | null | undefined) {
   return { label: "On File", background: "#ecfdf3", color: "#027a48", helper: "Passport expiration date is on file." };
 }
 
+function isPreferenceEnabled(value: boolean | null | undefined) {
+  return value !== false;
+}
+
 function getUpdatedMessage(updated: string | undefined) {
   const map: Record<string, string> = {
     personal: "Personal information saved.",
@@ -134,6 +143,7 @@ function getUpdatedMessage(updated: string | undefined) {
     preferences: "Travel preferences saved.",
     allergies: "Food allergy notes saved.",
     notes: "Profile notes saved.",
+    notifications: "Notification preferences saved.",
   };
   return map[updated ?? ""] ?? "Profile updated.";
 }
@@ -246,6 +256,44 @@ function FoodAllergyCheckboxes({ savedAllergies }: { savedAllergies: string | nu
   );
 }
 
+function NotificationToggle({
+  name,
+  title,
+  description,
+  defaultChecked,
+}: {
+  name: string;
+  title: string;
+  description: string;
+  defaultChecked: boolean;
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: 14,
+        border: "1px solid #e6f0f2",
+        borderRadius: 14,
+        background: "#fbfdfe",
+        cursor: "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        name={name}
+        defaultChecked={defaultChecked}
+        style={{ width: 18, height: 18, marginTop: 2 }}
+      />
+      <span className="stack-sm">
+        <strong style={{ color: "var(--accent-dark)" }}>{title}</strong>
+        <span style={{ color: "#667085", fontSize: 13, lineHeight: 1.45 }}>{description}</span>
+      </span>
+    </label>
+  );
+}
+
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function getCurrentClientAccount() {
@@ -256,7 +304,7 @@ async function getCurrentClientAccount() {
   const userEmail = user.email?.trim().toLowerCase();
   if (!userEmail) throw new Error("Your login account does not have an email address.");
 
-  const selectFields = `id, first_name, middle_name, last_name, preferred_name, email, phone_primary, phone_secondary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, anniversary_date, preferred_airport, travel_style, airline_seating_preference, airline_class_preference, cruise_cabin_preference, travel_preference_notes, accessibility_notes, food_allergies, passport_number, passport_expiration_date, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, notes, created_at`;
+  const selectFields = `id, first_name, middle_name, last_name, preferred_name, email, phone_primary, phone_secondary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, anniversary_date, preferred_airport, travel_style, airline_seating_preference, airline_class_preference, cruise_cabin_preference, travel_preference_notes, accessibility_notes, food_allergies, passport_number, passport_expiration_date, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, notes, notify_new_messages, notify_payment_reminders, notify_trip_updates, notify_travel_circle_invites, notification_preferences_updated_at, created_at`;
 
   const { data: byEmail, error: emailError } = await supabase.from("client_accounts").select(selectFields).ilike("email", userEmail).maybeSingle();
   if (emailError) throw new Error(emailError.message);
@@ -385,6 +433,24 @@ async function updateProfileNotes(formData: FormData) {
   redirect("/profile?updated=notes");
 }
 
+async function updateNotificationPreferences(formData: FormData) {
+  "use server";
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const { error } = await supabase
+    .from("client_accounts")
+    .update({
+      notify_new_messages: formData.get("notify_new_messages") === "on",
+      notify_payment_reminders: formData.get("notify_payment_reminders") === "on",
+      notify_trip_updates: formData.get("notify_trip_updates") === "on",
+      notify_travel_circle_invites: formData.get("notify_travel_circle_invites") === "on",
+      notification_preferences_updated_at: new Date().toISOString(),
+    })
+    .eq("id", clientAccount.id);
+  if (error) throw new Error(error.message);
+  await revalidatePaths();
+  redirect("/profile?updated=notifications");
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function ClientProfilePage({
@@ -416,6 +482,7 @@ export default async function ClientProfilePage({
           <Link href="/profile/passport-upload" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Passport Upload</Link>
           <Link href="/profile/traveler-numbers" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Traveler Numbers & Rewards</Link>
           <Link href="/profile/documents/upload" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Upload Document</Link>
+          <a href="#notification-preferences" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Notifications</a>
         </div>
       </div>
 
@@ -466,6 +533,46 @@ export default async function ClientProfilePage({
             <Field label="Secondary Phone" name="phone_secondary" defaultValue={formatPhoneForDisplay(clientAccount.phone_secondary)} placeholder="1 (555) 123-4567" />
           </div>
           <SaveButton>Save Personal Information</SaveButton>
+        </ProfileSection>
+      </form>
+
+      {/* Notification Preferences */}
+      <form action={updateNotificationPreferences} id="notification-preferences">
+        <ProfileSection
+          title="Notification Preferences"
+          intro="Choose which travel emails you want Cozy Adventure Vacations to send. Critical account and security emails may still be sent when needed."
+          defaultOpen={updated === "notifications"}
+        >
+          <div className="grid grid-2">
+            <NotificationToggle
+              name="notify_new_messages"
+              title="New messages"
+              description="Email me when my advisor sends a private message or replies in a conversation I am part of."
+              defaultChecked={isPreferenceEnabled(clientAccount.notify_new_messages)}
+            />
+            <NotificationToggle
+              name="notify_payment_reminders"
+              title="Payment reminders"
+              description="Email me about upcoming deposit, final payment, and balance reminders."
+              defaultChecked={isPreferenceEnabled(clientAccount.notify_payment_reminders)}
+            />
+            <NotificationToggle
+              name="notify_trip_updates"
+              title="Trip updates"
+              description="Email me when important trip details, documents, or status items are updated."
+              defaultChecked={isPreferenceEnabled(clientAccount.notify_trip_updates)}
+            />
+            <NotificationToggle
+              name="notify_travel_circle_invites"
+              title="Travel Circle invites"
+              description="Email me when someone invites me to join a Travel Circle or trip conversation."
+              defaultChecked={isPreferenceEnabled(clientAccount.notify_travel_circle_invites)}
+            />
+          </div>
+          <div style={{ padding: 14, borderRadius: 14, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#667085", fontSize: 13, lineHeight: 1.55 }}>
+            You can change these anytime. Your advisor may still reach out directly for urgent travel matters.
+          </div>
+          <SaveButton>Save Notification Preferences</SaveButton>
         </ProfileSection>
       </form>
 
