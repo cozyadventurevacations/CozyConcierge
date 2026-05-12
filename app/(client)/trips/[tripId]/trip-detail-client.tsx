@@ -564,7 +564,124 @@ function ProposalPaymentDetails({ trip }: { trip: TripRow }) {
   );
 }
 
-function OverviewTab({ trip, proposal, clientNote, clientReminder }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null }) {
+function TravelReadinessChecklist({
+  trip,
+  documents,
+  clientDocuments,
+  tripMembers,
+}: {
+  trip: TripRow;
+  documents: DocumentRow[];
+  clientDocuments: ClientDocumentRow[];
+  tripMembers: TripMemberRow[];
+}) {
+  const passportUploaded = clientDocuments.some((document) => document.document_type === "passport");
+  const sharedDocumentsReady = documents.length > 0;
+  const paymentReady = Number(trip.balance_due ?? 0) <= 0;
+  const tripDetailsReady = Boolean(trip.destinations && trip.departure_date && trip.return_date);
+  const activeMembers = tripMembers.filter((member) => member.invite_status === "active");
+  const travelCircleReady = activeMembers.length > 0;
+
+  const items = [
+    {
+      label: "Trip details",
+      helper: tripDetailsReady ? "Dates and destination are on file." : "Some trip details are still being finalized.",
+      complete: tripDetailsReady,
+    },
+    {
+      label: "Passport on file",
+      helper: passportUploaded ? "Passport document is uploaded." : "Upload your passport so your advisor has it when needed.",
+      complete: passportUploaded,
+      href: "/profile/passport-upload",
+    },
+    {
+      label: "Payment status",
+      helper: paymentReady ? "No balance is currently due." : `${fmtMoney(trip.balance_due)} balance remains.`,
+      complete: paymentReady,
+      href: `/trips/${trip.id}/request-payment`,
+    },
+    {
+      label: "Shared documents",
+      helper: sharedDocumentsReady ? `${documents.length} shared document${documents.length === 1 ? "" : "s"} available.` : "Travel documents will appear here when shared by your advisor.",
+      complete: sharedDocumentsReady,
+      href: `/trips/${trip.id}/documents`,
+    },
+    {
+      label: "Travel Circle",
+      helper: travelCircleReady ? `${activeMembers.length} traveler${activeMembers.length === 1 ? "" : "s"} connected.` : "Invite companions when you want them included.",
+      complete: travelCircleReady,
+    },
+  ];
+
+  const completedCount = items.filter((item) => item.complete).length;
+  const percentComplete = Math.round((completedCount / items.length) * 100);
+
+  return (
+    <SectionCard
+      eyebrow="Readiness"
+      title="Travel Readiness Checklist"
+      subtitle="A quick snapshot of what is ready and what may still need attention before departure."
+    >
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <div style={{ height: 10, borderRadius: 999, background: "#e6f0f2", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: `${percentComplete}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: percentComplete === 100 ? "#3d8c4e" : "#62a9cf",
+                }}
+              />
+            </div>
+          </div>
+          <strong style={{ color: "var(--accent-dark)", whiteSpace: "nowrap" }}>
+            {completedCount} of {items.length} ready
+          </strong>
+        </div>
+
+        <div className="grid grid-2">
+          {items.map((item) => {
+            const content = (
+              <div
+                style={{
+                  height: "100%",
+                  padding: 14,
+                  borderRadius: 14,
+                  border: item.complete ? "1px solid #bbf7d0" : "1px solid #fed7aa",
+                  background: item.complete ? "#f0fdf4" : "#fff7ed",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <p style={{ margin: 0, fontWeight: 900, color: item.complete ? "#166534" : "#854d0e" }}>
+                    {item.label}
+                  </p>
+                  <span style={{ fontSize: 12, fontWeight: 900, color: item.complete ? "#166534" : "#c2410c" }}>
+                    {item.complete ? "Ready" : "Check"}
+                  </span>
+                </div>
+                <p style={{ margin: "6px 0 0", color: item.complete ? "#166534" : "#92400e", fontSize: 13, lineHeight: 1.5 }}>
+                  {item.helper}
+                </p>
+              </div>
+            );
+
+            return item.href ? (
+              <Link key={item.label} href={item.href} style={{ textDecoration: "none", color: "inherit" }}>
+                {content}
+              </Link>
+            ) : (
+              <div key={item.label}>{content}</div>
+            );
+          })}
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
+function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, clientDocuments, tripMembers }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[]; tripMembers: TripMemberRow[] }) {
   return (
     <div className="stack">
       {clientReminder && (
@@ -574,6 +691,13 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder }: { trip: Tri
           <p style={{ margin: 0, lineHeight: 1.65, color: "#374151" }}>{clientReminder.content}</p>
         </div>
       )}
+
+      <TravelReadinessChecklist
+        trip={trip}
+        documents={documents}
+        clientDocuments={clientDocuments}
+        tripMembers={tripMembers}
+      />
 
       <PaymentTimeline
   totalPaid={trip.total_paid ?? null}
@@ -1150,7 +1274,7 @@ export function TripDetailClient({
 
       {/* Tab content */}
       {activeTab === "overview" && (
-        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} />
+        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} />
       )}
       {activeTab === "itinerary" && (
         <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} activity={activity} insurance={insurance} />
@@ -1167,5 +1291,7 @@ export function TripDetailClient({
     </div>
   );
 }
+
+
 
 
