@@ -619,7 +619,7 @@ async function inviteCompanionToCircle(formData: FormData) {
   // Check if they have a Cozy account
   const { data: existingClient } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name, email, notify_travel_circle_invites")
     .ilike("email", email)
     .maybeSingle();
 
@@ -645,7 +645,7 @@ async function inviteCompanionToCircle(formData: FormData) {
     updated_at: new Date().toISOString(),
   });
 
-  if (!existingClient) {
+  if (!existingClient || existingClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
       to: email, inviteName: name, role: "viewer",
       tripName: tripRow?.trip_name ?? "Your Trip",

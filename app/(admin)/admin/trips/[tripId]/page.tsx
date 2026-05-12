@@ -1306,7 +1306,7 @@ async function addTripCompanion(formData: FormData) {
 
   const { data: existingClient, error: clientError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name, email, notify_travel_circle_invites")
     .ilike("email", email)
     .maybeSingle();
 
@@ -1369,7 +1369,7 @@ async function addTripCompanion(formData: FormData) {
     if (error) throw new Error(error.message);
   }
 
-  if (!existingClient) {
+  if (!existingClient || existingClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
       to: email,
       inviteName,

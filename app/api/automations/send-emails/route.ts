@@ -26,6 +26,19 @@ function preferredName(client: { preferred_name?: string | null; first_name?: st
   return client.preferred_name?.trim() || client.first_name?.trim() || "Traveler";
 }
 
+type EmailPreferenceClient = {
+  notify_payment_reminders?: boolean | null;
+  notify_trip_updates?: boolean | null;
+};
+
+function wantsPaymentReminders(client: EmailPreferenceClient | null | undefined) {
+  return client?.notify_payment_reminders !== false;
+}
+
+function wantsTripUpdates(client: EmailPreferenceClient | null | undefined) {
+  return client?.notify_trip_updates !== false;
+}
+
 function formatDate(dateStr: string | null | undefined) {
   if (!dateStr) return "your upcoming travel date";
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -309,7 +322,7 @@ export async function GET(request: Request) {
 
   const { data: passportDocs } = await supabase
     .from("client_documents")
-    .select("id, expiry_date, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, expiry_date, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_trip_updates)")
     .eq("document_type", "passport")
     .gte("expiry_date", sixMonthsOutStr)
     .lte("expiry_date", sixMonthsOutNext);
@@ -317,6 +330,10 @@ export async function GET(request: Request) {
   for (const doc of passportDocs ?? []) {
     const client = Array.isArray(doc.client_accounts) ? doc.client_accounts[0] : doc.client_accounts;
     if (!client?.email || !doc.expiry_date) continue;
+    if (!wantsTripUpdates(client)) {
+      skipped.push(`passport-expiry:${client.id} (trip updates disabled)`);
+      continue;
+    }
     const { subject, html } = passportExpiryEmail(client, doc.expiry_date);
     await sendEmail(client.email, subject, html, `passport-expiry:${client.id}`, client.id, null, "passport_expiry_6mo");
   }
@@ -328,13 +345,17 @@ export async function GET(request: Request) {
 
   const { data: trips30 } = await supabase
     .from("trips")
-    .select("id, trip_name, departure_date, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, trip_name, departure_date, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_trip_updates)")
     .eq("departure_date", thirtyOutStr)
     .neq("trip_status", "cancelled");
 
   for (const trip of trips30 ?? []) {
     const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
     if (!client?.email) continue;
+    if (!wantsTripUpdates(client)) {
+      skipped.push(`pre-travel-30:${trip.id} (trip updates disabled)`);
+      continue;
+    }
     const { subject, html } = preTravelEmail30(client, trip.trip_name ?? "Your Trip", trip.departure_date);
     await sendEmail(client.email, subject, html, `pre-travel-30:${trip.id}`, client.id, trip.id, "pre_travel_30_day");
   }
@@ -346,13 +367,17 @@ export async function GET(request: Request) {
 
   const { data: trips7 } = await supabase
     .from("trips")
-    .select("id, trip_name, departure_date, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, trip_name, departure_date, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_trip_updates)")
     .eq("departure_date", sevenOutStr)
     .neq("trip_status", "cancelled");
 
   for (const trip of trips7 ?? []) {
     const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
     if (!client?.email) continue;
+    if (!wantsTripUpdates(client)) {
+      skipped.push(`pre-travel-7:${trip.id} (trip updates disabled)`);
+      continue;
+    }
     const { subject, html } = preTravelEmail7(client, trip.trip_name ?? "Your Trip", trip.departure_date);
     await sendEmail(client.email, subject, html, `pre-travel-7:${trip.id}`, client.id, trip.id, "pre_travel_7_day");
   }
@@ -364,13 +389,17 @@ export async function GET(request: Request) {
 
   const { data: tripsPost7 } = await supabase
     .from("trips")
-    .select("id, trip_name, return_date, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, trip_name, return_date, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_trip_updates)")
     .eq("return_date", sevenAgoStr)
     .neq("trip_status", "cancelled");
 
   for (const trip of tripsPost7 ?? []) {
     const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
     if (!client?.email) continue;
+    if (!wantsTripUpdates(client)) {
+      skipped.push(`post-travel-7:${trip.id} (trip updates disabled)`);
+      continue;
+    }
     const { subject, html } = postTravelEmail7(client, trip.trip_name ?? "Your Trip");
     await sendEmail(client.email, subject, html, `post-travel-7:${trip.id}`, client.id, trip.id, "post_travel_7_day");
   }
@@ -382,13 +411,17 @@ export async function GET(request: Request) {
 
   const { data: tripsPost60 } = await supabase
     .from("trips")
-    .select("id, trip_name, return_date, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, trip_name, return_date, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_trip_updates)")
     .eq("return_date", sixtyAgoStr)
     .neq("trip_status", "cancelled");
 
   for (const trip of tripsPost60 ?? []) {
     const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
     if (!client?.email) continue;
+    if (!wantsTripUpdates(client)) {
+      skipped.push(`post-travel-60:${trip.id} (trip updates disabled)`);
+      continue;
+    }
     const { subject, html } = postTravelEmail60(client, trip.trip_name ?? "Your Trip");
     await sendEmail(client.email, subject, html, `post-travel-60:${trip.id}`, client.id, trip.id, "post_travel_60_day");
   }
@@ -434,13 +467,17 @@ export async function GET(request: Request) {
 
   const { data: paymentTrips } = await supabase
     .from("trips")
-    .select("id, trip_name, final_payment_due_date, balance_due, client_account_id, client_accounts(id, first_name, preferred_name, email)")
+    .select("id, trip_name, final_payment_due_date, balance_due, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_payment_reminders)")
     .eq("final_payment_due_date", tenDaysOutStr)
     .neq("trip_status", "cancelled");
 
   for (const trip of paymentTrips ?? []) {
     const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
     if (!client?.email || !trip.final_payment_due_date) continue;
+    if (!wantsPaymentReminders(client)) {
+      skipped.push(`final-payment:${trip.id} (payment reminders disabled)`);
+      continue;
+    }
     const { subject, html } = finalPaymentEmail(client, trip.trip_name ?? "Your Trip", trip.final_payment_due_date, trip.balance_due ?? null);
     await sendEmail(client.email, subject, html, `final-payment:${trip.id}`, client.id, trip.id, "final_payment_10_day");
   }
