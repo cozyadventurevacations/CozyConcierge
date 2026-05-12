@@ -3000,9 +3000,15 @@ export default async function AdminTripEditorPage({
             </div>
           </div>
 
-          <div className="grid grid-3">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 10,
+            }}
+          >
             <CommandStatCard
-              label="Trip Status"
+              label="Status"
               value={
                 <CommandStatusBadge
                   tone={
@@ -3016,7 +3022,7 @@ export default async function AdminTripEditorPage({
                   {trip.trip_status ?? "draft"}
                 </CommandStatusBadge>
               }
-              helper="Current trip workflow status"
+              helper="Trip workflow"
             />
 
             <CommandStatCard
@@ -3026,60 +3032,41 @@ export default async function AdminTripEditorPage({
             />
 
             <CommandStatCard
-              label="Balance Due"
+              label="Balance"
               value={formatMoney(balanceDue)}
-              helper={trip.final_payment_due_date ? `Final due ${formatDate(trip.final_payment_due_date)}` : "No final due date"}
-            />
-          </div>
-
-          <div className="grid grid-3">
-            <CommandStatCard
-              label="Trip Components"
-              value={`${activeTripComponents.length} active`}
-              helper={`${componentsWithConfirmations.length} with confirmations`}
+              helper={trip.final_payment_due_date ? `Due ${formatDate(trip.final_payment_due_date)}` : "No due date"}
             />
 
             <CommandStatCard
-              label="Commission Outstanding"
-              value={formatMoney(commissionOutstandingTotal)}
-              helper={`${commissionRows.length} commission record${commissionRows.length === 1 ? "" : "s"}`}
-            />
-
-            <CommandStatCard
-              label="Total Paid"
+              label="Paid"
               value={formatMoney(totalPaid)}
-              helper="Recorded client payments"
+              helper="Recorded payments"
             />
-          </div>
 
-          <div className="grid grid-3">
             <CommandStatCard
-              label="Travel Companions"
+              label="Components"
+              value={`${componentsWithConfirmations.length} / ${activeTripComponents.length}`}
+              helper="Confirmations"
+            />
+
+            <CommandStatCard
+              label="Commission"
+              value={formatMoney(commissionOutstandingTotal)}
+              helper={`${commissionRows.length} record${commissionRows.length === 1 ? "" : "s"}`}
+            />
+
+            <CommandStatCard
+              label="Companions"
               value={tripMembersError ? "Review" : activeTripMemberRows.length}
-              helper={
-                tripMembersError
-                  ? "Could not load companions"
-                  : `${activeCompanionRows.length} companion${activeCompanionRows.length === 1 ? "" : "s"}, ${ownerTripMembers.length} owner${ownerTripMembers.length === 1 ? "" : "s"}`
-              }
+              helper={`${invitedTripMembers.length} pending`}
             />
 
             <CommandStatCard
-              label="Pending Invites"
-              value={tripMembersError ? "Review" : invitedTripMembers.length}
-              helper="Travel Circle invitations not yet connected"
-            />
-
-            <CommandStatCard
-              label="Trip Messages"
+              label="Messages"
               value={tripMessageThreadsError ? "Review" : tripMessageThreadRows.length}
-              helper={
-                tripMessageThreadsError
-                  ? "Could not load message summary"
-                  : `${privateTripMessageThreads.length} private, ${travelCircleMessageThreads.length} Travel Circle, ${tripMessageUnreadTotal} unread`
-              }
+              helper={`${tripMessageUnreadTotal} unread`}
             />
           </div>
-
           <div
             className="card stack"
             style={{
