@@ -395,6 +395,33 @@ async function saveMessage({
   }
 }
 
+async function loadRecentMessages({
+  supabase,
+  threadId,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  threadId: string;
+}) {
+  const { data, error } = await supabase
+    .from("ask_cozy_messages")
+    .select("role, content, created_at")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? [])
+    .reverse()
+    .map((message) => ({
+      role: message.role === "assistant" ? "assistant" as const : "user" as const,
+      content: String(message.content ?? ""),
+    }))
+    .filter((message) => message.content.trim().length > 0);
+}
+
 async function touchThread({
   supabase,
   threadId,
@@ -473,6 +500,11 @@ export async function POST(request: Request) {
         firstMessage: message,
       }));
 
+    const recentMessages = await loadRecentMessages({
+      supabase,
+      threadId: thread.id,
+    });
+
     await saveMessage({
       supabase,
       clientAccountId: clientAccount.id,
@@ -494,7 +526,12 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: `${formatSafeTripContext(tripContext)}\n\nClient question:\n${message}`,
+          content: formatSafeTripContext(tripContext),
+        },
+        ...recentMessages,
+        {
+          role: "user",
+          content: message,
         },
       ],
     });

@@ -165,6 +165,36 @@ function buildTravelRequestHref(draft: TripRequestDraft) {
   return `/travel-request?${params.toString()}`;
 }
 
+function buildTripRequestNotes({
+  conversation,
+  latestPrompt,
+  latestAnswer,
+  selectedTrip,
+}: {
+  conversation: ChatMessage[];
+  latestPrompt: string;
+  latestAnswer: string;
+  selectedTrip: SafeTripOption | null;
+}) {
+  const conversationLines = [
+    ...conversation.filter((message) => message.role !== "assistant" || message.content !== welcomeMessage.content),
+    { role: "user" as const, content: latestPrompt },
+    { role: "assistant" as const, content: latestAnswer },
+  ]
+    .map((message) => `${message.role === "user" ? "Client" : "Ask Cozy"}: ${message.content}`)
+    .join("\n\n");
+
+  return [
+    "I started this idea in Ask Cozy and would like Jeremy to review it as a possible trip request.",
+    selectedTrip ? `Selected trip context: ${getTripOptionLabel(selectedTrip)}` : "",
+    "",
+    "Ask Cozy planning conversation:",
+    conversationLines,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function AskCozyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -359,6 +389,7 @@ function AskCozyContent() {
     setIsSubmitting(true);
     setErrorMessage(null);
     setQuestion("");
+    const conversationBeforeAnswer = messages;
 
     setMessages((currentMessages) => [
       ...currentMessages,
@@ -387,6 +418,7 @@ function AskCozyContent() {
         throw new Error(data.error ?? "Ask Cozy could not answer that.");
       }
 
+      const answer = data.answer ?? "Iâ€™m sorry, I could not answer that.";
       setActiveThreadId(data.threadId ?? activeThreadId);
       setActiveThreadRetentionUntil(data.retentionUntil ?? null);
 
@@ -394,7 +426,7 @@ function AskCozyContent() {
         ...currentMessages,
         {
           role: "assistant",
-          content: data.answer ?? "Iâ€™m sorry, I could not answer that.",
+          content: answer,
         },
       ]);
 
@@ -407,14 +439,12 @@ function AskCozyContent() {
           destinations: tripForDraft?.destinations ?? "",
           departureDate: tripForDraft?.departure_date ?? "",
           returnDate: tripForDraft?.return_date ?? "",
-          notes: [
-            "I started this idea in Ask Cozy and would like Jeremy to review it as a possible trip request.",
-            "",
-            `Ask Cozy prompt: ${messageToSend}`,
-            tripForDraft ? `Selected trip context: ${getTripOptionLabel(tripForDraft)}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
+          notes: buildTripRequestNotes({
+            conversation: conversationBeforeAnswer,
+            latestPrompt: messageToSend,
+            latestAnswer: answer,
+            selectedTrip: tripForDraft,
+          }),
         });
       } else {
         setTripRequestDraft(null);
