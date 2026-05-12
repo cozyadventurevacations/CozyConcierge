@@ -298,55 +298,71 @@ function TripStatusTimeline({ trip }: { trip: TripRow }) {
 }
 function TripCoverHero({ trip }: { trip: TripRow }) {
   const hasCover = Boolean(trip.cover_image_url);
+  const dateLabel = trip.departure_date
+    ? `${fmtDate(trip.departure_date)}${trip.return_date ? ` to ${fmtDate(trip.return_date)}` : ""}`
+    : "Dates coming soon";
 
   return (
-    <div
+    <section
       style={{
-        minHeight: 260,
+        minHeight: 320,
         borderRadius: 20,
         overflow: "hidden",
-        border: "1px solid #e6f0f2",
+        border: "1px solid #dbeafe",
         background: hasCover
           ? "#123f5b"
-          : "linear-gradient(135deg, #f0f7f8 0%, #ffffff 70%)",
+          : "linear-gradient(135deg, #eef7fb 0%, #ffffff 62%, #f7fbfc 100%)",
         position: "relative",
         display: "flex",
         alignItems: "stretch",
+        boxShadow: "0 18px 45px rgba(18, 63, 91, 0.08)",
       }}
     >
       {hasCover ? (
         <img
           src={trip.cover_image_url ?? ""}
           alt={trip.trip_name ?? "Trip cover image"}
-          style={{ width: "100%", height: 320, objectFit: "cover", display: "block" }}
+          style={{ width: "100%", height: 360, objectFit: "cover", display: "block" }}
         />
       ) : (
-        <div style={{ width: "100%", minHeight: 260, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
-          <img src="/cozy-logo.png" alt="Cozy Adventure Vacations" style={{ width: "min(260px, 70%)", height: "auto", opacity: 0.92 }} />
+        <div style={{ width: "100%", minHeight: 320, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+          <div style={{ textAlign: "center" }}>
+            <img src="/cozy-logo.png" alt="Cozy Adventure Vacations" style={{ width: "min(280px, 72vw)", height: "auto", opacity: 0.95 }} />
+            <p style={{ margin: "14px 0 0", color: "#5e7e8f", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", fontSize: 11 }}>
+              Your next adventure is taking shape
+            </p>
+          </div>
         </div>
       )}
+
       <div
         style={{
           position: "absolute",
           inset: 0,
           background: hasCover
-            ? "linear-gradient(180deg, rgba(18, 63, 91, 0.05) 0%, rgba(18, 63, 91, 0.72) 100%)"
-            : "linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(240,247,248,0.82) 100%)",
+            ? "linear-gradient(180deg, rgba(18, 63, 91, 0.04) 0%, rgba(18, 63, 91, 0.78) 100%)"
+            : "linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(240,247,248,0.84) 100%)",
           pointerEvents: "none",
         }}
       />
+
       <div style={{ position: "absolute", left: 24, right: 24, bottom: 22, color: hasCover ? "#ffffff" : "var(--accent-dark)" }}>
-        <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 900 }}>
-          Cozy Concierge Trip
-        </p>
-        <h1 style={{ margin: "6px 0 0", fontSize: "clamp(1.7rem, 4vw, 2.7rem)", lineHeight: 1.05 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ display: "inline-flex", borderRadius: 999, padding: "6px 10px", background: hasCover ? "rgba(255,255,255,0.18)" : "#ffffff", border: hasCover ? "1px solid rgba(255,255,255,0.28)" : "1px solid #dbeafe", fontSize: 12, fontWeight: 900 }}>
+            Cozy Concierge Trip
+          </span>
+          <span style={{ display: "inline-flex", borderRadius: 999, padding: "6px 10px", background: hasCover ? "rgba(255,255,255,0.18)" : "#ffffff", border: hasCover ? "1px solid rgba(255,255,255,0.28)" : "1px solid #dbeafe", fontSize: 12, fontWeight: 800 }}>
+            {dateLabel}
+          </span>
+        </div>
+        <h1 style={{ margin: 0, fontSize: "clamp(1.8rem, 4vw, 3rem)", lineHeight: 1.05, maxWidth: 780 }}>
           {trip.trip_name ?? "Your Trip"}
         </h1>
-        <p style={{ margin: "6px 0 0", fontSize: 15, opacity: 0.92 }}>
+        <p style={{ margin: "8px 0 0", fontSize: 16, opacity: 0.94, maxWidth: 720, lineHeight: 1.45 }}>
           {trip.destinations ?? "Your travel details are ready when you are."}
         </p>
       </div>
-    </div>
+    </section>
   );
 }
 function StatusBadge({ status }: { status: string | null | undefined }) {
@@ -1151,4 +1167,5 @@ export function TripDetailClient({
     </div>
   );
 }
+
 

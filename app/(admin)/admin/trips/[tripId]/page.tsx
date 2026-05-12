@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
@@ -2899,6 +2900,13 @@ export default async function AdminTripEditorPage({
     cta: string;
   }>;
 
+  let coverImagePreviewUrl: string | null = null;
+  if (trip.cover_image_path) {
+    const { data: coverPreviewData } = await supabase.storage
+      .from("trip-documents")
+      .createSignedUrl(trip.cover_image_path, 3600);
+    coverImagePreviewUrl = coverPreviewData?.signedUrl ?? null;
+  }
   return (
     <PageShell
       title={trip.trip_name ?? "Trip Command Center"}
@@ -3871,16 +3879,46 @@ export default async function AdminTripEditorPage({
           </div>
         
 
-          <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Trip Cover Image</h3>
-              <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
-                This appears as the full-width image banner at the top of the client trip page.
-                {trip.cover_image_path ? " A cover image is currently saved." : " No cover image has been uploaded yet."}
-              </p>
+          <div className="stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2", borderRadius: 16, padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Trip Cover Image</h3>
+                <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                  This appears as the full-width banner at the top of the client trip page.
+                </p>
+              </div>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  borderRadius: 999,
+                  padding: "6px 10px",
+                  background: trip.cover_image_path ? "#ecfdf3" : "#fff7ed",
+                  color: trip.cover_image_path ? "#027a48" : "#c2410c",
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                {trip.cover_image_path ? "Cover active" : "Needs cover"}
+              </span>
             </div>
+
+            {coverImagePreviewUrl ? (
+              <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid #dbeafe", background: "#ffffff" }}>
+                <img
+                  src={coverImagePreviewUrl}
+                  alt={`${trip.trip_name ?? "Trip"} cover preview`}
+                  style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                />
+              </div>
+            ) : (
+              <div style={{ borderRadius: 14, border: "1px dashed #bfdbfe", background: "#ffffff", padding: 18, color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                No cover image is saved yet. Upload a destination photo to give the client trip page a more polished first impression.
+              </div>
+            )}
+
             <label className="stack-sm">
-              <span className="label">Upload Cover Image</span>
+              <span className="label">Upload or Replace Cover Image</span>
               <input
                 className="input"
                 type="file"
@@ -3890,7 +3928,7 @@ export default async function AdminTripEditorPage({
             </label>
             {trip.cover_image_path && (
               <p style={{ margin: 0, color: "#027a48", fontSize: 12, fontWeight: 700 }}>
-                Cover image on file.
+                Current file: {trip.cover_image_path}
               </p>
             )}
           </div>
@@ -5545,6 +5583,9 @@ export default async function AdminTripEditorPage({
     </PageShell>
   );
 }
+
+
+
 
 
 
