@@ -759,19 +759,19 @@ function StickyTripActionBar({
           Jump to
         </span>
         <a href="#trip-timeline" style={sectionLinkStyle}>
-          Timeline
+          Checklist
         </a>
-        <a href="#trip-snapshot" style={sectionLinkStyle}>
-          Snapshot
-        </a>
-        <a href="#document-readiness" style={sectionLinkStyle}>
-          Documents
+        <a href="#trip-messages" style={sectionLinkStyle}>
+          Messages
         </a>
         <a href="#travel-companions" style={sectionLinkStyle}>
           Companions
         </a>
-        <a href="#trip-messages" style={sectionLinkStyle}>
-          Messages
+        <a href="#document-readiness" style={sectionLinkStyle}>
+          Documents
+        </a>
+        <a href="#trip-snapshot" style={sectionLinkStyle}>
+          Snapshot
         </a>
         <a href="#trip-overview" style={sectionLinkStyle}>
           Overview
@@ -3184,6 +3184,16 @@ export default async function AdminTripEditorPage({
           )}
         </CollapsibleSection>
 
+        <div
+          className="admin-trip-relationship-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          <div className="stack">
         <span id="trip-messages" />
         <div
           className="card stack"
@@ -3234,7 +3244,7 @@ export default async function AdminTripEditorPage({
             </div>
           ) : (
             <>
-              <div className="grid grid-3">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
                 <TripMessageSummaryCard
                   title="Private Advisor Threads"
                   value={privateTripMessageThreads.length}
@@ -3285,7 +3295,9 @@ export default async function AdminTripEditorPage({
             </>
           )}
         </div>
+          </div>
 
+          <div className="stack">
         <span id="travel-companions" />
         <div
           className="card stack"
@@ -3339,7 +3351,7 @@ export default async function AdminTripEditorPage({
             </div>
           ) : (
             <>
-              <div className="grid grid-3">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
                 <CommandStatCard
                   label="Owners"
                   value={ownerTripMembers.length}
@@ -3364,7 +3376,7 @@ export default async function AdminTripEditorPage({
                   If the email does not already belong to a client account, the invite will stay pending until they register or log in with that same email and open Travel Invitations.
                 </p>
 
-                <div className="grid grid-3">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
                   <label>
                     <span className="label">Companion Email</span>
                     <input
@@ -3456,7 +3468,10 @@ export default async function AdminTripEditorPage({
             </>
           )}
         </div>
+          </div>
+        </div>
 
+        <style>{"@media (max-width: 980px) { .admin-trip-relationship-grid { grid-template-columns: 1fr !important; } }"}</style>
         <span id="document-readiness" />
         <div
           className="card stack"
@@ -5530,3 +5545,6 @@ export default async function AdminTripEditorPage({
     </PageShell>
   );
 }
+
+
+
