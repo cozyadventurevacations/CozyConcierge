@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -16,13 +16,13 @@ function BrandPanel() {
       <div className="stack" style={{ textAlign: "center" }}>
         <Image src="/cozy-logo.png" alt="Cozy Adventure Vacations" width={190} height={95} priority style={{ justifySelf: "center" }} />
         <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Cozy Concierge</p>
-        <h1 style={{ margin: 0, fontSize: 30 }}>Start your travel hub.</h1>
+        <h1 style={{ margin: 0, fontSize: 30 }}>Create your private travel hub.</h1>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Create your account to view trips, upload documents, request payments, and stay connected with your advisor.
+          Set up secure access for trip details, documents, Travel Circle messages, invitations, and advisor updates.
         </p>
       </div>
       <div style={{ display: "grid", gap: 10 }}>
-        {["Secure profile", "Trip documents", "Advisor messaging"].map((item) => (
+        {["Secure profile", "Trip documents", "Travel Circle", "Advisor messaging"].map((item) => (
           <div key={item} style={{ padding: "10px 12px", borderRadius: 12, background: "#ffffff", border: "1px solid #e6f0f2", fontWeight: 800, color: "var(--accent-dark)" }}>{item}</div>
         ))}
       </div>
@@ -120,8 +120,8 @@ export default function RegisterPage() {
         <div className="card stack" style={{ border: "1px solid #d9ecf2", background: "#ffffff" }}>
           <div>
             <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Client account</p>
-            <h1 style={{ margin: "6px 0 0" }}>Create your login</h1>
-            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations so your trips and invitations can connect automatically.</p>
+            <h1 style={{ margin: "6px 0 0" }}>Create your Cozy Concierge login</h1>
+            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations so trips, invitations, and documents can connect automatically.</p>
           </div>
 
           {successMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}
@@ -134,7 +134,7 @@ export default function RegisterPage() {
             </div>
 
             <label className="stack-sm"><span className="label">Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="you@example.com" required /></label>
-            <label className="stack-sm"><span className="label">Phone</span><input className="input" value={phonePrimary} onChange={(event) => setPhonePrimary(event.target.value)} autoComplete="tel" placeholder="Optional" /></label>
+            <label className="stack-sm"><span className="label">Phone</span><input className="input" value={phonePrimary} onChange={(event) => setPhonePrimary(event.target.value)} autoComplete="tel" placeholder="Optional, but helpful for travel updates" /></label>
 
             <div className="grid grid-2">
               <label className="stack-sm"><span className="label">Password</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="Minimum 8 characters" required /></label>
@@ -156,3 +156,5 @@ export default function RegisterPage() {
     </main>
   );
 }
+
+

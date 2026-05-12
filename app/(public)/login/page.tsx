@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -43,19 +43,20 @@ function AuthShell({ children }: { children: React.ReactNode }) {
           <div className="stack">
             <BrandMark />
             <div style={{ textAlign: "center" }}>
-              <h1 style={{ margin: 0, fontSize: 30 }}>Your trips, details, and documents in one calm place.</h1>
+              <h1 style={{ margin: 0, fontSize: 30 }}>Your private travel hub, prepared for every step.</h1>
               <p style={{ margin: "10px 0 0", color: "#667085", lineHeight: 1.6 }}>
-                Cozy Concierge keeps your upcoming travel organized, private, and easy to review whenever you need it.
+                Sign in to review upcoming trips, shared documents, messages, payments, and the little details that make travel feel easier.
               </p>
             </div>
             <div className="row" style={{ justifyContent: "center", gap: 8 }}>
               <FeaturePill>Trip details</FeaturePill>
               <FeaturePill>Secure documents</FeaturePill>
+              <FeaturePill>Travel Circle</FeaturePill>
               <FeaturePill>Advisor messages</FeaturePill>
             </div>
           </div>
           <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.5, textAlign: "center" }}>
-            Powered by Cozy Adventure Vacations.
+            Cozy Adventure Vacations · Memories Await!
           </p>
         </aside>
 
@@ -140,9 +141,9 @@ function LoginPageContent() {
     <AuthShell>
       <div>
         <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Welcome back</p>
-        <h1 style={{ margin: "6px 0 0" }}>Sign in to Cozy Concierge</h1>
+        <h1 style={{ margin: "6px 0 0" }}>Welcome back to Cozy Concierge</h1>
         <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>
-          Access trip details, payment reminders, documents, Travel Circle messages, and advisor updates.
+          Your trip details, messages, documents, and advisor updates are waiting in one organized place.
         </p>
       </div>
 
@@ -161,7 +162,7 @@ function LoginPageContent() {
         </label>
 
         <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ opacity: isSubmitting ? 0.75 : 1 }}>
-          {isSubmitting ? "Signing in..." : "Sign In"}
+          {isSubmitting ? "Opening your travel hub..." : "Sign In"}
         </button>
       </form>
 
@@ -190,3 +191,6 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
+
+
