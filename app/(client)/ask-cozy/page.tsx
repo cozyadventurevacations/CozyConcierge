@@ -33,6 +33,13 @@ type SafeTripOption = {
 
 const starterQuestionGroups = [
   {
+    title: "Planning Ideas",
+    questions: [
+      "Create a sample day-by-day itinerary idea for this trip.",
+      "Help me compare a relaxed pace vs. a more active pace for this trip idea.",
+    ],
+  },
+  {
     title: "Trip Prep",
     questions: [
       "What should I double-check 30 days before travel?",
@@ -42,6 +49,7 @@ const starterQuestionGroups = [
   {
     title: "Packing",
     questions: [
+      "Create a custom packing list for this trip.",
       "What should I pack in my carry-on?",
       "What should I keep out of checked luggage?",
     ],
@@ -65,7 +73,7 @@ const starterQuestionGroups = [
 const welcomeMessage: ChatMessage = {
   role: "assistant",
   content:
-    "Hi, I am Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. Select a trip when you want me to use safe high-level context like destination and travel dates.",
+    "Hi, I am Ask Cozy. I can help with trip ideas, sample itineraries, custom packing lists, trip prep, and what to ask your advisor. Select a trip when you want me to use safe high-level context like destination and travel dates.",
 };
 
 function formatDateLabel(value: string | null | undefined) {
@@ -631,7 +639,7 @@ function AskCozyContent() {
             <div>
               <h2 style={{ margin: 0 }}>Starter Questions</h2>
               <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
-                Choose a prompt or type your own question.
+                Choose a prompt or type your own question. Select a trip first for itinerary ideas and custom packing lists.
               </p>
             </div>
 
