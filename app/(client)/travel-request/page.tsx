@@ -143,8 +143,26 @@ function ExpectationCard({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-export default async function TravelRequestPage() {
+function getSearchValue(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+export default async function TravelRequestPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   let clientContext: Awaited<ReturnType<typeof getCurrentClientAccount>>;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const prefillSource = getSearchValue(resolvedSearchParams, "source");
+  const prefilledDestination = getSearchValue(resolvedSearchParams, "destinations");
+  const prefilledDepartureDate = getSearchValue(resolvedSearchParams, "departure_date");
+  const prefilledReturnDate = getSearchValue(resolvedSearchParams, "return_date");
+  const prefilledTripVisionNotes = getSearchValue(resolvedSearchParams, "trip_vision_notes");
 
   try {
     clientContext = await getCurrentClientAccount();
@@ -158,10 +176,27 @@ export default async function TravelRequestPage() {
 
   const { clientAccount } = clientContext;
   const defaultName = `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim();
+  const cameFromAskCozy = prefillSource === "ask-cozy";
 
   return (
     <PageShell title="Request Travel Planning" subtitle="Share the spark. We will help shape it into a trip worth looking forward to.">
       <form action={submitTravelRequest} className="stack" style={{ maxWidth: 1120 }}>
+        {cameFromAskCozy ? (
+          <section
+            className="card"
+            style={{
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              color: "#166534",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 900 }}>Ask Cozy added a head start.</p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+              Review the prefilled destination, dates, and planning note below, then finish any missing details before sending this to Jeremy.
+            </p>
+          </section>
+        ) : null}
+
         <section className="card" style={{ background: "linear-gradient(135deg, #eef7fb 0%, #ffffff 64%, #f7fbfc 100%)", border: "1px solid #d9ecf2", overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.25fr) minmax(280px, 0.75fr)", gap: 20, alignItems: "stretch" }}>
             <div className="stack" style={{ justifyContent: "center" }}>
@@ -197,8 +232,8 @@ export default async function TravelRequestPage() {
 
         <IntakeSection step="2" title="Trip Basics" helper="Share the dates and travelers. Flexible windows are welcome.">
           <div className="grid grid-2">
-            <label className="stack-sm"><span className="label">Departure Date</span><input className="input" type="date" name="departure_date" required /></label>
-            <label className="stack-sm"><span className="label">Return Date</span><input className="input" type="date" name="return_date" required /></label>
+            <label className="stack-sm"><span className="label">Departure Date</span><input className="input" type="date" name="departure_date" defaultValue={prefilledDepartureDate} required /></label>
+            <label className="stack-sm"><span className="label">Return Date</span><input className="input" type="date" name="return_date" defaultValue={prefilledReturnDate} required /></label>
             <label className="stack-sm"><span className="label">Number of Travelers</span><input className="input" type="number" name="number_of_travelers" min="1" defaultValue="1" required /></label>
             <label className="stack-sm"><span className="label">Traveler Ages</span><input className="input" name="traveler_ages" placeholder="45, 43, 12" /></label>
           </div>
@@ -218,10 +253,10 @@ export default async function TravelRequestPage() {
 
         <IntakeSection step="4" title="Destination, Budget & Vision" helper="The more personality you add here, the better the first round of ideas can be.">
           <div className="grid grid-2">
-            <label className="stack-sm"><span className="label">Destination(s)</span><input className="input" name="destinations" placeholder="Alaska cruise, Walt Disney World, Italy" required /></label>
+            <label className="stack-sm"><span className="label">Destination(s)</span><input className="input" name="destinations" defaultValue={prefilledDestination} placeholder="Alaska cruise, Walt Disney World, Italy" required /></label>
             <label className="stack-sm"><span className="label">Budget</span><select className="select" name="budget" defaultValue=""><option value="">Select a budget range</option><option value="Under $2,500">Under $2,500</option><option value="$2,500-$5,000">$2,500-$5,000</option><option value="$5,000-$10,000">$5,000-$10,000</option><option value="$10,000+">$10,000+</option><option value="Prefer to discuss">Prefer to discuss</option></select></label>
           </div>
-          <label className="stack-sm"><span className="label">Tell Us About Your Trip</span><textarea className="textarea" name="trip_vision_notes" rows={6} placeholder="Must-dos, must-avoids, celebrations, accessibility needs, resort style, dining preferences, pace, or anything you want Jeremy to know" /></label>
+          <label className="stack-sm"><span className="label">Tell Us About Your Trip</span><textarea className="textarea" name="trip_vision_notes" rows={6} defaultValue={prefilledTripVisionNotes} placeholder="Must-dos, must-avoids, celebrations, accessibility needs, resort style, dining preferences, pace, or anything you want Jeremy to know" /></label>
           <label className="stack-sm"><span className="label">Zoom Call Availability</span><textarea className="textarea" name="zoom_call_availability" rows={3} placeholder="Weeknights after 6pm, Tuesday mornings, weekends only" /></label>
         </IntakeSection>
 

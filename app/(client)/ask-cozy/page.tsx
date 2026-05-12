@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 
@@ -29,6 +30,13 @@ type SafeTripOption = {
   return_date: string | null;
   trip_status: string | null;
   access_type: "primary" | "shared";
+};
+
+type TripRequestDraft = {
+  destinations: string;
+  departureDate: string;
+  returnDate: string;
+  notes: string;
 };
 
 const starterQuestionGroups = [
@@ -141,6 +149,22 @@ function getConversationTimestamp() {
   });
 }
 
+function looksLikeTripRequestCandidate(message: string) {
+  return /\b(itinerary|day-by-day|sample trip|trip idea|travel idea|travel plan|vacation idea|planning idea)\b/i.test(message);
+}
+
+function buildTravelRequestHref(draft: TripRequestDraft) {
+  const params = new URLSearchParams();
+  params.set("source", "ask-cozy");
+
+  if (draft.destinations) params.set("destinations", draft.destinations);
+  if (draft.departureDate) params.set("departure_date", draft.departureDate);
+  if (draft.returnDate) params.set("return_date", draft.returnDate);
+  if (draft.notes) params.set("trip_vision_notes", draft.notes);
+
+  return `/travel-request?${params.toString()}`;
+}
+
 function AskCozyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -169,6 +193,7 @@ function AskCozyContent() {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isLoadingThreadDetail, setIsLoadingThreadDetail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [tripRequestDraft, setTripRequestDraft] = useState<TripRequestDraft | null>(null);
 
   function scrollToConversationEnd() {
     window.setTimeout(() => {
@@ -186,6 +211,7 @@ function AskCozyContent() {
     setActiveThreadId(null);
     setActiveThreadRetentionUntil(null);
     setConversationStartedAt(getConversationTimestamp());
+    setTripRequestDraft(null);
   }
 
   async function loadTrips() {
@@ -371,6 +397,28 @@ function AskCozyContent() {
           content: data.answer ?? "Iâ€™m sorry, I could not answer that.",
         },
       ]);
+
+      if (looksLikeTripRequestCandidate(messageToSend)) {
+        const tripForDraft = selectedTripId
+          ? availableTrips.find((trip) => trip.id === selectedTripId) ?? null
+          : null;
+
+        setTripRequestDraft({
+          destinations: tripForDraft?.destinations ?? "",
+          departureDate: tripForDraft?.departure_date ?? "",
+          returnDate: tripForDraft?.return_date ?? "",
+          notes: [
+            "I started this idea in Ask Cozy and would like Jeremy to review it as a possible trip request.",
+            "",
+            `Ask Cozy prompt: ${messageToSend}`,
+            tripForDraft ? `Selected trip context: ${getTripOptionLabel(tripForDraft)}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+      } else {
+        setTripRequestDraft(null);
+      }
 
       await loadThreads();
     } catch (error) {
@@ -795,41 +843,6 @@ function AskCozyContent() {
               ) : null}
             </div>
 
-            <form onSubmit={handleSubmit} className="stack">
-              <label className="stack-sm">
-                <span className="label">Your Question</span>
-                <textarea
-                  className="textarea"
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  rows={4}
-                  placeholder="Ask about packing, trip prep, destination basics, documents, or what to ask Jeremy next."
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
-              </button>
-            </form>
-
-            {errorMessage ? (
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  background: "#fff1f2",
-                  border: "1px solid #fecdd3",
-                  color: "#be123c",
-                  lineHeight: 1.6,
-                }}
-              >
-                {errorMessage}
-              </div>
-            ) : null}
           </div>
 
           <div className="card stack">
@@ -944,6 +957,72 @@ function AskCozyContent() {
 
               <div ref={conversationEndRef} />
             </div>
+
+            {tripRequestDraft ? (
+              <div
+                className="stack"
+                style={{
+                  padding: "14px",
+                  borderRadius: 14,
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  color: "#166534",
+                }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontWeight: 900 }}>
+                    Want Jeremy to turn this idea into a real trip request?
+                  </p>
+                  <p style={{ margin: "5px 0 0", lineHeight: 1.55 }}>
+                    I can carry the destination, dates, and Ask Cozy planning note into the travel request form.
+                    You can review everything before sending it.
+                  </p>
+                </div>
+                <Link
+                  href={buildTravelRequestHref(tripRequestDraft)}
+                  className="btn btn-primary"
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  Make This a Trip Request
+                </Link>
+              </div>
+            ) : null}
+
+            <form onSubmit={handleSubmit} className="stack">
+              <label className="stack-sm">
+                <span className="label">Your Question</span>
+                <textarea
+                  className="textarea"
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  rows={4}
+                  placeholder="Ask about packing, trip prep, destination basics, documents, or what to ask Jeremy next."
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Asking Cozy..." : "Ask Cozy"}
+              </button>
+            </form>
+
+            {errorMessage ? (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#be123c",
+                  lineHeight: 1.6,
+                }}
+              >
+                {errorMessage}
+              </div>
+            ) : null}
           </div>
         </main>
       </div>
