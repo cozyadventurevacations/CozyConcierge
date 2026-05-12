@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -31,17 +31,41 @@ type SafeTripOption = {
   access_type: "primary" | "shared";
 };
 
-const starterQuestions = [
-  "What should I double-check 30 days before travel?",
-  "What should I pack in my carry-on?",
-  "What questions should I ask before final payment?",
-  "How should I prepare for traveling with a group?",
+const starterQuestionGroups = [
+  {
+    title: "Trip Prep",
+    questions: [
+      "What should I double-check 30 days before travel?",
+      "What should I do the week before departure?",
+    ],
+  },
+  {
+    title: "Packing",
+    questions: [
+      "What should I pack in my carry-on?",
+      "What should I keep out of checked luggage?",
+    ],
+  },
+  {
+    title: "Travel Circle",
+    questions: [
+      "How should I prepare for traveling with a group?",
+      "What should everyone in my travel group know before departure?",
+    ],
+  },
+  {
+    title: "Advisor Questions",
+    questions: [
+      "What questions should I ask before final payment?",
+      "What should I confirm with my advisor before travel?",
+    ],
+  },
 ];
 
 const welcomeMessage: ChatMessage = {
   role: "assistant",
   content:
-    "Hi, I’m Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. You can also select a trip so I can use safe high-level context like destination and travel dates.",
+    "Hi, I am Ask Cozy. I can help with general travel questions, trip prep, packing reminders, and what to ask your advisor. Select a trip when you want me to use safe high-level context like destination and travel dates.",
 };
 
 function formatDateLabel(value: string | null | undefined) {
@@ -90,14 +114,14 @@ function formatDateTimeLabel(value: string | null | undefined) {
 function getTripOptionLabel(trip: SafeTripOption) {
   const dates =
     trip.departure_date || trip.return_date
-      ? ` (${formatDateLabel(trip.departure_date)} → ${formatDateLabel(
+      ? ` (${formatDateLabel(trip.departure_date)} â†’ ${formatDateLabel(
           trip.return_date,
         )})`
       : "";
 
-  const sharedLabel = trip.access_type === "shared" ? " • Shared" : "";
+  const sharedLabel = trip.access_type === "shared" ? " â€¢ Shared" : "";
 
-  return `${trip.label}${trip.destinations ? ` — ${trip.destinations}` : ""}${dates}${sharedLabel}`;
+  return `${trip.label}${trip.destinations ? ` â€” ${trip.destinations}` : ""}${dates}${sharedLabel}`;
 }
 
 function getConversationTimestamp() {
@@ -336,7 +360,7 @@ function AskCozyContent() {
         ...currentMessages,
         {
           role: "assistant",
-          content: data.answer ?? "I’m sorry, I could not answer that.",
+          content: data.answer ?? "Iâ€™m sorry, I could not answer that.",
         },
       ]);
 
@@ -482,14 +506,14 @@ function AskCozyContent() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(280px, 360px) minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(260px, 330px) minmax(0, 1fr)",
           gap: 16,
           alignItems: "start",
         }}
       >
         <aside className="stack" style={{ minWidth: 0 }}>
           <div className="card stack">
-            <h2 style={{ margin: 0 }}>Saved Conversations</h2>
+            <div><h2 style={{ margin: 0 }}>Saved Conversations</h2><p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>Pick up where you left off, or start fresh any time.</p></div>
 
             {isLoadingThreads ? (
               <p style={{ margin: 0, color: "#667085" }}>
@@ -510,7 +534,7 @@ function AskCozyContent() {
               </div>
             ) : savedThreads.length === 0 ? (
               <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                No saved Ask Cozy conversations yet.
+                No saved conversations yet. Ask Cozy will keep helpful conversations here for later.
               </p>
             ) : (
               <div
@@ -604,24 +628,41 @@ function AskCozyContent() {
 
 
           <div className="card stack">
-            <h2 style={{ margin: 0 }}>Starter Questions</h2>
+            <div>
+              <h2 style={{ margin: 0 }}>Starter Questions</h2>
+              <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                Choose a prompt or type your own question.
+              </p>
+            </div>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              {starterQuestions.map((starterQuestion) => (
-                <button
-                  key={starterQuestion}
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => askCozy(starterQuestion)}
-                  disabled={isSubmitting}
-                  style={{
-                    justifyContent: "flex-start",
-                    textAlign: "left",
-                    whiteSpace: "normal",
-                  }}
-                >
-                  {starterQuestion}
-                </button>
+            <div style={{ display: "grid", gap: 14 }}>
+              {starterQuestionGroups.map((group) => (
+                <div key={group.title} style={{ display: "grid", gap: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>
+                    {group.title}
+                  </p>
+                  {group.questions.map((starterQuestion) => (
+                    <button
+                      key={starterQuestion}
+                      type="button"
+                      onClick={() => askCozy(starterQuestion)}
+                      disabled={isSubmitting}
+                      style={{
+                        cursor: isSubmitting ? "not-allowed" : "pointer",
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #e6f0f2",
+                        background: "#ffffff",
+                        color: "var(--accent-dark)",
+                        fontWeight: 800,
+                        textAlign: "left",
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {starterQuestion}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
@@ -649,7 +690,7 @@ function AskCozyContent() {
                 >
                   {activeThreadId
                     ? "Continue this saved conversation."
-                    : "Start a new Ask Cozy conversation."}
+                    : "Start a new Ask Cozy conversation. Add a trip context first if your question is about a specific upcoming trip."}
                 </p>
               </div>
 
@@ -754,7 +795,7 @@ function AskCozyContent() {
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={4}
-                  placeholder="Example: What should I pack in my carry-on for a cruise?"
+                  placeholder="Ask about packing, trip prep, destination basics, documents, or what to ask Jeremy next."
                 />
               </label>
 
@@ -795,7 +836,7 @@ function AskCozyContent() {
             >
               <div>
                 <h2 style={{ margin: 0 }}>
-                  Conversation {isSubmitting ? "— Asking Cozy..." : ""}
+                  Conversation {isSubmitting ? "â€” Asking Cozy..." : ""}
                 </h2>
 
                 <p
@@ -850,7 +891,8 @@ function AskCozyContent() {
                       padding: "12px",
                       borderRadius: 14,
                       border: "1px solid #e6f0f2",
-                      background: isUser ? "#f0f7f8" : "#ffffff",
+                      background: isUser ? "#eaf6fb" : "#ffffff",
+                      boxShadow: "0 8px 20px rgba(18, 63, 91, 0.04)",
                     }}
                   >
                     <p
@@ -888,7 +930,7 @@ function AskCozyContent() {
                     color: "#667085",
                   }}
                 >
-                  Ask Cozy is thinking...
+                  Ask Cozy is thinking through that...
                 </div>
               ) : null}
 
@@ -921,3 +963,5 @@ export default function AskCozyPage() {
     </Suspense>
   );
 }
+
+
