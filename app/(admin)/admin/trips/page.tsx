@@ -71,6 +71,16 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
+function getTripClient(trip: TripRow) {
+  if (Array.isArray(trip.client_accounts)) return trip.client_accounts[0] ?? null;
+  return trip.client_accounts ?? null;
+}
+
+function getTripClientName(trip: TripRow) {
+  const client = getTripClient(trip);
+  if (!client) return "Unknown Client";
+  return `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() || "Unknown Client";
+}
 function PaymentBadge({ trip }: { trip: TripRow }) {
   const balanceDue = Number(trip.balance_due ?? 0);
   const depositPaid = trip.deposit_paid === true;
@@ -115,7 +125,7 @@ type TripRow = {
   deleted_at: string | null;
   deletion_requested_at: string | null;
   retain_data: boolean | null;
-  client_accounts: { first_name: string | null; last_name: string | null; }[] | null;
+  client_accounts: { first_name: string | null; last_name: string | null; } | { first_name: string | null; last_name: string | null; }[] | null;
 };
 
 // ── Server actions ────────────────────────────────────────────────────────────
@@ -282,8 +292,7 @@ export default async function AdminTripsPage({
             The following trips have been flagged by clients for deletion. Review each one and approve or dismiss.
           </p>
           {tripRows.filter((t) => t.deletion_requested_at).map((trip) => {
-            const client = trip.client_accounts?.[0];
-            const clientName = client ? `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() : "Unknown Client";
+            const clientName = getTripClientName(trip);
             const deletable = isDeletable(trip);
             return (
               <div key={trip.id} style={{ padding: "12px 14px", borderRadius: 12, background: "#ffffff", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -338,8 +347,7 @@ export default async function AdminTripsPage({
             </thead>
             <tbody>
               {tripRows.map((trip) => {
-                const client = trip.client_accounts?.[0];
-                const clientName = client ? `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim() : "Unknown Client";
+                const clientName = getTripClientName(trip);
                 const deletable = isDeletable(trip);
                 const hasDeletionRequest = Boolean(trip.deletion_requested_at);
 
@@ -385,7 +393,7 @@ export default async function AdminTripsPage({
                             <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px" }}>Restore</button>
                           </form>
                         ) : deletable.allowed ? (
-                          <form action={softDeleteTrip} onSubmit={(e) => { if (!confirm(`Delete "${trip.trip_name}"? This can be restored within 1 year.`)) e.preventDefault(); }}>
+                          <form action={softDeleteTrip}>
                             <input type="hidden" name="trip_id" value={trip.id} />
                             <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>Delete</button>
                           </form>
