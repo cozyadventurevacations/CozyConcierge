@@ -1,4 +1,6 @@
-import Link from "next/link";
+﻿import Link from "next/link";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -311,7 +313,67 @@ function CompactListItem({
   );
 }
 
-export default async function AdminDashboardPage() {
+async function quickReplyFromDashboard(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const threadId = String(formData.get("thread_id") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (!threadId) throw new Error("Missing thread ID.");
+  if (!body) throw new Error("Message is required.");
+
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .select("id, client_account_id, trip_id, status, thread_type, client_unread_count")
+    .eq("id", threadId)
+    .single();
+
+  if (threadError || !thread) {
+    throw new Error(threadError?.message ?? "Message thread not found.");
+  }
+
+  if (thread.thread_type !== "private") {
+    throw new Error("Dashboard quick replies are only available for private threads.");
+  }
+
+  const { error: messageError } = await supabase.from("messages" as any).insert({
+    thread_id: threadId,
+    client_account_id: thread.client_account_id,
+    trip_id: thread.trip_id,
+    sender_type: "admin",
+    audience: "private",
+    body,
+    is_read_by_admin: true,
+    is_read_by_client: false,
+  });
+
+  if (messageError) throw new Error(messageError.message);
+
+  const { error: updateError } = await supabase
+    .from("message_threads" as any)
+    .update({
+      status: thread.status === "archived" ? "open" : thread.status,
+      client_unread_count: Number(thread.client_unread_count ?? 0) + 1,
+      admin_unread_count: 0,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", threadId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/messages");
+  redirect("/admin/dashboard?quickReply=sent");
+}
+
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ quickReply?: string }>;
+}) {
+  const { quickReply } = await searchParams;
   const { supabase } = await requireAdmin();
 
   const today = startOfToday();
@@ -400,7 +462,7 @@ export default async function AdminDashboardPage() {
       .eq("status", "open")
       .eq("thread_type", "private")
       .gt("admin_unread_count", 0),
-    // Private threads — unread first, then most recent
+    // Private threads â€” unread first, then most recent
     supabase
       .from("message_threads")
       .select("id, client_account_id, trip_id, subject, status, priority, thread_type, admin_unread_count, client_unread_count, last_message_at, created_at, client_accounts!message_threads_client_account_id_fkey(id, first_name, last_name, email, preferred_name), trips(id, trip_name, destinations, departure_date)")
@@ -444,14 +506,20 @@ export default async function AdminDashboardPage() {
   return (
     <PageShell
       title="Admin Dashboard"
-      subtitle={`Operations overview · ${today.toLocaleDateString("en-US", {
+      subtitle={`Operations overview Â· ${today.toLocaleDateString("en-US", {
         weekday: "long",
         month: "long",
         day: "numeric",
         year: "numeric",
       })}`}
     >
-      {/* ── Command Center banner ── */}
+      {quickReply === "sent" ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Quick reply sent.</p>
+        </div>
+      ) : null}
+
+      {/* â”€â”€ Command Center banner â”€â”€ */}
       <div
         className="card stack"
         style={{
@@ -501,7 +569,7 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* ── Summary grid ── */}
+      {/* â”€â”€ Summary grid â”€â”€ */}
       <div className="grid grid-3">
         <SummaryCard
           title="Final Payments Due Soon"
@@ -556,7 +624,7 @@ export default async function AdminDashboardPage() {
         />
       </div>
 
-      {/* ── 1. Final Payments Due in 21 Days ── */}
+      {/* â”€â”€ 1. Final Payments Due in 21 Days â”€â”€ */}
       <div className="card stack">
         <SectionTitle title="Final Payments Due in 21 Days" href="/admin/trips" linkLabel="View All Trips" />
         {finalPaymentsDue21Result.error ? (
@@ -569,7 +637,7 @@ export default async function AdminDashboardPage() {
               <CompactListItem
                 key={trip.id}
                 title={trip.trip_name ?? "Trip"}
-                subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} · Departing ${formatDate(trip.departure_date)}`}
+                subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} Â· Departing ${formatDate(trip.departure_date)}`}
                 href={`/admin/trips/${trip.id}`}
                 cta="Open Trip"
                 tone="warning"
@@ -579,7 +647,7 @@ export default async function AdminDashboardPage() {
         )}
       </div>
 
-      {/* ── 2. Private Messages ── */}
+      {/* â”€â”€ 2. Private Messages â”€â”€ */}
       <div className="card stack">
         <SectionTitle title="Private Client Messages" href="/admin/messages?type=private" linkLabel="Open Message Inbox" />
         {privateMessageThreadsResult.error ? (
@@ -596,7 +664,7 @@ export default async function AdminDashboardPage() {
                 <CompactListItem
                   key={thread.id}
                   title={getMessageClientDisplayName(thread)}
-                  subtitle={`${thread.subject}${trip?.trip_name ? ` · ${trip.trip_name}` : ""} · Last message ${formatDateTime(thread.last_message_at)}`}
+                  subtitle={`${thread.subject}${trip?.trip_name ? ` Â· ${trip.trip_name}` : ""} Â· Last message ${formatDateTime(thread.last_message_at)}`}
                   href={`/admin/messages?threadId=${thread.id}&type=private`}
                   cta="Open Thread"
                   tone={hasUnread ? "warning" : "neutral"}
@@ -611,6 +679,44 @@ export default async function AdminDashboardPage() {
                       <Link href={`/admin/trips/${trip.id}`} style={{ fontSize: 13 }}>Trip</Link>
                     ) : null}
                   </div>
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ cursor: "pointer", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>
+                      Quick reply
+                    </summary>
+                    <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+                      <form action={quickReplyFromDashboard} className="stack" style={{ gap: 8 }}>
+                      <input type="hidden" name="thread_id" value={thread.id} />
+                      <textarea
+                        className="textarea"
+                        name="body"
+                        rows={3}
+                        placeholder="Write a quick reply..."
+                        style={{ minHeight: 90 }}
+                      />
+                      <div className="row" style={{ gap: 8 }}>
+                        <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "7px 12px" }}>
+                          Send Reply
+                        </button>
+                      </div>
+                      </form>
+                      <div className="row" style={{ gap: 8 }}>
+                        <form action={quickReplyFromDashboard}>
+                          <input type="hidden" name="thread_id" value={thread.id} />
+                          <input type="hidden" name="body" value="Thank you for the message. I am reviewing this and will follow up shortly." />
+                          <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
+                            Reviewing
+                          </button>
+                        </form>
+                        <form action={quickReplyFromDashboard}>
+                          <input type="hidden" name="thread_id" value={thread.id} />
+                          <input type="hidden" name="body" value="Thanks for the update. I have this noted on your trip file." />
+                          <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
+                            Noted
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </details>
                 </CompactListItem>
               );
             })}
@@ -618,7 +724,7 @@ export default async function AdminDashboardPage() {
         )}
       </div>
 
-      {/* ── 3. Client Follow-Ups ── */}
+      {/* â”€â”€ 3. Client Follow-Ups â”€â”€ */}
       <div className="card stack">
         <SectionTitle title="Upcoming Client Follow-Ups" href="/admin/clients" linkLabel="View Clients" />
         {upcomingClientFollowUpsResult.error ? (
@@ -635,7 +741,7 @@ export default async function AdminDashboardPage() {
                 <CompactListItem
                   key={followUp.id}
                   title={getClientDisplayName(followUp)}
-                  subtitle={`${followUp.title ?? followUp.note_type} · ${formatDate(followUp.follow_up_date)}`}
+                  subtitle={`${followUp.title ?? followUp.note_type} Â· ${formatDate(followUp.follow_up_date)}`}
                   href={client?.id ? `/admin/clients/${client.id}` : undefined}
                   cta="Open Client"
                   tone={isDueSoon ? "warning" : "neutral"}
@@ -650,7 +756,7 @@ export default async function AdminDashboardPage() {
         )}
       </div>
 
-      {/* ── 4. Upcoming Departures ── */}
+      {/* â”€â”€ 4. Upcoming Departures â”€â”€ */}
       <div className="card stack">
         <SectionTitle title="Upcoming Departures" href="/admin/trips" linkLabel="View Trips" />
         {upcomingDeparturesResult.error ? (
@@ -663,7 +769,7 @@ export default async function AdminDashboardPage() {
               <CompactListItem
                 key={trip.id}
                 title={trip.trip_name ?? "Trip"}
-                subtitle={`${trip.destinations ?? "Not set"} · ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
+                subtitle={`${trip.destinations ?? "Not set"} Â· ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
                 href={`/admin/trips/${trip.id}`}
                 cta="Open Trip"
               >
