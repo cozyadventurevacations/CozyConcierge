@@ -107,6 +107,15 @@ function getDaysUntilDeparture(departureDate: string | null | undefined): number
   return diff;
 }
 
+function getDaysSinceReturn(returnDate: string | null | undefined): number | null {
+  if (!returnDate) return null;
+  const [year, month, day] = returnDate.split("-").map(Number);
+  const returned = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - returned.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 // ─── Countdown Banner ─────────────────────────────────────────────────────────
 
 function TripCountdownBanner({ trip }: { trip: TripRow }) {
@@ -367,6 +376,51 @@ function TripStatusBadge({ status }: { status: string | null | undefined }) {
     <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 10px", background: style.bg, color: style.color, fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>
       {s}
     </span>
+  );
+}
+
+function WelcomeHomeCard({ trip }: { trip: TripRow }) {
+  const returnedLabel = formatDateLong(trip.return_date);
+
+  return (
+    <div
+      className="card"
+      style={{
+        border: "1px solid #bbf7d0",
+        background: "linear-gradient(135deg, #f0fdf4 0%, #ffffff 72%)",
+        display: "grid",
+        gap: 16,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: 720 }}>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#027a48", fontWeight: 900 }}>
+            Welcome Home
+          </p>
+          <h2 style={{ margin: "6px 0 0" }}>
+            We hope {trip.trip_name ?? "your trip"} was wonderful.
+          </h2>
+          <p style={{ margin: "8px 0 0", color: "#166534", lineHeight: 1.6 }}>
+            You returned {returnedLabel}. If you need help with post-trip questions, receipts, or starting the next adventure, your advisor is here.
+          </p>
+        </div>
+        <div style={{ width: 58, height: 58, borderRadius: "50%", overflow: "hidden", border: "2px solid #bbf7d0", flexShrink: 0 }}>
+          <Image src="/jeremy.jpg" alt="Jeremy Brown" width={58} height={58} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Link href="/messages" className="btn btn-primary" style={{ background: "#027a48", padding: "9px 16px", fontSize: 13 }}>
+          Message Jeremy
+        </Link>
+        <Link href="/travel-request" className="btn btn-outline" style={{ padding: "9px 16px", fontSize: 13, background: "#ffffff" }}>
+          Plan Another Trip
+        </Link>
+        <Link href={`/trips/${trip.trip_id}`} className="btn btn-outline" style={{ padding: "9px 16px", fontSize: 13, background: "#ffffff" }}>
+          View Trip Details
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -744,6 +798,14 @@ export default async function ClientDashboardPage() {
   });
 
   const nextTrip = upcomingTrips[0] ?? null;
+  const recentCompletedTrip = rows
+    .map((trip) => ({ trip, daysSinceReturn: getDaysSinceReturn(trip.return_date) }))
+    .filter(({ trip, daysSinceReturn }) => {
+      if (daysSinceReturn === null || daysSinceReturn < 0 || daysSinceReturn > 45) return false;
+      const status = (trip.trip_status ?? "").toLowerCase();
+      return status.includes("complete") || status.includes("travel") || daysSinceReturn >= 0;
+    })
+    .sort((a, b) => (a.daysSinceReturn ?? 999) - (b.daysSinceReturn ?? 999))[0]?.trip ?? null;
 
   const [passportUploadResult, sharedDocumentsResult] = await Promise.all([
     supabase
@@ -794,6 +856,8 @@ export default async function ClientDashboardPage() {
 
       {/* ── Trip countdown — only when there's an upcoming trip ── */}
       {nextTrip && <TripCountdownBanner trip={nextTrip} />}
+
+      {recentCompletedTrip && <WelcomeHomeCard trip={recentCompletedTrip} />}
 
       <div className="grid grid-3">
         <MetricCard
@@ -871,5 +935,6 @@ export default async function ClientDashboardPage() {
     </PageShell>
   );
 }
+
 
 
