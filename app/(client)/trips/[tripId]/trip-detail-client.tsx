@@ -1071,6 +1071,7 @@ export function TripDetailClient({
           <Link href={`/trips/${trip.id}/documents`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Documents</Link>
           <Link href="/messages" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Messages</Link>
           <Link href={`/trips/${trip.id}/request-payment`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Request Payment Link</Link>
+          <Link href={`/trips/${trip.id}/summary`} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Print Summary</Link>
           <Link href={`/ask-cozy?tripId=${trip.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Ask Cozy</Link>
           <Link href="/trips" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>← My Trips</Link>
         </div>
@@ -1150,3 +1151,4 @@ export function TripDetailClient({
     </div>
   );
 }
+
