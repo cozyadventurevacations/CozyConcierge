@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { AdminReplyForm } from "./admin-reply-form";
 
 type MessageThreadRow = {
   id: string;
@@ -531,14 +532,7 @@ export default async function AdminMessagesPage({
                 </div>
               </div>
               {/* Reply form */}
-              <form action={replyAsAdmin} className="stack">
-                <input type="hidden" name="thread_id" value={selectedThread.id} />
-                <label>
-                  <span className="label">Reply</span>
-                  <textarea className="textarea" name="body" rows={5} placeholder="Type your reply..." />
-                </label>
-                <button type="submit" className="btn btn-primary">Send Reply</button>
-              </form>
+              <AdminReplyForm threadId={selectedThread.id} action={replyAsAdmin} />
 
               {/* Status actions */}
               <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
