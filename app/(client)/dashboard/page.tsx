@@ -478,8 +478,7 @@ function AskCozyCompact() {
 function QuickActions({ nextTripId }: { nextTripId: string | null }) {
   const actions = [
     { label: "My Trips", href: "/trips" },
-    { label: "Messages", href: "/messages" },
-    { label: "Invitations", href: "/invites" },
+    { label: "Messages & Invites", href: "/messages" },
     { label: "My Profile", href: "/profile" },
     ...(nextTripId ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }] : []),
   ];
@@ -859,8 +858,8 @@ export default async function ClientDashboardPage() {
             </p>
             <p style={{ margin: "3px 0 0", fontSize: 13, color: "#92400e" }}>You have been invited to join a shared trip.</p>
           </div>
-          <Link href="/invites" className="btn btn-primary" style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}>
-            Review Invitations
+          <Link href="/messages" className="btn btn-primary" style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}>
+            Review in Messages
           </Link>
         </div>
       )}
@@ -872,3 +871,5 @@ export default async function ClientDashboardPage() {
     </PageShell>
   );
 }
+
+

@@ -817,6 +817,13 @@ export default async function ClientMessagesPage({
   const privateThreadCount = threadRows.filter((t) => t.thread_type !== "trip_group").length;
   const groupThreadCount = threadRows.filter((t) => t.thread_type === "trip_group").length;
   const unreadReplyCount = threadRows.reduce((sum, t) => sum + Number(t.client_unread_count ?? 0), 0);
+  const pendingInviteCount = clientAccount.email
+    ? (await supabase
+        .from("trip_members" as any)
+        .select("id", { count: "exact", head: true })
+        .ilike("invite_email", clientAccount.email.trim().toLowerCase())
+        .eq("invite_status", "invited")).count ?? 0
+    : 0;
 
   const isGroupThread = selectedThread?.thread_type === "trip_group";
   const advisorAlreadyInvited = Boolean(selectedThread?.advisor_invited_at);
@@ -846,12 +853,40 @@ export default async function ClientMessagesPage({
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
           Send a private message to your advisor or use Travel Circle messages for approved companions on a shared trip.
         </p>
-        <div className="grid grid-3">
+        <div className="grid grid-4">
           <MessageHelpCard title={`${privateThreadCount} Private`} description="Advisor-only conversations." />
           <MessageHelpCard title={`${groupThreadCount} Travel Circle`} description="Shared trip conversations." tone={groupThreadCount > 0 ? "warning" : "neutral"} />
+          <MessageHelpCard title={`${pendingInviteCount} Invites`} description="Trip invitations to review." tone={pendingInviteCount > 0 ? "warning" : "neutral"} />
           <MessageHelpCard title={`${unreadReplyCount} Unread`} description="Replies waiting for you." tone={unreadReplyCount > 0 ? "warning" : "neutral"} />
         </div>
       </div>
+
+      {pendingInviteCount > 0 && (
+        <div
+          className="card"
+          style={{
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontWeight: 900, color: "#854d0e" }}>
+              You have {pendingInviteCount} Travel Circle invitation{pendingInviteCount === 1 ? "" : "s"}
+            </p>
+            <p style={{ margin: "4px 0 0", color: "#92400e", fontSize: 13, lineHeight: 1.5 }}>
+              Review shared trip invitations from your Messages area.
+            </p>
+          </div>
+          <Link href="/invites" className="btn btn-primary" style={{ background: "#854d0e", padding: "9px 16px", fontSize: 13 }}>
+            Review Invitations
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* ── New Message Form ── */}
@@ -1117,3 +1152,5 @@ export default async function ClientMessagesPage({
     </PageShell>
   );
 }
+
+

@@ -63,6 +63,7 @@ export default async function ClientLayout({
   );
 
   let unreadMessageThreads = 0;
+  let pendingInviteCount = 0;
 
   if (clientAccountId) {
     const { count: privateUnreadCount } = await supabase
@@ -102,7 +103,17 @@ export default async function ClientLayout({
       groupUnreadCount = count ?? 0;
     }
 
-    unreadMessageThreads = Number(privateUnreadCount ?? 0) + groupUnreadCount;
+    if (user.email) {
+      const { count } = await supabase
+        .from("trip_members" as any)
+        .select("id", { count: "exact", head: true })
+        .ilike("invite_email", user.email.trim().toLowerCase())
+        .eq("invite_status", "invited");
+
+      pendingInviteCount = count ?? 0;
+    }
+
+    unreadMessageThreads = Number(privateUnreadCount ?? 0) + groupUnreadCount + pendingInviteCount;
   }
 
   const navItems = clientNav.map((item) =>

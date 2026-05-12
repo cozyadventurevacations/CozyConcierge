@@ -602,85 +602,6 @@ function AskCozyContent() {
             )}
           </div>
 
-          <div className="card stack">
-            <h2 style={{ margin: 0 }}>Trip Context</h2>
-
-            <label className="stack-sm">
-              <span className="label">Optional Trip</span>
-              <select
-                className="select"
-                value={selectedTripId}
-                onChange={(event) => setSelectedTripId(event.target.value)}
-                disabled={isLoadingTrips || Boolean(activeThreadId)}
-              >
-                <option value="">
-                  {isLoadingTrips ? "Loading trips..." : "General travel question"}
-                </option>
-
-                {availableTrips.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {getTripOptionLabel(trip)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {activeThreadId ? (
-              <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                Trip context is locked once a conversation is created. Start a new
-                conversation to choose a different trip.
-              </p>
-            ) : null}
-
-            {tripLoadError ? (
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  background: "#fff1f2",
-                  border: "1px solid #fecdd3",
-                  color: "#be123c",
-                  lineHeight: 1.6,
-                }}
-              >
-                {tripLoadError}
-              </div>
-            ) : null}
-
-            {selectedTrip ? (
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  background: "#f7fbfc",
-                  border: "1px solid #e6f0f2",
-                  color: "#667085",
-                  lineHeight: 1.6,
-                }}
-              >
-                <strong>{selectedTrip.label}</strong>
-                <br />
-                {selectedTrip.destinations ?? "Destination not provided"}
-                <br />
-                {formatDateLabel(selectedTrip.departure_date)} →{" "}
-                {formatDateLabel(selectedTrip.return_date)}
-              </div>
-            ) : (
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  background: "#f7fbfc",
-                  border: "1px solid #e6f0f2",
-                  color: "#667085",
-                  lineHeight: 1.6,
-                }}
-              >
-                Choose a trip for more helpful answers, or leave this as a general
-                travel question.
-              </div>
-            )}
-          </div>
 
           <div className="card stack">
             <h2 style={{ margin: 0 }}>Starter Questions</h2>
@@ -745,6 +666,84 @@ function AskCozyContent() {
               >
                 Delete Conversation
               </button>
+            </div>
+
+            <div
+              className="stack"
+              style={{
+                padding: "14px",
+                borderRadius: 14,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Question Context</h3>
+                <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                  Choose a trip when your question is specific to upcoming travel, or leave it general for broader travel help.
+                </p>
+              </div>
+
+              <label className="stack-sm">
+                <span className="label">Trip or General Question</span>
+                <select
+                  className="select"
+                  value={selectedTripId}
+                  onChange={(event) => setSelectedTripId(event.target.value)}
+                  disabled={isLoadingTrips || Boolean(activeThreadId)}
+                >
+                  <option value="">
+                    {isLoadingTrips ? "Loading trips..." : "General travel question"}
+                  </option>
+
+                  {availableTrips.map((trip) => (
+                    <option key={trip.id} value={trip.id}>
+                      {getTripOptionLabel(trip)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {activeThreadId ? (
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  Trip context is locked once a conversation is created. Start a new conversation to choose a different trip.
+                </p>
+              ) : null}
+
+              {tripLoadError ? (
+                <div
+                  style={{
+                    padding: "12px",
+                    borderRadius: 12,
+                    background: "#fff1f2",
+                    border: "1px solid #fecdd3",
+                    color: "#be123c",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {tripLoadError}
+                </div>
+              ) : null}
+
+              {selectedTrip ? (
+                <div
+                  style={{
+                    padding: "12px",
+                    borderRadius: 12,
+                    background: "#ffffff",
+                    border: "1px solid #e6f0f2",
+                    color: "#667085",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <strong>{selectedTrip.label}</strong>
+                  <br />
+                  {selectedTrip.destinations ?? "Destination not provided"}
+                  <br />
+                  {formatDateLabel(selectedTrip.departure_date)} to{" "}
+                  {formatDateLabel(selectedTrip.return_date)}
+                </div>
+              ) : null}
             </div>
 
             <form onSubmit={handleSubmit} className="stack">
