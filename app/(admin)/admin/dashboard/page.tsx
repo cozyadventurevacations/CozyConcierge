@@ -338,6 +338,7 @@ export default async function AdminDashboardPage() {
     openMessageThreadsResult,
     unreadPrivateMessageThreadsResult,
     privateMessageThreadsResult,
+    deletionRequestsResult,
   ] = await Promise.all([
     supabase
       .from("quote_requests")
@@ -408,6 +409,11 @@ export default async function AdminDashboardPage() {
       .order("admin_unread_count", { ascending: false })
       .order("last_message_at", { ascending: false })
       .limit(8),
+    supabase
+      .from("trips")
+      .select("id", { count: "exact", head: true })
+      .not("deletion_requested_at", "is", null)
+      .is("deleted_at", null),
   ]);
 
   const upcomingDepartures = (upcomingDeparturesResult.data ?? []) as TripRow[];
@@ -423,6 +429,7 @@ export default async function AdminDashboardPage() {
   const unreadPrivateCount = unreadPrivateMessageThreadsResult.count ?? 0;
   const openFollowUpsCount = openClientFollowUpsResult.count ?? 0;
   const soonFollowUpsCount = soonClientFollowUpsResult.count ?? 0;
+  const deletionRequestCount = deletionRequestsResult.count ?? 0;
   // Card turns warning if any follow-up is due within 3 days
   const followUpCardTone: "warning" | "neutral" = soonFollowUpsCount > 0 ? "warning" : "neutral";
 
@@ -431,7 +438,8 @@ export default async function AdminDashboardPage() {
     Number(departuresResult.count ?? 0) +
     Number(newQuoteRequestsResult.count ?? 0) +
     Number(paymentRequestsResult.count ?? 0) +
-    finalPaymentsDue21.length;
+    finalPaymentsDue21.length +
+    deletionRequestCount;
 
   return (
     <PageShell
@@ -458,7 +466,7 @@ export default async function AdminDashboardPage() {
             </p>
             <h2 style={{ margin: "6px 0 0" }}>Today&apos;s Priority Work</h2>
             <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
-              Start with final payments due soon, unread private messages, and upcoming departures.
+              Start with final payments due soon, deletion requests, unread private messages, and upcoming departures.
             </p>
           </div>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -472,8 +480,8 @@ export default async function AdminDashboardPage() {
           <OpsHighlightCard
             title="Priority Items"
             value={urgentOpsItems}
-            helper="Final payments due, new requests, payment requests, and upcoming departures"
-            href="/admin/trips"
+            helper="Final payments, deletion requests, new requests, payment requests, and upcoming departures"
+            href="/admin/trips?filter=deletion-requested"
             tone={urgentOpsItems > 0 ? "warning" : "good"}
           />
           <OpsHighlightCard
@@ -484,11 +492,11 @@ export default async function AdminDashboardPage() {
             tone={finalPaymentsDue21.length > 0 ? "warning" : "good"}
           />
           <OpsHighlightCard
-            title="Upcoming Departures"
-            value={departuresResult.count ?? 0}
-            helper="Trips departing in the next 14 days"
-            href="/admin/trips"
-            tone={(departuresResult.count ?? 0) > 0 ? "neutral" : "good"}
+            title="Deletion Requests"
+            value={deletionRequestCount}
+            helper="Client requested trip removal"
+            href="/admin/trips?filter=deletion-requested"
+            tone={deletionRequestCount > 0 ? "warning" : "good"}
           />
         </div>
       </div>
@@ -538,6 +546,13 @@ export default async function AdminDashboardPage() {
           value={departuresResult.count ?? 0}
           subtitle="Next 14 days"
           href="/admin/trips"
+        />
+        <SummaryCard
+          title="Deletion Requests"
+          value={deletionRequestCount}
+          subtitle="Waiting for admin review"
+          href="/admin/trips?filter=deletion-requested"
+          tone={deletionRequestCount > 0 ? "warning" : "neutral"}
         />
       </div>
 

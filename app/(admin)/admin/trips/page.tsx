@@ -1,11 +1,11 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split("-").map(Number);
     return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -14,7 +14,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 function formatMoney(value: number | null | undefined) {
-  if (typeof value !== "number") return "—";
+  if (typeof value !== "number") return "â€”";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
@@ -50,7 +50,7 @@ function isDeletable(trip: TripRow): { allowed: boolean; reason: string } {
     }
   }
 
-  return { allowed: false, reason: "Active trip with payments — cannot delete" };
+  return { allowed: false, reason: "Active trip with payments â€” cannot delete" };
 }
 
 const statusColors: Record<string, { background: string; color: string }> = {
@@ -158,11 +158,12 @@ type TripRow = {
   client_account_id: string;
   deleted_at: string | null;
   deletion_requested_at: string | null;
+  deletion_requested_by: string | null;
   retain_data: boolean | null;
   client_accounts: { first_name: string | null; last_name: string | null; } | { first_name: string | null; last_name: string | null; }[] | null;
 };
 
-// ── Server actions ────────────────────────────────────────────────────────────
+// â”€â”€ Server actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function softDeleteTrip(formData: FormData) {
   "use server";
@@ -185,12 +186,17 @@ async function softDeleteTrip(formData: FormData) {
 
   const { error } = await supabase
     .from("trips")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({
+      deleted_at: new Date().toISOString(),
+      deletion_requested_at: null,
+      deletion_requested_by: null,
+    })
     .eq("id", tripId);
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
   redirect("/admin/trips");
 }
 
@@ -203,12 +209,17 @@ async function approveDeletionRequest(formData: FormData) {
 
   const { error } = await supabase
     .from("trips")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({
+      deleted_at: new Date().toISOString(),
+      deletion_requested_at: null,
+      deletion_requested_by: null,
+    })
     .eq("id", tripId);
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
 }
 
 async function dismissDeletionRequest(formData: FormData) {
@@ -226,6 +237,7 @@ async function dismissDeletionRequest(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
 }
 
 async function restoreTrip(formData: FormData) {
@@ -243,9 +255,10 @@ async function restoreTrip(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default async function AdminTripsPage({
   searchParams,
@@ -264,7 +277,7 @@ export default async function AdminTripsPage({
       id, trip_name, departure_date, return_date, trip_status,
       total_paid, balance_due, deposit_amount, deposit_due_date,
       deposit_paid, final_payment_due_date, client_account_id,
-      deleted_at, deletion_requested_at, retain_data,
+      deleted_at, deletion_requested_at, deletion_requested_by, retain_data,
       client_accounts!trips_client_account_id_fkey (first_name, last_name)
     `)
     .order("departure_date", { ascending: true });
@@ -318,7 +331,7 @@ export default async function AdminTripsPage({
         </div>
         {deletionRequestCount > 0 && !showDeleted && (
           <div style={{ padding: "8px 14px", borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontWeight: 700, fontSize: 13 }}>
-            ⚠️ {deletionRequestCount} deletion request{deletionRequestCount === 1 ? "" : "s"} pending client review
+            {deletionRequestCount} deletion request{deletionRequestCount === 1 ? "" : "s"} pending client review
           </div>
         )}
       </div>
@@ -344,7 +357,7 @@ export default async function AdminTripsPage({
       {/* Deletion requests banner */}
       {!showDeleted && tripRows.some((t) => t.deletion_requested_at) && (
         <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
-          <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>⚠️ Client Deletion Requests</p>
+          <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>Client Deletion Requests</p>
           <p style={{ margin: 0, color: "#9a3412", fontSize: 13, lineHeight: 1.6 }}>
             The following trips have been flagged by clients for deletion. Review each one and approve or dismiss.
           </p>
@@ -355,9 +368,12 @@ export default async function AdminTripsPage({
               <div key={trip.id} style={{ padding: "12px 14px", borderRadius: 12, background: "#ffffff", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <p style={{ margin: 0, fontWeight: 800 }}>{trip.trip_name}</p>
-                  <p style={{ margin: "3px 0 0", fontSize: 13, color: "#667085" }}>{clientName} · {trip.trip_status}</p>
+                  <p style={{ margin: "3px 0 0", fontSize: 13, color: "#667085" }}>
+                    {clientName} · {trip.trip_status}
+                    {trip.deletion_requested_by ? ` · requested by ${trip.deletion_requested_by}` : ""}
+                  </p>
                   {!deletable.allowed && (
-                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "#be123c" }}>⚠️ {deletable.reason}</p>
+                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "#be123c" }}>{deletable.reason}</p>
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -414,10 +430,12 @@ export default async function AdminTripsPage({
                       <div>
                         <strong>{trip.trip_name}</strong>
                         {hasDeletionRequest && (
-                          <span style={{ display: "block", fontSize: 11, color: "#c2410c", fontWeight: 700, marginTop: 2 }}>⚠️ Deletion requested</span>
+                          <span style={{ display: "block", fontSize: 11, color: "#c2410c", fontWeight: 700, marginTop: 2 }}>
+                            Deletion requested{trip.deletion_requested_by ? ` by ${trip.deletion_requested_by}` : ""}
+                          </span>
                         )}
                         {showDeleted && trip.retain_data && (
-                          <span style={{ display: "block", fontSize: 11, color: "#027a48", fontWeight: 700, marginTop: 2 }}>🔒 Retained</span>
+                          <span style={{ display: "block", fontSize: 11, color: "#027a48", fontWeight: 700, marginTop: 2 }}>ðŸ”’ Retained</span>
                         )}
                       </div>
                     </td>

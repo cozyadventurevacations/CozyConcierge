@@ -214,6 +214,35 @@ function formatDate(value: string | null | undefined, fallback = "") {
   });
 }
 
+function isTripEligibleForDeletion(trip: {
+  trip_status?: string | null;
+  total_paid?: number | null;
+  balance_due?: number | null;
+  return_date?: string | null;
+}) {
+  const status = (trip.trip_status ?? "").toLowerCase();
+  if (["draft", "cancelled", "canceled"].includes(status)) {
+    return { allowed: true, reason: "Draft or cancelled trip" };
+  }
+
+  const totalPaid = Number(trip.total_paid ?? 0);
+  const balanceDue = Number(trip.balance_due ?? 0);
+  if (totalPaid <= 0 && balanceDue <= 0) {
+    return { allowed: true, reason: "No payment records on file" };
+  }
+
+  if (trip.return_date) {
+    const returnDate = new Date(`${trip.return_date}T23:59:59`);
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    if (!Number.isNaN(returnDate.getTime()) && returnDate < tenDaysAgo) {
+      return { allowed: true, reason: "More than 10 days post travel" };
+    }
+  }
+
+  return { allowed: false, reason: "Active trip with payments is retained" };
+}
+
 function calculateExpectedCommission(
   fullCommissionAmount: number | null | undefined,
   agencyCommissionPercent: number | null | undefined,
@@ -2428,6 +2457,79 @@ async function updateTripMilestoneStatus(formData: FormData) {
   revalidatePath("/admin/trips");
 }
 
+async function softDeleteTripFromDetail(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, trip_status, total_paid, balance_due, return_date, deleted_at")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+  if (trip.deleted_at) throw new Error("Trip is already deleted.");
+
+  const eligibility = isTripEligibleForDeletion(trip);
+  if (!eligibility.allowed) throw new Error(`Cannot delete this trip: ${eligibility.reason}`);
+
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deletion_requested_at: null,
+      deletion_requested_by: null,
+    })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
+async function dismissTripDeletionRequestFromDetail(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { error } = await supabase
+    .from("trips")
+    .update({ deletion_requested_at: null, deletion_requested_by: null })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
+async function restoreTripFromDetail(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { error } = await supabase
+    .from("trips")
+    .update({ deleted_at: null })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
 export default async function AdminTripEditorPage({
   params,
 }: {
@@ -2907,6 +3009,10 @@ export default async function AdminTripEditorPage({
       .createSignedUrl(trip.cover_image_path, 3600);
     coverImagePreviewUrl = coverPreviewData?.signedUrl ?? null;
   }
+  const deletionRequested = Boolean(trip.deletion_requested_at);
+  const tripDeleted = Boolean(trip.deleted_at);
+  const deletionEligibility = isTripEligibleForDeletion(trip);
+
   return (
     <PageShell
       title={trip.trip_name ?? "Trip Command Center"}
@@ -2944,10 +3050,75 @@ export default async function AdminTripEditorPage({
         <input type="hidden" name="trip_id" value={trip.id} />
       </form>
 
+      <form
+        id="soft-delete-trip-detail-form"
+        action={softDeleteTripFromDetail}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="dismiss-trip-deletion-request-detail-form"
+        action={dismissTripDeletionRequestFromDetail}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="restore-trip-detail-form"
+        action={restoreTripFromDetail}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
       <form action={updateTrip} className="stack">
         <input type="hidden" name="trip_id" value={trip.id} />
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
+
+        {(deletionRequested || tripDeleted) ? (
+          <div
+            className="card"
+            style={{
+              border: tripDeleted ? "1px solid #fecaca" : "1px solid #fed7aa",
+              background: tripDeleted ? "#fef2f2" : "#fff7ed",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: 900, color: tripDeleted ? "#b42318" : "#9a3412" }}>
+                  {tripDeleted ? "Trip is soft deleted" : "Client requested trip deletion"}
+                </p>
+                <p style={{ margin: "5px 0 0", color: tripDeleted ? "#b42318" : "#9a3412", fontSize: 13, lineHeight: 1.5 }}>
+                  {tripDeleted
+                    ? `Deleted on ${formatDate(trip.deleted_at, "an unknown date")}. Restore it if this trip should return to active records.`
+                    : `Requested by ${trip.deletion_requested_by ?? "client"} on ${formatDate(trip.deletion_requested_at, "an unknown date")}. ${deletionEligibility.reason}.`}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {tripDeleted ? (
+                  <button type="submit" form="restore-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>
+                    Restore Trip
+                  </button>
+                ) : (
+                  <>
+                    {deletionEligibility.allowed ? (
+                      <button type="submit" form="soft-delete-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px", background: "#be123c" }}>
+                        Approve Delete
+                      </button>
+                    ) : null}
+                    <button type="submit" form="dismiss-trip-deletion-request-detail-form" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>
+                      Dismiss Request
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div
           className="card stack"
