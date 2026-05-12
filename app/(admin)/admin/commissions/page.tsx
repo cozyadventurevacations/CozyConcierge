@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -42,6 +43,10 @@ function isPastDue(value: string | null | undefined) {
   if (!value) return false;
   const date = new Date(`${value}T23:59:59`);
   return !Number.isNaN(date.getTime()) && date.getTime() < Date.now();
+}
+
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function normalizeStatus(value: string | null | undefined) {
@@ -111,17 +116,26 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 
 function SummaryCard({ label, value, helper, tone = "neutral" }: { label: string; value: string | number; helper: string; tone?: "neutral" | "warning" | "good" | "danger" }) {
   const colors = {
-    neutral: { border: "#e6f0f2", background: "#ffffff", color: "var(--accent-dark)" },
+    neutral: { border: "#dbeafe", background: "#ffffff", color: "var(--accent-dark)" },
     warning: { border: "#fed7aa", background: "#fff7ed", color: "#c2410c" },
     danger: { border: "#fecaca", background: "#fff1f2", color: "#be123c" },
     good: { border: "#bbf7d0", background: "#ecfdf3", color: "#027a48" },
   }[tone];
 
   return (
-    <div className="card" style={{ border: `1px solid ${colors.border}`, background: colors.background }}>
-      <span className="label">{label}</span>
-      <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: colors.color }}>{value}</p>
-      <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>{helper}</p>
+    <div
+      style={{
+        border: `1px solid ${colors.border}`,
+        background: colors.background,
+        borderRadius: 16,
+        padding: 18,
+        minHeight: 132,
+        boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+      }}
+    >
+      <span className="label" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+      <p style={{ margin: "8px 0 0", fontSize: 26, fontWeight: 900, color: colors.color }}>{value}</p>
+      <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>{helper}</p>
     </div>
   );
 }
@@ -143,6 +157,40 @@ function SearchBox({ defaultValue, filter }: { defaultValue: string; filter: Com
       {defaultValue ? <Link href={`/admin/commissions?filter=${filter}`} className="btn btn-outline">Clear</Link> : null}
     </form>
   );
+}
+
+async function markCommissionReceivedFromList(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const commissionId = String(formData.get("commission_id") ?? "").trim();
+  if (!commissionId) throw new Error("Missing commission ID.");
+
+  const { data: commission, error: loadError } = await supabase
+    .from("commissions")
+    .select("id, expected_commission_amount")
+    .eq("id", commissionId)
+    .single();
+
+  if (loadError || !commission) {
+    throw new Error(loadError?.message ?? "Commission not found.");
+  }
+
+  const receivedAmount = Number(commission.expected_commission_amount ?? 0);
+
+  const { error } = await supabase
+    .from("commissions")
+    .update({
+      commission_status: "received",
+      received_commission_amount: receivedAmount,
+      received_payment_date: todayDateString(),
+    })
+    .eq("id", commissionId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/commissions");
+  revalidatePath(`/admin/commissions/${commissionId}`);
 }
 
 export default async function AdminCommissionsPage({
@@ -190,9 +238,33 @@ export default async function AdminCommissionsPage({
 
   return (
     <PageShell title="Commissions" subtitle="Track expected and received agency commissions.">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <p style={{ margin: 0, color: "#64748b" }}>Showing {rows.length} of {allRows.length} commission record{allRows.length === 1 ? "" : "s"}.</p>
-        <Link href="/admin/commissions/new" className="btn btn-primary">Add New Commission</Link>
+      <div
+        style={{
+          border: "1px solid #dbeafe",
+          borderRadius: 18,
+          padding: 22,
+          background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 66%, #fff7ed 100%)",
+          boxShadow: "0 18px 46px rgba(15, 23, 42, 0.08)",
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
+              Commission Control
+            </p>
+            <h2 style={{ margin: "6px 0 0", fontSize: 28, lineHeight: 1.15 }}>Paid and expected commissions</h2>
+            <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.55, maxWidth: 680 }}>
+              Showing {rows.length} of {allRows.length} commission record{allRows.length === 1 ? "" : "s"}. Focus first on overdue, outstanding, and this month&apos;s expected payments.
+            </p>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <Link href="/admin/commissions?filter=overdue" className="btn btn-outline">Overdue</Link>
+            <Link href="/admin/commissions?filter=received" className="btn btn-outline">Paid</Link>
+            <Link href="/admin/commissions/new" className="btn btn-primary">Add Commission</Link>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-4">
@@ -203,6 +275,13 @@ export default async function AdminCommissionsPage({
       </div>
 
       <div className="card stack">
+        {overdueRows.length > 0 ? (
+          <div style={{ padding: 14, borderRadius: 14, border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+            <p style={{ margin: 0, fontWeight: 900 }}>{overdueRows.length} overdue commission item{overdueRows.length === 1 ? "" : "s"} need follow-up.</p>
+            <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>Use the Overdue filter to review the oldest expected payments first.</p>
+          </div>
+        ) : null}
+
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <FilterLink href={base} active={activeFilter === "all"}>All</FilterLink>
           <FilterLink href={`${base}?filter=expected`} active={activeFilter === "expected"}>Expected</FilterLink>
@@ -229,15 +308,22 @@ export default async function AdminCommissionsPage({
                   <th>Received</th>
                   <th>Outstanding</th>
                   <th>Expected Date</th>
-                  <th>Open</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((commission) => {
                   const overdue = isOverdueCommission(commission);
+                  const outstanding = outstandingAmount(commission);
+                  const received = isReceived(commission);
                   return (
                     <tr key={commission.id} style={{ background: overdue ? "#fff7ed" : undefined }}>
-                      <td><strong>{commission.commission_name}</strong></td>
+                      <td>
+                        <strong>{commission.commission_name}</strong>
+                        {overdue ? (
+                          <span style={{ display: "block", marginTop: 3, color: "#c2410c", fontSize: 12, fontWeight: 800 }}>Overdue follow-up</span>
+                        ) : null}
+                      </td>
                       <td>{commission.client_name_snapshot ?? "-"}</td>
                       <td>{commission.trip_name_snapshot ?? "-"}</td>
                       <td>{commission.supplier_name_snapshot ?? "-"}</td>
@@ -245,13 +331,25 @@ export default async function AdminCommissionsPage({
                       <td><StatusBadge status={commission.commission_status} /></td>
                       <td>{formatMoney(commission.expected_commission_amount)}</td>
                       <td>{formatMoney(commission.received_commission_amount)}</td>
-                      <td style={{ fontWeight: overdue ? 900 : 700, color: overdue ? "#c2410c" : undefined }}>{formatMoney(outstandingAmount(commission))}</td>
+                      <td style={{ fontWeight: overdue ? 900 : 700, color: overdue ? "#c2410c" : undefined }}>{formatMoney(outstanding)}</td>
                       <td>
                         <span style={{ color: overdue ? "#c2410c" : undefined, fontWeight: overdue ? 800 : undefined }}>
                           {formatDate(commission.expected_payment_date)}
                         </span>
                       </td>
-                      <td><Link href={`/admin/commissions/${commission.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link></td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <Link href={`/admin/commissions/${commission.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link>
+                          {!received && outstanding > 0 ? (
+                            <form action={markCommissionReceivedFromList}>
+                              <input type="hidden" name="commission_id" value={commission.id} />
+                              <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#027a48", borderColor: "#bbf7d0" }}>
+                                Mark Paid
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
