@@ -269,8 +269,15 @@ async function logEmail(
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecretHeader = request.headers.get("x-cron-secret");
+
+  if (!cronSecret) {
+    return NextResponse.json({ error: "CRON_SECRET is not configured." }, { status: 500 });
+  }
+
+  if (authHeader !== `Bearer ${cronSecret}` && cronSecretHeader !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 

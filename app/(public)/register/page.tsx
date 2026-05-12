@@ -55,6 +55,8 @@ export default function RegisterPage() {
       const cleanLastName = lastName.trim();
       const cleanEmail = email.trim().toLowerCase();
       const cleanPhonePrimary = phonePrimary.trim();
+      const formData = new FormData(event.currentTarget);
+      const website = String(formData.get("website") ?? "").trim();
 
       if (!cleanFirstName || !cleanLastName || !cleanEmail || !password) {
         setErrorMessage("Please enter your first name, last name, email, and password.");
@@ -78,7 +80,7 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ firstName: cleanFirstName, lastName: cleanLastName, email: cleanEmail, phonePrimary: cleanPhonePrimary, password }),
+        body: JSON.stringify({ firstName: cleanFirstName, lastName: cleanLastName, email: cleanEmail, phonePrimary: cleanPhonePrimary, password, website }),
       });
 
       window.clearTimeout(timeout);
@@ -128,6 +130,15 @@ export default function RegisterPage() {
           {errorMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", lineHeight: 1.5 }}>{errorMessage}</div> : null}
 
           <form onSubmit={handleRegister} className="stack">
+            <input
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              style={{ display: "none" }}
+            />
+
             <div className="grid grid-2">
               <label className="stack-sm"><span className="label">First Name</span><input className="input" value={firstName} onChange={(event) => setFirstName(event.target.value)} autoComplete="given-name" required /></label>
               <label className="stack-sm"><span className="label">Last Name</span><input className="input" value={lastName} onChange={(event) => setLastName(event.target.value)} autoComplete="family-name" required /></label>

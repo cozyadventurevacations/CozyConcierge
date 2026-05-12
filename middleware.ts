@@ -15,6 +15,16 @@ const PUBLIC_API_PATHS = [
   "/api/automations/send-emails",
 ];
 
+function isAdminRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? "").trim().toLowerCase();
+
+  return (
+    normalizedRole === "admin" ||
+    normalizedRole === "owner" ||
+    normalizedRole === "administrator"
+  );
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -67,6 +77,37 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+    const userEmail = user.email?.trim().toLowerCase() ?? "";
+
+    const { data: profileByAuthId } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    let role = profileByAuthId?.role ?? null;
+
+    if (!isAdminRole(role) && userEmail) {
+      const { data: profileByEmail } = await supabase
+        .from("user_profiles")
+        .select("role")
+        .ilike("email", userEmail)
+        .maybeSingle();
+
+      role = profileByEmail?.role ?? role;
+    }
+
+    if (!isAdminRole(role)) {
+      if (pathname.startsWith("/api/admin")) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+
+      const dashboardUrl = new URL("/dashboard", request.url);
+      return NextResponse.redirect(dashboardUrl);
+    }
   }
 
   return response;

@@ -112,6 +112,14 @@ export async function POST(request: Request) {
     const email = cleanEmail(body.email);
     const phonePrimary = cleanText(body.phonePrimary);
     const password = cleanText(body.password);
+    const website = cleanText(body.website);
+
+    if (website) {
+      return NextResponse.json({
+        success: true,
+        message: "If this email can be registered, the account will be created.",
+      });
+    }
 
     if (!firstName || !lastName || !email || !password) {
       return NextResponse.json(
