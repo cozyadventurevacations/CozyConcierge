@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -196,12 +197,75 @@ async function updateThreadStatus(formData: FormData) {
   revalidatePath("/admin/messages");
 }
 
+async function deleteOldMessageThreads(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const olderThanDays = Number(formData.get("older_than_days") ?? 365);
+  const threadType = String(formData.get("thread_type") ?? "all");
+  const confirmation = String(formData.get("delete_old_messages_confirmation") ?? "").trim();
+
+  if (![90, 180, 365, 730].includes(olderThanDays)) {
+    throw new Error("Choose a valid age cutoff.");
+  }
+
+  if (!["all", "private", "trip_group"].includes(threadType)) {
+    throw new Error("Choose a valid message type.");
+  }
+
+  if (confirmation !== "DELETE OLD MESSAGES") {
+    throw new Error("Old message cleanup requires typing DELETE OLD MESSAGES.");
+  }
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - olderThanDays);
+  const cutoffIso = cutoff.toISOString();
+
+  let oldThreadQuery = supabase
+    .from("message_threads" as any)
+    .select("id")
+    .in("status", ["resolved", "archived"])
+    .lt("last_message_at", cutoffIso);
+
+  if (threadType !== "all") {
+    oldThreadQuery = oldThreadQuery.eq("thread_type", threadType);
+  }
+
+  const { data: oldThreads, error: oldThreadsError } = await oldThreadQuery;
+
+  if (oldThreadsError) throw new Error(oldThreadsError.message);
+
+  const threadIds = ((oldThreads ?? []) as { id: string }[]).map((thread) => thread.id);
+
+  if (threadIds.length === 0) {
+    redirect("/admin/messages?oldMessageCleanup=none");
+  }
+
+  const { error: messagesError } = await supabase
+    .from("messages" as any)
+    .delete()
+    .in("thread_id", threadIds);
+
+  if (messagesError) throw new Error(messagesError.message);
+
+  const { error: threadsError } = await supabase
+    .from("message_threads" as any)
+    .delete()
+    .in("id", threadIds);
+
+  if (threadsError) throw new Error(threadsError.message);
+
+  revalidatePath("/admin/messages");
+  redirect(`/admin/messages?oldMessageCleanup=${threadIds.length}`);
+}
+
 export default async function AdminMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ threadId?: string; status?: string; type?: string }>;
+  searchParams: Promise<{ threadId?: string; status?: string; type?: string; oldMessageCleanup?: string }>;
 }) {
-  const { threadId, status, type } = await searchParams;
+  const { threadId, status, type, oldMessageCleanup } = await searchParams;
   const { supabase } = await requireAdmin();
 
   let threadQuery = supabase
@@ -352,6 +416,58 @@ export default async function AdminMessagesPage({
           <Link href="/admin/messages?status=resolved" className="btn btn-primary">Resolved</Link>
           <Link href="/admin/dashboard" className="btn btn-primary">Admin Dashboard</Link>
         </div>
+      </div>
+
+      {oldMessageCleanup ? (
+        <div
+          className="card"
+          style={{
+            border: oldMessageCleanup === "none" ? "1px solid #bfdbfe" : "1px solid #bbf7d0",
+            background: oldMessageCleanup === "none" ? "#eff6ff" : "#f0fdf4",
+            color: oldMessageCleanup === "none" ? "#1d4ed8" : "#166534",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 800 }}>
+            {oldMessageCleanup === "none"
+              ? "No old resolved or archived messages matched that cleanup."
+              : `Deleted ${oldMessageCleanup} old message thread${oldMessageCleanup === "1" ? "" : "s"}.`}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#9a3412" }}>Old Message Cleanup</h2>
+          <p style={{ margin: "6px 0 0", color: "#9a3412", lineHeight: 1.6 }}>
+            Permanently delete old conversations that are already resolved or archived. Open conversations are protected and will not be touched.
+          </p>
+        </div>
+        <form action={deleteOldMessageThreads} className="grid grid-4" style={{ alignItems: "end" }}>
+          <label className="stack-sm">
+            <span className="label" style={{ color: "#9a3412" }}>Older than</span>
+            <select className="select" name="older_than_days" defaultValue="365">
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+              <option value="365">1 year</option>
+              <option value="730">2 years</option>
+            </select>
+          </label>
+          <label className="stack-sm">
+            <span className="label" style={{ color: "#9a3412" }}>Message type</span>
+            <select className="select" name="thread_type" defaultValue="all">
+              <option value="all">All types</option>
+              <option value="private">Private only</option>
+              <option value="trip_group">Travel Circle only</option>
+            </select>
+          </label>
+          <label className="stack-sm" style={{ gridColumn: "span 2" }}>
+            <span className="label" style={{ color: "#9a3412" }}>Type DELETE OLD MESSAGES</span>
+            <input className="input" name="delete_old_messages_confirmation" placeholder="DELETE OLD MESSAGES" />
+          </label>
+          <button type="submit" className="btn btn-outline" style={{ color: "#c2410c", borderColor: "#fed7aa" }}>
+            Delete Old Messages
+          </button>
+        </form>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
