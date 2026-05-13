@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -88,6 +89,25 @@ function FilterLink({ href, active, children }: { href: string; active: boolean;
   return <Link href={href} className={active ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "8px 12px", fontSize: 13 }}>{children}</Link>;
 }
 
+async function deleteQuoteRequest(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const requestId = String(formData.get("request_id") ?? "").trim();
+
+  if (!requestId) throw new Error("Missing travel request ID.");
+
+  const { error } = await supabase
+    .from("quote_requests")
+    .delete()
+    .eq("id", requestId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/quote-requests");
+  revalidatePath("/admin/dashboard");
+}
+
 export default async function AdminQuoteRequestsPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const { filter: rawFilter } = await searchParams;
   const activeFilter = (["all", "new", "reviewing", "quoted", "booked", "closed"].includes(String(rawFilter)) ? rawFilter : "all") as RequestFilter;
@@ -134,7 +154,7 @@ export default async function AdminQuoteRequestsPage({ searchParams }: { searchP
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>
             <table className="table" style={{ minWidth: 980 }}>
-              <thead><tr><th>Status</th><th>Name</th><th>Email</th><th>Destination</th><th>Departure</th><th>Return</th><th>Travelers</th><th>Submitted</th><th>Open</th></tr></thead>
+              <thead><tr><th>Status</th><th>Name</th><th>Email</th><th>Destination</th><th>Departure</th><th>Return</th><th>Travelers</th><th>Submitted</th><th>Actions</th></tr></thead>
               <tbody>
                 {rows.map((request) => {
                   const age = daysSince(request.submitted_at);
@@ -149,7 +169,21 @@ export default async function AdminQuoteRequestsPage({ searchParams }: { searchP
                       <td>{formatDate(request.return_date)}</td>
                       <td>{request.number_of_travelers ?? "-"}</td>
                       <td>{formatDateTime(request.submitted_at)}{needsAttention ? <span style={{ display: "block", color: "#c2410c", fontSize: 12, fontWeight: 800 }}>Follow up soon</span> : null}</td>
-                      <td><Link href={`/admin/quote-requests/${request.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link></td>
+                      <td>
+                        <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                          <Link href={`/admin/quote-requests/${request.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link>
+                          <form action={deleteQuoteRequest}>
+                            <input type="hidden" name="request_id" value={request.id} />
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              style={{ fontSize: 13, padding: "5px 12px", background: "#ffffff", color: "#b42318", border: "1px solid #fecaca" }}
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

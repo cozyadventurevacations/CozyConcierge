@@ -323,6 +323,30 @@ async function updateQuoteRequestStatus(formData: FormData) {
   revalidatePath(`/admin/quote-requests/${requestId}`);
 }
 
+async function deleteQuoteRequest(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const requestId = String(formData.get("request_id") ?? "").trim();
+
+  if (!requestId) {
+    throw new Error("Missing travel request ID.");
+  }
+
+  const { error } = await supabase
+    .from("quote_requests")
+    .delete()
+    .eq("id", requestId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/admin/quote-requests");
+  revalidatePath("/admin/dashboard");
+  redirect("/admin/quote-requests");
+}
+
 async function convertToTrip(formData: FormData) {
   "use server";
 
@@ -646,6 +670,32 @@ export default async function AdminQuoteRequestDetailPage({
 
           <ActionLink href="/admin/quote-requests">Back to Quote Requests</ActionLink>
         </div>
+      </div>
+
+      <div
+        className="card stack"
+        style={{
+          background: "#fff1f2",
+          border: "1px solid #fecdd3",
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, color: "#9f1239" }}>Delete Travel Request</h2>
+          <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
+            This removes the travel request from the admin queue. If it was already converted, the trip itself will not be deleted.
+          </p>
+        </div>
+
+        <form action={deleteQuoteRequest}>
+          <input type="hidden" name="request_id" value={request.id} />
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ background: "#be123c", color: "#ffffff" }}
+          >
+            Delete Travel Request
+          </button>
+        </form>
       </div>
     </PageShell>
   );
