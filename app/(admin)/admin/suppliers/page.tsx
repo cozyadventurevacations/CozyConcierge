@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -13,6 +14,10 @@ type SupplierRow = {
   website_url: string | null;
   preferred_supplier: boolean | null;
   created_at: string | null;
+};
+
+type SupplierLinkRow = {
+  supplier_id: string | null;
 };
 
 function formatDate(value: string | null | undefined) {
@@ -57,6 +62,27 @@ function PreferredBadge({ preferred }: { preferred: boolean | null }) {
       background: "#f1f5f9", color: "#475569",
     }}>
       Standard
+    </span>
+  );
+}
+
+function LinkedBadge({ count }: { count: number }) {
+  return (
+    <span
+      title="Open the supplier to see linked trip components and commissions."
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "4px 10px",
+        fontWeight: 800,
+        fontSize: 12,
+        background: "#fff7ed",
+        color: "#c2410c",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {count} linked
     </span>
   );
 }
@@ -107,7 +133,7 @@ async function deleteSupplier(formData: FormData) {
 
   const relatedCount = Number(componentCheck.count ?? 0) + Number(commissionCheck.count ?? 0);
   if (relatedCount > 0) {
-    throw new Error("This supplier has linked trip components or commissions. Remove or reassign those records before deleting it.");
+    redirect("/admin/suppliers?deleteBlocked=1");
   }
 
   const { error } = await supabase
@@ -118,22 +144,35 @@ async function deleteSupplier(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/suppliers");
+  redirect("/admin/suppliers?deleted=1");
 }
 
 export default async function AdminSuppliersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; deleteBlocked?: string; deleted?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, deleteBlocked, deleted } = await searchParams;
   const searchTerm = String(q ?? "").trim();
 
   const { supabase } = await requireAdmin();
 
-  const { data: suppliers, error } = await supabase
-    .from("suppliers")
-    .select("id, supplier_name, supplier_type, contact_name, contact_email, contact_phone, website_url, preferred_supplier, created_at")
-    .order("supplier_name", { ascending: true });
+  const [suppliersResult, componentLinksResult, commissionLinksResult] = await Promise.all([
+    supabase
+      .from("suppliers")
+      .select("id, supplier_name, supplier_type, contact_name, contact_email, contact_phone, website_url, preferred_supplier, created_at")
+      .order("supplier_name", { ascending: true }),
+    supabase
+      .from("trip_components")
+      .select("supplier_id")
+      .not("supplier_id", "is", null),
+    supabase
+      .from("commissions")
+      .select("supplier_id")
+      .not("supplier_id", "is", null),
+  ]);
+
+  const { data: suppliers, error } = suppliersResult;
 
   if (error) {
     return (
@@ -148,6 +187,15 @@ export default async function AdminSuppliersPage({
 
   const allRows = (suppliers ?? []) as SupplierRow[];
   const rows = allRows.filter((supplier) => supplierMatchesSearch(supplier, searchTerm));
+  const linkedCounts = new Map<string, number>();
+
+  for (const link of [
+    ...((componentLinksResult.data ?? []) as SupplierLinkRow[]),
+    ...((commissionLinksResult.data ?? []) as SupplierLinkRow[]),
+  ]) {
+    if (!link.supplier_id) continue;
+    linkedCounts.set(link.supplier_id, (linkedCounts.get(link.supplier_id) ?? 0) + 1);
+  }
 
   return (
     <PageShell title="Suppliers" subtitle="Manage supplier and vendor records.">
@@ -159,6 +207,21 @@ export default async function AdminSuppliersPage({
           Add New Supplier
         </Link>
       </div>
+
+      {deleteBlocked ? (
+        <div className="card" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+          <p style={{ margin: 0, fontWeight: 900 }}>Supplier was not deleted.</p>
+          <p style={{ margin: "4px 0 0", lineHeight: 1.5 }}>
+            That supplier is linked to trip components or commissions. Open the supplier record to review what is connected before removing it.
+          </p>
+        </div>
+      ) : null}
+
+      {deleted ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#ecfdf3", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 900 }}>Supplier deleted.</p>
+        </div>
+      ) : null}
 
       <div className="card stack">
         <SearchBox defaultValue={searchTerm} />
@@ -187,9 +250,16 @@ export default async function AdminSuppliersPage({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((supplier) => (
+                {rows.map((supplier) => {
+                  const linkedCount = linkedCounts.get(supplier.id) ?? 0;
+                  return (
                   <tr key={supplier.id}>
-                    <td>{supplier.supplier_name}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span>{supplier.supplier_name}</span>
+                        {linkedCount > 0 ? <LinkedBadge count={linkedCount} /> : null}
+                      </div>
+                    </td>
                     <td>{supplier.supplier_type ?? "—"}</td>
                     <td><PreferredBadge preferred={supplier.preferred_supplier} /></td>
                     <td>{supplier.contact_name ?? "—"}</td>
@@ -205,20 +275,33 @@ export default async function AdminSuppliersPage({
                         >
                           Open
                         </Link>
-                        <form action={deleteSupplier}>
-                          <input type="hidden" name="supplier_id" value={supplier.id} />
+                        {linkedCount > 0 ? (
                           <button
-                            type="submit"
+                            type="button"
+                            disabled
                             className="btn btn-outline"
-                            style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
+                            title="This supplier has linked trip components or commissions."
+                            style={{ fontSize: 13, padding: "5px 12px", color: "#94a3b8", borderColor: "#e2e8f0", cursor: "not-allowed" }}
                           >
-                            Delete
+                            Protected
                           </button>
-                        </form>
+                        ) : (
+                          <form action={deleteSupplier}>
+                            <input type="hidden" name="supplier_id" value={supplier.id} />
+                            <button
+                              type="submit"
+                              className="btn btn-outline"
+                              style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
