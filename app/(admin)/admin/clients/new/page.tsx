@@ -141,7 +141,7 @@ async function createClient(formData: FormData) {
   const last_name = String(formData.get("last_name") ?? "").trim();
 
   if (!first_name && !last_name) {
-    throw new Error("A first name or last name is required.");
+    redirect("/admin/clients/new?error=missing-name");
   }
 
   const { data, error } = await supabase
@@ -194,7 +194,12 @@ async function createClient(formData: FormData) {
   redirect(`/admin/clients/${data.id}`);
 }
 
-export default async function NewClientPage() {
+export default async function NewClientPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   await requireAdmin();
 
   return (
@@ -203,6 +208,14 @@ export default async function NewClientPage() {
       subtitle="Create a client record for Cozy Concierge."
     >
       <form action={createClient} className="stack" style={{ maxWidth: 1100 }}>
+        {error === "missing-name" ? (
+          <div className="card" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+            <p style={{ margin: 0, fontWeight: 800 }}>
+              Add at least a first name or last name before creating the client.
+            </p>
+          </div>
+        ) : null}
+
         <div
           className="card stack"
           style={{
