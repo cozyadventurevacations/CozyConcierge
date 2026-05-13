@@ -71,6 +71,15 @@ type CommissionRow = {
   trip_id: string | null;
 };
 
+type SupplierPhoneRow = {
+  id: string;
+  label: string;
+  phone_number: string;
+  contact_name: string | null;
+  notes: string | null;
+  sort_order: number | null;
+};
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -313,8 +322,15 @@ export default async function SupplierDetailPage({
     .eq("supplier_id", supplierId)
     .order("created_at", { ascending: false });
 
+  const { data: phoneData, error: phoneError } = await supabase
+    .from("supplier_phone_numbers" as any)
+    .select("id, label, phone_number, contact_name, notes, sort_order")
+    .eq("supplier_id", supplierId)
+    .order("sort_order", { ascending: true });
+
   const componentRows = (componentData ?? []) as TripComponentRow[];
   const commissionRows = (commissionData ?? []) as CommissionRow[];
+  const phoneRows = (phoneData ?? []) as SupplierPhoneRow[];
 
   const componentTotal = componentRows.reduce(
     (sum, component) => sum + Number(component.total_price ?? 0),
@@ -422,6 +438,42 @@ export default async function SupplierDetailPage({
             <InfoItem label="Website URL" value={supplierRow.website_url} />
             <InfoItem label="Booking Portal URL" value={supplierRow.booking_portal_url} />
           </div>
+        </div>
+
+        <div className="card stack">
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>Supplier Phone Directory</h2>
+            <ActionButton href={`/admin/suppliers/${supplierRow.id}/edit`}>
+              Edit Phone Lines
+            </ActionButton>
+          </div>
+
+          {phoneError ? (
+            <pre>{JSON.stringify(phoneError, null, 2)}</pre>
+          ) : phoneRows.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+              No department-specific phone numbers have been added yet.
+            </p>
+          ) : (
+            <div className="grid grid-3">
+              {phoneRows.map((phone) => (
+                <div key={phone.id} style={{ padding: "14px", borderRadius: 14, border: "1px solid #e6f0f2", background: "#fbfdfe" }}>
+                  <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "#64748b", fontWeight: 800 }}>
+                    {phone.label}
+                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 18, fontWeight: 900 }}>
+                    <a href={`tel:${phone.phone_number}`}>{phone.phone_number}</a>
+                  </p>
+                  {phone.contact_name ? (
+                    <p style={{ margin: "4px 0 0", color: "#334155", fontWeight: 700 }}>{phone.contact_name}</p>
+                  ) : null}
+                  {phone.notes ? (
+                    <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{phone.notes}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card stack">

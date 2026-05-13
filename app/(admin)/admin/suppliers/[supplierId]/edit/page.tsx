@@ -24,6 +24,15 @@ const supplierTypes = [
   "Other",
 ];
 
+const supplierPhoneSlots = [
+  { label: "BDM", placeholder: "Business development manager direct line" },
+  { label: "Travel Agent Support", placeholder: "Advisor support or reservations line" },
+  { label: "Groups", placeholder: "Groups department line" },
+  { label: "Customer Service", placeholder: "General supplier support line" },
+  { label: "Emergency / In Travel", placeholder: "After-hours or in-destination support" },
+  { label: "Other", placeholder: "Any other useful phone number" },
+];
+
 type SupplierDetail = {
   id: string;
   supplier_name: string;
@@ -44,9 +53,40 @@ type SupplierDetail = {
   internal_notes: string | null;
 };
 
+type SupplierPhoneRow = {
+  id: string;
+  label: string;
+  phone_number: string;
+  contact_name: string | null;
+  notes: string | null;
+  sort_order: number | null;
+};
+
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function getSupplierPhoneRows(formData: FormData, supplierId: string) {
+  return supplierPhoneSlots
+    .map((slot, index) => {
+      const phoneNumber = String(formData.get(`supplier_phone_number_${index}`) ?? "").trim();
+      const label = String(formData.get(`supplier_phone_label_${index}`) ?? slot.label).trim() || slot.label;
+      const contactName = String(formData.get(`supplier_phone_contact_${index}`) ?? "").trim();
+      const notes = String(formData.get(`supplier_phone_notes_${index}`) ?? "").trim();
+
+      if (!phoneNumber && !contactName && !notes) return null;
+
+      return {
+        supplier_id: supplierId,
+        label,
+        phone_number: phoneNumber || "Not provided",
+        contact_name: contactName || null,
+        notes: notes || null,
+        sort_order: index,
+      };
+    })
+    .filter(Boolean);
 }
 
 function Field({
@@ -171,6 +211,22 @@ async function updateSupplier(supplierId: string, formData: FormData) {
     throw new Error(error.message);
   }
 
+  const { error: deletePhonesError } = await supabase
+    .from("supplier_phone_numbers" as any)
+    .delete()
+    .eq("supplier_id", supplierId);
+
+  if (deletePhonesError) throw new Error(deletePhonesError.message);
+
+  const phoneRows = getSupplierPhoneRows(formData, supplierId);
+  if (phoneRows.length > 0) {
+    const { error: phoneError } = await supabase
+      .from("supplier_phone_numbers" as any)
+      .insert(phoneRows);
+
+    if (phoneError) throw new Error(phoneError.message);
+  }
+
   redirect(`/admin/suppliers/${supplierId}`);
 }
 
@@ -188,6 +244,12 @@ export default async function EditSupplierPage({
     .eq("id", supplierId)
     .single();
 
+  const { data: phoneRows } = await supabase
+    .from("supplier_phone_numbers" as any)
+    .select("id, label, phone_number, contact_name, notes, sort_order")
+    .eq("supplier_id", supplierId)
+    .order("sort_order", { ascending: true });
+
   if (error || !supplier) {
     return (
       <PageShell title="Edit Supplier" subtitle="We could not load this supplier.">
@@ -202,6 +264,7 @@ export default async function EditSupplierPage({
   }
 
   const supplierRow = supplier as SupplierDetail;
+  const supplierPhones = (phoneRows ?? []) as SupplierPhoneRow[];
   const saveSupplier = updateSupplier.bind(null, supplierRow.id);
 
   return (
@@ -314,6 +377,45 @@ export default async function EditSupplierPage({
               defaultValue={supplierRow.booking_portal_url}
               placeholder="https://supplier-booking-portal.com"
             />
+          </div>
+        </div>
+
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Supplier Phone Directory</h2>
+          <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+            Store the department-specific lines you use most often. Clear all fields in a slot to remove that number.
+          </p>
+
+          <div className="grid grid-2">
+            {supplierPhoneSlots.map((slot, index) => {
+              const existingPhone = supplierPhones.find((phone) => phone.label === slot.label);
+              return (
+                <div key={slot.label} className="card stack" style={{ background: "#fbfdfe" }}>
+                  <input type="hidden" name={`supplier_phone_label_${index}`} value={slot.label} />
+                  <h3 style={{ margin: 0 }}>{slot.label}</h3>
+                  <Field
+                    label="Phone Number"
+                    name={`supplier_phone_number_${index}`}
+                    type="tel"
+                    defaultValue={existingPhone?.phone_number}
+                    placeholder={slot.placeholder}
+                  />
+                  <Field
+                    label="Contact Name"
+                    name={`supplier_phone_contact_${index}`}
+                    defaultValue={existingPhone?.contact_name}
+                    placeholder="Optional contact name"
+                  />
+                  <TextAreaField
+                    label="Notes"
+                    name={`supplier_phone_notes_${index}`}
+                    rows={2}
+                    defaultValue={existingPhone?.notes}
+                    placeholder="Hours, prompts, department notes, or when to use this line"
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
 

@@ -24,9 +24,40 @@ const supplierTypes = [
   "Other",
 ];
 
+const supplierPhoneSlots = [
+  { label: "BDM", placeholder: "Business development manager direct line" },
+  { label: "Travel Agent Support", placeholder: "Advisor support or reservations line" },
+  { label: "Groups", placeholder: "Groups department line" },
+  { label: "Customer Service", placeholder: "General supplier support line" },
+  { label: "Emergency / In Travel", placeholder: "After-hours or in-destination support" },
+  { label: "Other", placeholder: "Any other useful phone number" },
+];
+
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function getSupplierPhoneRows(formData: FormData, supplierId: string) {
+  return supplierPhoneSlots
+    .map((slot, index) => {
+      const phoneNumber = String(formData.get(`supplier_phone_number_${index}`) ?? "").trim();
+      const label = String(formData.get(`supplier_phone_label_${index}`) ?? slot.label).trim() || slot.label;
+      const contactName = String(formData.get(`supplier_phone_contact_${index}`) ?? "").trim();
+      const notes = String(formData.get(`supplier_phone_notes_${index}`) ?? "").trim();
+
+      if (!phoneNumber && !contactName && !notes) return null;
+
+      return {
+        supplier_id: supplierId,
+        label,
+        phone_number: phoneNumber || "Not provided",
+        contact_name: contactName || null,
+        notes: notes || null,
+        sort_order: index,
+      };
+    })
+    .filter(Boolean);
 }
 
 function Field({
@@ -144,6 +175,15 @@ async function createSupplier(formData: FormData) {
     throw new Error(error.message);
   }
 
+  const phoneRows = getSupplierPhoneRows(formData, data.id);
+  if (phoneRows.length > 0) {
+    const { error: phoneError } = await supabase
+      .from("supplier_phone_numbers" as any)
+      .insert(phoneRows);
+
+    if (phoneError) throw new Error(phoneError.message);
+  }
+
   redirect(`/admin/suppliers/${data.id}`);
 }
 
@@ -249,6 +289,39 @@ export default async function NewSupplierPage() {
               type="url"
               placeholder="https://supplier-booking-portal.com"
             />
+          </div>
+        </div>
+
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>Supplier Phone Directory</h2>
+          <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+            Add the lines you use most often, such as BDM, Travel Agent Support, Groups, or in-travel support.
+          </p>
+
+          <div className="grid grid-2">
+            {supplierPhoneSlots.map((slot, index) => (
+              <div key={slot.label} className="card stack" style={{ background: "#fbfdfe" }}>
+                <input type="hidden" name={`supplier_phone_label_${index}`} value={slot.label} />
+                <h3 style={{ margin: 0 }}>{slot.label}</h3>
+                <Field
+                  label="Phone Number"
+                  name={`supplier_phone_number_${index}`}
+                  type="tel"
+                  placeholder={slot.placeholder}
+                />
+                <Field
+                  label="Contact Name"
+                  name={`supplier_phone_contact_${index}`}
+                  placeholder="Optional contact name"
+                />
+                <TextAreaField
+                  label="Notes"
+                  name={`supplier_phone_notes_${index}`}
+                  rows={2}
+                  placeholder="Hours, prompts, department notes, or when to use this line"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
