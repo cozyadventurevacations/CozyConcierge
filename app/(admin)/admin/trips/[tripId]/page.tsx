@@ -2563,43 +2563,6 @@ async function softDeleteTripFromDetail(formData: FormData) {
   revalidatePath("/admin/dashboard");
 }
 
-async function forceSoftDeleteTripFromDetail(formData: FormData) {
-  "use server";
-
-  const { supabase } = await requireAdmin();
-  const tripId = String(formData.get("trip_id") ?? "").trim();
-  const confirmation = String(formData.get("force_delete_confirmation") ?? "").trim();
-
-  if (!tripId) throw new Error("Missing trip ID.");
-  if (confirmation !== "DELETE TEST TRIP") {
-    throw new Error("Override delete requires typing DELETE TEST TRIP.");
-  }
-
-  const { data: trip, error: tripError } = await supabase
-    .from("trips")
-    .select("id, deleted_at")
-    .eq("id", tripId)
-    .single();
-
-  if (tripError || !trip) throw new Error("Trip not found.");
-  if (trip.deleted_at) throw new Error("Trip is already deleted.");
-
-  const { error } = await supabase
-    .from("trips")
-    .update({
-      deleted_at: new Date().toISOString(),
-      deletion_requested_at: null,
-      deletion_requested_by: null,
-    })
-    .eq("id", tripId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/admin/trips/${tripId}`);
-  revalidatePath("/admin/trips");
-  revalidatePath("/admin/dashboard");
-}
-
 async function addTripPaymentLedgerEntry(formData: FormData) {
   "use server";
 
@@ -3277,14 +3240,6 @@ export default async function AdminTripEditorPage({
       </form>
 
       <form
-        id="force-soft-delete-trip-detail-form"
-        action={forceSoftDeleteTripFromDetail}
-        style={{ display: "none" }}
-      >
-        <input type="hidden" name="trip_id" value={trip.id} />
-      </form>
-
-      <form
         id="dismiss-trip-deletion-request-detail-form"
         action={dismissTripDeletionRequestFromDetail}
         style={{ display: "none" }}
@@ -3358,38 +3313,6 @@ export default async function AdminTripEditorPage({
                   </>
                 )}
               </div>
-            </div>
-          </div>
-        ) : null}
-
-        {!tripDeleted && !deletionEligibility.allowed ? (
-          <div className="card stack" style={{ border: "1px solid #fecaca", background: "#fff1f2" }}>
-            <div>
-              <p style={{ margin: 0, fontWeight: 900, color: "#be123c" }}>
-                Admin override delete
-              </p>
-              <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
-                Use this only for clearing testing data before launch. It bypasses the normal delete rule and soft deletes this trip even when payments or an active status exist.
-              </p>
-            </div>
-            <div className="row" style={{ alignItems: "flex-end", gap: 10 }}>
-              <label className="stack-sm" style={{ flex: "1 1 260px" }}>
-                <span className="label" style={{ color: "#9f1239" }}>Type DELETE TEST TRIP</span>
-                <input
-                  className="input"
-                  name="force_delete_confirmation"
-                  form="force-soft-delete-trip-detail-form"
-                  placeholder="DELETE TEST TRIP"
-                />
-              </label>
-              <button
-                type="submit"
-                form="force-soft-delete-trip-detail-form"
-                className="btn btn-outline"
-                style={{ color: "#be123c", borderColor: "#fecaca" }}
-              >
-                Override and Soft Delete
-              </button>
             </div>
           </div>
         ) : null}

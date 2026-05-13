@@ -426,152 +426,6 @@ async function deleteClientAccount(formData: FormData) {
   redirect("/admin/clients");
 }
 
-async function forceDeleteTestClientAccount(formData: FormData) {
-  "use server";
-
-  const { supabase } = await requireAdmin();
-
-  const clientId = String(formData.get("client_id") ?? "").trim();
-  const confirmation = String(formData.get("force_delete_confirmation") ?? "").trim();
-
-  if (!clientId) throw new Error("Missing client ID.");
-  if (confirmation !== "DELETE TEST CLIENT") {
-    throw new Error("Test data override requires typing DELETE TEST CLIENT.");
-  }
-
-  const fail = (label: string, message: string) => {
-    throw new Error(`${label}: ${message}`);
-  };
-
-  const runDelete = async (label: string, query: any) => {
-    const { error } = await query;
-    if (error) fail(label, error.message);
-  };
-
-  const { data: ownedTrips, error: ownedTripsError } = await supabase
-    .from("trips")
-    .select("id")
-    .eq("client_account_id", clientId);
-
-  if (ownedTripsError) throw new Error(ownedTripsError.message);
-
-  const ownedTripIds = ((ownedTrips ?? []) as { id: string }[]).map((trip) => trip.id);
-
-  const { data: clientThreads, error: clientThreadsError } = await supabase
-    .from("message_threads" as any)
-    .select("id")
-    .eq("client_account_id", clientId);
-
-  if (clientThreadsError) throw new Error(clientThreadsError.message);
-
-  const { data: tripThreads, error: tripThreadsError } = ownedTripIds.length
-    ? await supabase
-        .from("message_threads" as any)
-        .select("id")
-        .in("trip_id", ownedTripIds)
-    : { data: [], error: null };
-
-  if (tripThreadsError) throw new Error(tripThreadsError.message);
-
-  const threadIds = Array.from(
-    new Set(
-      [
-        ...(((clientThreads ?? []) as { id: string }[]).map((thread) => thread.id)),
-        ...(((tripThreads ?? []) as { id: string }[]).map((thread) => thread.id)),
-      ].filter(Boolean),
-    ),
-  );
-
-  const { data: askCozyThreads, error: askCozyThreadsError } = await supabase
-    .from("ask_cozy_threads" as any)
-    .select("id")
-    .eq("client_account_id", clientId);
-
-  if (askCozyThreadsError) throw new Error(askCozyThreadsError.message);
-
-  const askCozyThreadIds = ((askCozyThreads ?? []) as { id: string }[]).map((thread) => thread.id);
-
-  const { data: tripComponents, error: tripComponentsError } = ownedTripIds.length
-    ? await supabase
-        .from("trip_components")
-        .select("id")
-        .in("trip_id", ownedTripIds)
-    : { data: [], error: null };
-
-  if (tripComponentsError) throw new Error(tripComponentsError.message);
-
-  const componentIds = ((tripComponents ?? []) as { id: string }[]).map((component) => component.id);
-
-  if (threadIds.length) {
-    await runDelete("Delete thread messages", supabase.from("messages" as any).delete().in("thread_id", threadIds));
-  }
-
-  await runDelete("Delete client messages", supabase.from("messages" as any).delete().eq("client_account_id", clientId));
-  await runDelete("Delete sent client messages", supabase.from("messages" as any).delete().eq("sender_client_account_id", clientId));
-
-  if (threadIds.length) {
-    await runDelete("Delete message threads", supabase.from("message_threads" as any).delete().in("id", threadIds));
-  }
-
-  if (askCozyThreadIds.length) {
-    await runDelete("Delete Ask Cozy messages", supabase.from("ask_cozy_messages" as any).delete().in("thread_id", askCozyThreadIds));
-    await runDelete("Delete Ask Cozy threads", supabase.from("ask_cozy_threads" as any).delete().in("id", askCozyThreadIds));
-  }
-
-  if (ownedTripIds.length) {
-    await runDelete("Delete trip payment requests", supabase.from("payment_requests").delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip email automation log", supabase.from("email_automation_log").delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip payment ledger", supabase.from("trip_payment_ledger" as any).delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip milestones", supabase.from("trip_milestones" as any).delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip notes", supabase.from("trip_notes").delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete linked client trip documents", supabase.from("trip_client_documents" as any).delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip documents", supabase.from("trip_documents").delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip commissions", supabase.from("commissions").delete().in("trip_id", ownedTripIds));
-    await runDelete("Delete trip members", supabase.from("trip_members" as any).delete().in("trip_id", ownedTripIds));
-  }
-
-  if (componentIds.length) {
-    await runDelete("Delete flight segments", supabase.from("flight_segments").delete().in("air_component_id", componentIds));
-    await runDelete("Delete air details", supabase.from("air_components").delete().in("component_id", componentIds));
-    await runDelete("Delete hotel details", supabase.from("hotel_components").delete().in("component_id", componentIds));
-    await runDelete("Delete cruise details", supabase.from("cruise_components").delete().in("component_id", componentIds));
-    await runDelete("Delete transfer details", supabase.from("transfer_components").delete().in("component_id", componentIds));
-    await runDelete("Delete activity details", supabase.from("activity_components").delete().in("component_id", componentIds));
-    await runDelete("Delete insurance details", supabase.from("insurance_components").delete().in("component_id", componentIds));
-    await runDelete("Delete trip components", supabase.from("trip_components").delete().in("id", componentIds));
-  }
-
-  if (ownedTripIds.length) {
-    const { error: clearConvertedTripError } = await supabase
-      .from("quote_requests")
-      .update({ converted_trip_id: null })
-      .in("converted_trip_id", ownedTripIds);
-
-    if (clearConvertedTripError) throw new Error(clearConvertedTripError.message);
-
-    await runDelete("Delete trips", supabase.from("trips").delete().in("id", ownedTripIds));
-  }
-
-  await runDelete("Delete client payment requests", supabase.from("payment_requests").delete().eq("client_account_id", clientId));
-  await runDelete("Delete client email automation log", supabase.from("email_automation_log").delete().eq("client_account_id", clientId));
-  await runDelete("Delete travel requests", supabase.from("quote_requests").delete().eq("client_account_id", clientId));
-  await runDelete("Delete client notes", supabase.from("client_notes").delete().eq("client_account_id", clientId));
-  await runDelete("Delete client documents", supabase.from("client_documents").delete().eq("client_account_id", clientId));
-  await runDelete("Delete loyalty numbers", supabase.from("traveler_loyalty_numbers").delete().eq("client_account_id", clientId));
-  await runDelete("Delete traveler profiles", supabase.from("traveler_profiles").delete().eq("client_account_id", clientId));
-  await runDelete("Remove shared Travel Circle access", supabase.from("trip_members" as any).delete().eq("client_account_id", clientId));
-
-  const { error: deleteClientError } = await supabase
-    .from("client_accounts")
-    .delete()
-    .eq("id", clientId);
-
-  if (deleteClientError) throw new Error(deleteClientError.message);
-
-  revalidatePath("/admin/clients");
-  redirect("/admin/clients?deletedClient=1");
-}
-
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function AdminClientDetailPage({
@@ -1246,7 +1100,7 @@ export default async function AdminClientDetailPage({
           <div style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", borderRadius: 14, padding: 14 }}>
             <strong>Client was not deleted.</strong>
             <p style={{ margin: "6px 0 0", lineHeight: 1.55 }}>
-              This client still has linked app history. Use the normal guarded delete for clean records, or use the test data override below only when clearing test accounts before launch.
+              This client still has linked app history. Use the normal guarded delete for clean records, or run the pre-launch database reset script if you are clearing test data before going live.
             </p>
           </div>
         ) : null}
@@ -1272,24 +1126,6 @@ export default async function AdminClientDetailPage({
             Delete Client
           </button>
         </form>
-        <div className="card stack" style={{ border: "1px solid #fb7185", background: "#fff7ed", maxWidth: 620 }}>
-          <div>
-            <h3 style={{ margin: 0, color: "#be123c" }}>Test Data Override</h3>
-            <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
-              Use this only for pre-launch cleanup. It removes this client&apos;s app records, owned test trips, messages, requests, documents, notes, traveler profiles, and Travel Circle access before deleting the client account.
-            </p>
-          </div>
-          <form action={forceDeleteTestClientAccount} className="stack">
-            <input type="hidden" name="client_id" value={clientRow.id} />
-            <label className="stack-sm">
-              <span className="label" style={{ color: "#9f1239" }}>Override check: type DELETE TEST CLIENT</span>
-              <input className="input" name="force_delete_confirmation" placeholder="DELETE TEST CLIENT" />
-            </label>
-            <button type="submit" className="btn btn-outline" style={{ color: "#be123c", borderColor: "#fb7185" }}>
-              Force Delete Test Client
-            </button>
-          </form>
-        </div>
       </div>
     </PageShell>
   );
