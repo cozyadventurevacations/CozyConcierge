@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AirportPicker } from "@/components/forms/airport-picker";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { encryptIfPresent, decryptIfPresent } from "@/lib/encryption";
@@ -258,16 +259,12 @@ export default async function EditClientPage({
         <section className="stack">
           <h2 style={{ margin: 0 }}>Travel Preferences</h2>
           <div className="grid grid-2">
-            <label className="stack-sm">
-              <span className="label">Preferred Airport</span>
-              <input
-                className="input"
-                name="preferred_airport"
-                type="text"
-                placeholder="ORD, MDW, MCO"
-                defaultValue={clientRow.preferred_airport ?? ""}
-              />
-            </label>
+            <AirportPicker
+              label="Preferred Airport"
+              name="preferred_airport"
+              defaultValue={clientRow.preferred_airport}
+              helper="Search by airport code, city, or airport name. e.g. ORD, Chicago, Orlando."
+            />
             <label className="stack-sm">
               <span className="label">Travel Style</span>
               <select

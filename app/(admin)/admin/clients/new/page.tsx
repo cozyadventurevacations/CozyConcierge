@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AirportPicker } from "@/components/forms/airport-picker";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -309,10 +310,10 @@ export default async function NewClientPage() {
           <h2 style={{ margin: 0 }}>Travel Preferences</h2>
 
           <div className="grid grid-2">
-            <Field
+            <AirportPicker
               label="Preferred Airport"
               name="preferred_airport"
-              placeholder="e.g. ORD, MDW, MCO"
+              helper="Search by airport code, city, or airport name. e.g. ORD, Chicago, Orlando."
             />
 
             <SelectField
