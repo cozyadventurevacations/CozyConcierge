@@ -271,6 +271,29 @@ async function markCommissionReceived(formData: FormData) {
   redirect(`/admin/commissions/${commissionId}`);
 }
 
+async function deleteCommission(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const commissionId = String(formData.get("commission_id") ?? "").trim();
+
+  if (!commissionId) {
+    throw new Error("Missing commission ID.");
+  }
+
+  const { error } = await supabase
+    .from("commissions")
+    .delete()
+    .eq("id", commissionId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/admin/commissions");
+  redirect("/admin/commissions");
+}
+
 export default async function CommissionDetailPage({
   params,
 }: {
@@ -507,6 +530,19 @@ export default async function CommissionDetailPage({
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Notes</h2>
         <InfoItem label="Notes" value={row.notes} />
+      </div>
+
+      <div className="card stack" style={{ border: "1px solid #fecaca", background: "#fff1f2" }}>
+        <h2 style={{ margin: 0, color: "#be123c" }}>Delete Commission</h2>
+        <p style={{ margin: 0, color: "#9f1239", lineHeight: 1.6 }}>
+          This permanently removes this commission record. Use this for duplicates or commissions entered by mistake.
+        </p>
+        <form action={deleteCommission}>
+          <input type="hidden" name="commission_id" value={row.id} />
+          <button type="submit" className="btn btn-outline" style={{ color: "#be123c", borderColor: "#fecaca" }}>
+            Delete Commission
+          </button>
+        </form>
       </div>
     </PageShell>
   );

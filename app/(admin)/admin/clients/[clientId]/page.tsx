@@ -382,6 +382,50 @@ async function sendPrivateMessage(formData: FormData) {
   redirect(`/admin/messages?threadId=${thread.id}&type=private`);
 }
 
+async function deleteClientAccount(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const clientId = String(formData.get("client_id") ?? "").trim();
+  const confirmation = String(formData.get("delete_confirmation") ?? "").trim();
+  const acknowledged = formData.get("delete_acknowledgement") === "on";
+
+  if (!clientId) throw new Error("Missing client ID.");
+  if (!acknowledged || confirmation !== "DELETE CLIENT") {
+    throw new Error("Client deletion requires checking the acknowledgement box and typing DELETE CLIENT.");
+  }
+
+  const relatedChecks = await Promise.all([
+    supabase.from("trips").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("quote_requests").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("client_notes").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("client_documents").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("traveler_profiles").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("traveler_loyalty_numbers").select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("message_threads" as any).select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+    supabase.from("trip_members" as any).select("id", { count: "exact", head: true }).eq("client_account_id", clientId),
+  ]);
+
+  const firstError = relatedChecks.find((check) => check.error)?.error;
+  if (firstError) throw new Error(firstError.message);
+
+  const relatedCount = relatedChecks.reduce((sum, check) => sum + Number(check.count ?? 0), 0);
+  if (relatedCount > 0) {
+    throw new Error("This client still has linked trips, requests, notes, documents, traveler profiles, messages, or Travel Circle access. Remove or archive those records before deleting the client.");
+  }
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .delete()
+    .eq("id", clientId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/clients");
+  redirect("/admin/clients");
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function AdminClientDetailPage({
@@ -1042,6 +1086,35 @@ export default async function AdminClientDetailPage({
             </table>
           </div>
         )}
+      </div>
+
+      <div id="delete-client" className="card stack" style={{ border: "1px solid #fecaca", background: "#fff1f2" }}>
+        <h2 style={{ margin: 0, color: "#be123c" }}>Delete Client</h2>
+        <p style={{ margin: 0, color: "#9f1239", lineHeight: 1.6 }}>
+          Client deletion is intentionally guarded. The app will only delete this client if there are no linked trips, travel requests, notes, documents, traveler profiles, messages, or Travel Circle records.
+        </p>
+        <div className="grid grid-3">
+          <InfoItem label="Linked Trips" value={tripRows.length} />
+          <InfoItem label="Travel Requests" value={quoteRequestRows.length} />
+          <InfoItem label="Client Notes" value={clientNoteRows.length} />
+          <InfoItem label="Recent Documents" value={clientDocumentRows.length} />
+          <InfoItem label="Traveler Profiles" value={travelerProfileRows.length} />
+          <InfoItem label="Travel Circle Records" value={travelCircleAccessRows.length} />
+        </div>
+        <form action={deleteClientAccount} className="stack" style={{ maxWidth: 520 }}>
+          <input type="hidden" name="client_id" value={clientRow.id} />
+          <label className="row" style={{ alignItems: "flex-start", color: "#9f1239", lineHeight: 1.5 }}>
+            <input type="checkbox" name="delete_acknowledgement" style={{ marginTop: 4 }} />
+            <span>I understand this permanently deletes the client record if no linked history exists.</span>
+          </label>
+          <label className="stack-sm">
+            <span className="label" style={{ color: "#9f1239" }}>Second check: type DELETE CLIENT</span>
+            <input className="input" name="delete_confirmation" placeholder="DELETE CLIENT" />
+          </label>
+          <button type="submit" className="btn btn-outline" style={{ color: "#be123c", borderColor: "#fecaca" }}>
+            Delete Client
+          </button>
+        </form>
       </div>
     </PageShell>
   );

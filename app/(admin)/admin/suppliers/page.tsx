@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -82,6 +83,43 @@ function SearchBox({ defaultValue }: { defaultValue: string }) {
   );
 }
 
+async function deleteSupplier(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const supplierId = String(formData.get("supplier_id") ?? "").trim();
+
+  if (!supplierId) throw new Error("Missing supplier ID.");
+
+  const [componentCheck, commissionCheck] = await Promise.all([
+    supabase
+      .from("trip_components")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_id", supplierId),
+    supabase
+      .from("commissions")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_id", supplierId),
+  ]);
+
+  if (componentCheck.error) throw new Error(componentCheck.error.message);
+  if (commissionCheck.error) throw new Error(commissionCheck.error.message);
+
+  const relatedCount = Number(componentCheck.count ?? 0) + Number(commissionCheck.count ?? 0);
+  if (relatedCount > 0) {
+    throw new Error("This supplier has linked trip components or commissions. Remove or reassign those records before deleting it.");
+  }
+
+  const { error } = await supabase
+    .from("suppliers")
+    .delete()
+    .eq("id", supplierId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/suppliers");
+}
+
 export default async function AdminSuppliersPage({
   searchParams,
 }: {
@@ -145,7 +183,7 @@ export default async function AdminSuppliersPage({
                   <th>Email</th>
                   <th>Phone</th>
                   <th>Added</th>
-                  <th>Open</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,13 +197,25 @@ export default async function AdminSuppliersPage({
                     <td>{supplier.contact_phone ?? "—"}</td>
                     <td>{formatDate(supplier.created_at)}</td>
                     <td>
-                      <Link
-                        href={`/admin/suppliers/${supplier.id}`}
-                        className="btn btn-primary"
-                        style={{ fontSize: 13, padding: "5px 12px" }}
-                      >
-                        Open
-                      </Link>
+                      <div className="row" style={{ gap: 6 }}>
+                        <Link
+                          href={`/admin/suppliers/${supplier.id}`}
+                          className="btn btn-primary"
+                          style={{ fontSize: 13, padding: "5px 12px" }}
+                        >
+                          Open
+                        </Link>
+                        <form action={deleteSupplier}>
+                          <input type="hidden" name="supplier_id" value={supplier.id} />
+                          <button
+                            type="submit"
+                            className="btn btn-outline"
+                            style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}

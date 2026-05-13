@@ -174,7 +174,7 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
                       <td>{client.travel_style ?? "-"}</td>
                       <td>{client.preferred_airport ?? "-"}</td>
                       <td>{formatDate(client.created_at)}</td>
-                      <td><div className="row" style={{ gap: 6 }}><Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link><Link href={`/admin/clients/${client.id}#private-message`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px" }}>Message</Link></div></td>
+                      <td><div className="row" style={{ gap: 6 }}><Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link><Link href={`/admin/clients/${client.id}#private-message`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px" }}>Message</Link><Link href={`/admin/clients/${client.id}#delete-client`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>Delete</Link></div></td>
                     </tr>
                   );
                 })}

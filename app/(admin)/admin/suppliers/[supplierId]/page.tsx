@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -226,6 +228,44 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
       {label}
     </span>
   );
+}
+
+async function deleteSupplierFromDetail(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const supplierId = String(formData.get("supplier_id") ?? "").trim();
+
+  if (!supplierId) throw new Error("Missing supplier ID.");
+
+  const [componentCheck, commissionCheck] = await Promise.all([
+    supabase
+      .from("trip_components")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_id", supplierId),
+    supabase
+      .from("commissions")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_id", supplierId),
+  ]);
+
+  if (componentCheck.error) throw new Error(componentCheck.error.message);
+  if (commissionCheck.error) throw new Error(commissionCheck.error.message);
+
+  const relatedCount = Number(componentCheck.count ?? 0) + Number(commissionCheck.count ?? 0);
+  if (relatedCount > 0) {
+    throw new Error("This supplier has linked trip components or commissions. Remove or reassign those records before deleting it.");
+  }
+
+  const { error } = await supabase
+    .from("suppliers")
+    .delete()
+    .eq("id", supplierId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/suppliers");
+  redirect("/admin/suppliers");
 }
 
 export default async function SupplierDetailPage({
@@ -535,6 +575,27 @@ export default async function SupplierDetailPage({
 
           <InfoItem label="Commission Notes" value={supplierRow.commission_notes} />
           <InfoItem label="General Internal Notes" value={supplierRow.internal_notes} />
+        </div>
+
+        <div className="card stack" style={{ border: "1px solid #fecaca", background: "#fff1f2" }}>
+          <h2 style={{ margin: 0, color: "#be123c" }}>Delete Supplier</h2>
+          {componentRows.length > 0 || commissionRows.length > 0 ? (
+            <p style={{ margin: 0, color: "#9f1239", lineHeight: 1.6 }}>
+              This supplier has linked trip components or commissions, so it cannot be deleted yet. Reassign or remove those records first.
+            </p>
+          ) : (
+            <>
+              <p style={{ margin: 0, color: "#9f1239", lineHeight: 1.6 }}>
+                This permanently removes the supplier record. Use this only for duplicates or suppliers added by mistake.
+              </p>
+              <form action={deleteSupplierFromDetail}>
+                <input type="hidden" name="supplier_id" value={supplierRow.id} />
+                <button type="submit" className="btn btn-outline" style={{ color: "#be123c", borderColor: "#fecaca" }}>
+                  Delete Supplier
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </PageShell>

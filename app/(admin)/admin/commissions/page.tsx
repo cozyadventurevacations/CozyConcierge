@@ -193,6 +193,24 @@ async function markCommissionReceivedFromList(formData: FormData) {
   revalidatePath(`/admin/commissions/${commissionId}`);
 }
 
+async function deleteCommissionFromList(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const commissionId = String(formData.get("commission_id") ?? "").trim();
+
+  if (!commissionId) throw new Error("Missing commission ID.");
+
+  const { error } = await supabase
+    .from("commissions")
+    .delete()
+    .eq("id", commissionId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/commissions");
+}
+
 export default async function AdminCommissionsPage({
   searchParams,
 }: {
@@ -348,6 +366,12 @@ export default async function AdminCommissionsPage({
                               </button>
                             </form>
                           ) : null}
+                          <form action={deleteCommissionFromList}>
+                            <input type="hidden" name="commission_id" value={commission.id} />
+                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>
+                              Delete
+                            </button>
+                          </form>
                         </div>
                       </td>
                     </tr>
