@@ -67,6 +67,18 @@ type CommissionRow = {
   received_payment_date: string | null;
 };
 
+type TripPaymentLedgerRow = {
+  id: string;
+  trip_id: string;
+  entry_type: string;
+  amount: number | null;
+  entry_date: string | null;
+  payment_method: string | null;
+  reference_number: string | null;
+  notes: string | null;
+  created_at: string | null;
+};
+
 type TripMilestoneRow = {
   id: string;
   trip_id: string;
@@ -322,6 +334,62 @@ function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
   }
 
   return numberValue;
+}
+
+function applyPaymentLedgerEntry(
+  trip: { total_paid?: number | null; balance_due?: number | null },
+  entryType: string,
+  amount: number,
+) {
+  let totalPaid = Number(trip.total_paid ?? 0);
+  let balanceDue = Number(trip.balance_due ?? 0);
+
+  if (entryType === "payment") {
+    totalPaid += amount;
+    balanceDue -= amount;
+  } else if (entryType === "refund") {
+    totalPaid -= amount;
+    balanceDue += amount;
+  } else if (entryType === "credit") {
+    balanceDue -= amount;
+  } else if (entryType === "fee") {
+    balanceDue += amount;
+  } else if (entryType === "adjustment") {
+    balanceDue += amount;
+  }
+
+  return {
+    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
+    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+  };
+}
+
+function reversePaymentLedgerEntry(
+  trip: { total_paid?: number | null; balance_due?: number | null },
+  entryType: string,
+  amount: number,
+) {
+  let totalPaid = Number(trip.total_paid ?? 0);
+  let balanceDue = Number(trip.balance_due ?? 0);
+
+  if (entryType === "payment") {
+    totalPaid -= amount;
+    balanceDue += amount;
+  } else if (entryType === "refund") {
+    totalPaid += amount;
+    balanceDue -= amount;
+  } else if (entryType === "credit") {
+    balanceDue += amount;
+  } else if (entryType === "fee") {
+    balanceDue -= amount;
+  } else if (entryType === "adjustment") {
+    balanceDue -= amount;
+  }
+
+  return {
+    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
+    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+  };
 }
 
 function toOptionalNumber(value: FormDataEntryValue | null) {
@@ -806,8 +874,11 @@ function StickyTripActionBar({
         <a href="#trip-overview" style={sectionLinkStyle}>
           Overview
         </a>
+        <a href="#trip-payments" style={sectionLinkStyle}>
+          Payments
+        </a>
         <a href="#commissions" style={sectionLinkStyle}>
-          Money
+          Commissions
         </a>
         <a href="#trip-notes" style={sectionLinkStyle}>
           Notes
@@ -2492,6 +2563,108 @@ async function softDeleteTripFromDetail(formData: FormData) {
   revalidatePath("/admin/dashboard");
 }
 
+async function addTripPaymentLedgerEntry(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const entryType = requireAllowedValue(
+    String(formData.get("entry_type") ?? "payment").trim(),
+    ["payment", "refund", "credit", "fee", "adjustment"],
+    "payment",
+  );
+  const amount = toMoneyNumber(formData.get("amount"));
+  const entryDate = String(formData.get("entry_date") ?? "").trim() || todayDateString();
+  const paymentMethod = String(formData.get("payment_method") ?? "").trim() || null;
+  const referenceNumber = String(formData.get("reference_number") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (amount === 0) throw new Error("Payment ledger amount cannot be zero.");
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, total_paid, balance_due")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error(tripError?.message ?? "Trip not found.");
+
+  const { error: insertError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .insert({
+      trip_id: tripId,
+      entry_type: entryType,
+      amount,
+      entry_date: entryDate,
+      payment_method: paymentMethod,
+      reference_number: referenceNumber,
+      notes,
+    });
+
+  if (insertError) throw new Error(insertError.message);
+
+  const updatedTotals = applyPaymentLedgerEntry(trip, entryType, amount);
+  const { error: updateError } = await supabase
+    .from("trips")
+    .update(updatedTotals)
+    .eq("id", tripId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
+async function deleteTripPaymentLedgerEntry(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const ledgerId = String(formData.get("ledger_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!ledgerId) throw new Error("Missing payment ledger entry ID.");
+
+  const { data: entry, error: entryError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .select("id, entry_type, amount")
+    .eq("id", ledgerId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (entryError || !entry) throw new Error(entryError?.message ?? "Payment ledger entry not found.");
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, total_paid, balance_due")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error(tripError?.message ?? "Trip not found.");
+
+  const { error: deleteError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .delete()
+    .eq("id", ledgerId)
+    .eq("trip_id", tripId);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  const updatedTotals = reversePaymentLedgerEntry(trip, entry.entry_type, Number(entry.amount ?? 0));
+  const { error: updateError } = await supabase
+    .from("trips")
+    .update(updatedTotals)
+    .eq("id", tripId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
 async function dismissTripDeletionRequestFromDetail(formData: FormData) {
   "use server";
 
@@ -2656,6 +2829,13 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 
+  const { data: tripPaymentLedger, error: tripPaymentLedgerError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .select("id, trip_id, entry_type, amount, entry_date, payment_method, reference_number, notes, created_at")
+    .eq("trip_id", tripId)
+    .order("entry_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
   const { data: clientDocuments, error: clientDocumentsError } = await supabase
     .from("client_documents")
     .select("id, document_type, document_title, file_name, created_at")
@@ -2711,6 +2891,7 @@ export default async function AdminTripEditorPage({
   }
 
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
+  const tripPaymentLedgerRows = (tripPaymentLedger ?? []) as TripPaymentLedgerRow[];
   const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
   const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
   const tripMemberRows = (tripMembers ?? []) as TripMemberRow[];
@@ -3069,6 +3250,22 @@ export default async function AdminTripEditorPage({
       <form
         id="restore-trip-detail-form"
         action={restoreTripFromDetail}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="add-trip-payment-ledger-entry-form"
+        action={addTripPaymentLedgerEntry}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
+        id="delete-trip-payment-ledger-entry-form"
+        action={deleteTripPaymentLedgerEntry}
         style={{ display: "none" }}
       >
         <input type="hidden" name="trip_id" value={trip.id} />
@@ -4105,6 +4302,133 @@ export default async function AdminTripEditorPage({
           </div>
 
           <SectionSaveButton label="Trip Overview" />
+        </CollapsibleSection>
+
+        <span id="trip-payments" />
+        <CollapsibleSection title={<SectionTitleWithBadge title="Payments & Adjustments" badge={`${tripPaymentLedgerRows.length} entries`} tone={tripPaymentLedgerRows.length > 0 ? "good" : "neutral"} />}>
+          <div className="grid grid-3">
+            <div className="card">
+              <span className="label">Total Paid</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{formatMoney(totalPaid)}</p>
+            </div>
+            <div className="card">
+              <span className="label">Balance Due</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: balanceDue > 0 ? "#c2410c" : "#027a48" }}>{formatMoney(balanceDue)}</p>
+            </div>
+            <div className="card">
+              <span className="label">Final Payment Due</span>
+              <p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 900 }}>{formatDate(trip.final_payment_due_date, "Not set")}</p>
+            </div>
+          </div>
+
+          <div className="card stack" style={{ background: "#fbfdfe" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Record Payment, Refund, Credit, Fee, or Adjustment</h3>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                These entries update the trip&apos;s Total Paid and Balance Due automatically. Use the Trip Overview fields only for rare manual corrections.
+              </p>
+            </div>
+
+            <div className="grid grid-3">
+              <label>
+                <span className="label">Entry Type</span>
+                <select className="select" name="entry_type" form="add-trip-payment-ledger-entry-form" defaultValue="payment">
+                  <option value="payment">Payment received</option>
+                  <option value="refund">Refund issued</option>
+                  <option value="credit">Credit applied</option>
+                  <option value="fee">Fee added</option>
+                  <option value="adjustment">Manual balance adjustment</option>
+                </select>
+              </label>
+              <label>
+                <span className="label">Amount</span>
+                <input className="input" type="number" step="0.01" name="amount" form="add-trip-payment-ledger-entry-form" placeholder="0.00" />
+              </label>
+              <label>
+                <span className="label">Entry Date</span>
+                <input className="input" type="date" name="entry_date" form="add-trip-payment-ledger-entry-form" defaultValue={todayDateString()} />
+              </label>
+              <label>
+                <span className="label">Payment Method</span>
+                <input className="input" name="payment_method" form="add-trip-payment-ledger-entry-form" placeholder="Credit card, check, ACH, supplier portal..." />
+              </label>
+              <label>
+                <span className="label">Reference #</span>
+                <input className="input" name="reference_number" form="add-trip-payment-ledger-entry-form" placeholder="Receipt, authorization, or invoice #" />
+              </label>
+              <label>
+                <span className="label">Notes</span>
+                <input className="input" name="notes" form="add-trip-payment-ledger-entry-form" placeholder="Short internal note" />
+              </label>
+            </div>
+
+            <button type="submit" form="add-trip-payment-ledger-entry-form" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+              Add Payment Entry
+            </button>
+          </div>
+
+          {tripPaymentLedgerError ? (
+            <div className="card">
+              <p><strong>Error loading payment ledger:</strong></p>
+              <pre>{JSON.stringify(tripPaymentLedgerError, null, 2)}</pre>
+            </div>
+          ) : tripPaymentLedgerRows.length === 0 ? (
+            <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#64748b" }}>
+              No payment ledger entries have been recorded yet.
+            </div>
+          ) : (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 960 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th>Notes</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tripPaymentLedgerRows.map((entry) => {
+                    const entryTypeLabel = entry.entry_type
+                      .split("_")
+                      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                      .join(" ");
+                    const isPositiveBalanceType = entry.entry_type === "refund" || entry.entry_type === "fee";
+                    const isReductionType = entry.entry_type === "payment" || entry.entry_type === "credit";
+                    return (
+                      <tr key={entry.id}>
+                        <td>{formatDate(entry.entry_date)}</td>
+                        <td>
+                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: isReductionType ? "#ecfdf3" : isPositiveBalanceType ? "#fff7ed" : "#f0f7f8", color: isReductionType ? "#027a48" : isPositiveBalanceType ? "#c2410c" : "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
+                            {entryTypeLabel}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 900 }}>{formatMoney(entry.amount)}</td>
+                        <td>{entry.payment_method ?? "Not provided"}</td>
+                        <td>{entry.reference_number ?? "Not provided"}</td>
+                        <td style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{entry.notes ?? "Not provided"}</td>
+                        <td>
+                          <button
+                            type="submit"
+                            form="delete-trip-payment-ledger-entry-form"
+                            name="ledger_id"
+                            value={entry.id}
+                            className="btn btn-outline"
+                            style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CollapsibleSection>
 
         <span id="proposal" />
