@@ -52,6 +52,17 @@ type MessageThreadRow = {
     | null;
 };
 
+type QuoteRequestRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  destinations: string | null;
+  departure_date: string | null;
+  travel_types_requested: string[] | null;
+  status: string | null;
+  created_at: string | null;
+};
+
 function startOfToday() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -432,6 +443,7 @@ export default async function AdminDashboardPage({
     unreadPrivateMessageThreadsResult,
     privateMessageThreadsResult,
     deletionRequestsResult,
+    newQuoteRequestsListResult,
   ] = await Promise.all([
     supabase
       .from("quote_requests")
@@ -452,7 +464,6 @@ export default async function AdminDashboardPage({
       .gte("departure_date", todayStr)
       .order("departure_date", { ascending: true })
       .limit(8),
-    // Final payments due in next 21 days
     supabase
       .from("trips")
       .select("id, trip_name, destinations, departure_date, return_date, trip_status, final_payment_due_date, balance_due")
@@ -461,7 +472,6 @@ export default async function AdminDashboardPage({
       .gt("balance_due", 0)
       .order("final_payment_due_date", { ascending: true })
       .limit(10),
-    // Upcoming follow-ups in the next 7 days
     supabase
       .from("client_notes")
       .select("id, client_account_id, note_type, title, content, follow_up_date, is_completed, created_at, client_accounts(id, first_name, last_name, email)")
@@ -470,12 +480,10 @@ export default async function AdminDashboardPage({
       .lte("follow_up_date", in7DaysStr)
       .order("follow_up_date", { ascending: true })
       .limit(8),
-    // Total open follow-ups count
     supabase
       .from("client_notes")
       .select("id", { count: "exact", head: true })
       .eq("is_completed", false),
-    // Follow-ups due within 3 days (for warning color on summary card)
     supabase
       .from("client_notes")
       .select("id", { count: "exact", head: true })
@@ -486,14 +494,12 @@ export default async function AdminDashboardPage({
       .from("message_threads")
       .select("id", { count: "exact", head: true })
       .eq("status", "open"),
-    // Unread private threads only
     supabase
       .from("message_threads")
       .select("id", { count: "exact", head: true })
       .eq("status", "open")
       .eq("thread_type", "private")
       .gt("admin_unread_count", 0),
-    // Private threads â€” unread first, then most recent
     supabase
       .from("message_threads")
       .select("id, client_account_id, trip_id, subject, status, priority, thread_type, admin_unread_count, client_unread_count, last_message_at, created_at, client_accounts!message_threads_client_account_id_fkey(id, first_name, last_name, email, preferred_name), trips(id, trip_name, destinations, departure_date)")
@@ -507,12 +513,19 @@ export default async function AdminDashboardPage({
       .select("id", { count: "exact", head: true })
       .not("deletion_requested_at", "is", null)
       .is("deleted_at", null),
+    supabase
+      .from("quote_requests")
+      .select("id, full_name, email, destinations, departure_date, travel_types_requested, status, created_at")
+      .eq("status", "new")
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
 
   const upcomingDepartures = (upcomingDeparturesResult.data ?? []) as TripRow[];
   const finalPaymentsDue21 = (finalPaymentsDue21Result.data ?? []) as TripRow[];
   const upcomingClientFollowUps = (upcomingClientFollowUpsResult.data ?? []) as ClientFollowUpRow[];
   const privateMessageThreads = (privateMessageThreadsResult.data ?? []) as MessageThreadRow[];
+  const newQuoteRequestsList = (newQuoteRequestsListResult.data ?? []) as QuoteRequestRow[];
 
   const finalPaymentsDue21Total = finalPaymentsDue21.reduce(
     (sum, trip) => sum + Number(trip.balance_due ?? 0),
@@ -523,10 +536,8 @@ export default async function AdminDashboardPage({
   const openFollowUpsCount = openClientFollowUpsResult.count ?? 0;
   const soonFollowUpsCount = soonClientFollowUpsResult.count ?? 0;
   const deletionRequestCount = deletionRequestsResult.count ?? 0;
-  // Card turns warning if any follow-up is due within 3 days
   const followUpCardTone: "warning" | "neutral" = soonFollowUpsCount > 0 ? "warning" : "neutral";
 
-  // Priority: upcoming departures + new quote requests + payment requests + final payments due soon
   const urgentOpsItems =
     Number(departuresResult.count ?? 0) +
     Number(newQuoteRequestsResult.count ?? 0) +
@@ -550,7 +561,7 @@ export default async function AdminDashboardPage({
         </div>
       ) : null}
 
-      {/* â”€â”€ Command Center banner â”€â”€ */}
+      {/* Command Center banner */}
       <div
         style={{
           border: "1px solid #dbeafe",
@@ -613,7 +624,6 @@ export default async function AdminDashboardPage({
           href="/admin/trips"
           tone={finalPaymentsDue21.length > 0 ? "warning" : "neutral"}
         />
-        {/* Open Follow-Ups turns orange when any are due within 3 days */}
         <SummaryCard
           title="Open Follow-Ups"
           value={openFollowUpsCount}
@@ -637,6 +647,7 @@ export default async function AdminDashboardPage({
           value={newQuoteRequestsResult.count ?? 0}
           subtitle="Waiting for review"
           href="/admin/quote-requests"
+          tone={(newQuoteRequestsResult.count ?? 0) > 0 ? "warning" : "neutral"}
         />
         <SummaryCard
           title="Payment Requests"
@@ -659,166 +670,212 @@ export default async function AdminDashboardPage({
         />
       </div>
 
-      <div className="grid grid-2" style={{ alignItems: "start" }}>
-      {/* Final Payments Due in 21 Days */}
+      {/* New Travel Requests work queue */}
       <div className="card stack">
-        <SectionTitle title="Final Payments Due in 21 Days" href="/admin/trips" linkLabel="View All Trips" />
-        {finalPaymentsDue21Result.error ? (
-          <pre>{JSON.stringify(finalPaymentsDue21Result.error, null, 2)}</pre>
-        ) : finalPaymentsDue21.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>No final payments due in the next 21 days.</p>
+        <SectionTitle
+          title="New Travel Requests"
+          href="/admin/quote-requests"
+          linkLabel="View All Requests"
+        />
+        {newQuoteRequestsListResult.error ? (
+          <pre>{JSON.stringify(newQuoteRequestsListResult.error, null, 2)}</pre>
+        ) : newQuoteRequestsList.length === 0 ? (
+          <p style={{ margin: 0, color: "#64748b" }}>No new travel requests.</p>
         ) : (
           <div className="stack" style={{ gap: 8 }}>
-            {finalPaymentsDue21.map((trip) => (
+            {newQuoteRequestsList.map((req) => (
               <CompactListItem
-                key={trip.id}
-                title={trip.trip_name ?? "Trip"}
-                subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} - Departing ${formatDate(trip.departure_date)}`}
-                href={`/admin/trips/${trip.id}`}
-                cta="Open Trip"
+                key={req.id}
+                title={req.full_name ?? "Unknown"}
+                subtitle={`${req.destinations ?? "No destination"} · Departing ${formatDate(req.departure_date)} · Submitted ${formatDate(req.created_at)}`}
+                href={`/admin/quote-requests/${req.id}`}
+                cta="Review"
                 tone="warning"
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Private Messages */}
-      <div className="card stack">
-        <SectionTitle title="Private Client Messages" href="/admin/messages?type=private" linkLabel="Open Message Inbox" />
-        {privateMessageThreadsResult.error ? (
-          <pre>{JSON.stringify(privateMessageThreadsResult.error, null, 2)}</pre>
-        ) : privateMessageThreads.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>No open private messages.</p>
-        ) : (
-          <div className="stack" style={{ gap: 8 }}>
-            {privateMessageThreads.map((thread) => {
-              const client = getClientFromMessageThread(thread);
-              const trip = getTripFromMessageThread(thread);
-              const hasUnread = Number(thread.admin_unread_count ?? 0) > 0;
-              return (
-                <CompactListItem
-                  key={thread.id}
-                  title={getMessageClientDisplayName(thread)}
-                  subtitle={`${thread.subject}${trip?.trip_name ? ` - ${trip.trip_name}` : ""} - Last message ${formatDateTime(thread.last_message_at)}`}
-                  href={`/admin/messages?threadId=${thread.id}&type=private`}
-                  cta="Open Thread"
-                  tone={hasUnread ? "warning" : "neutral"}
-                >
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                    {hasUnread ? <StatusBadge status={`${thread.admin_unread_count} unread`} /> : null}
-                    <PriorityBadge priority={thread.priority} />
-                    {client?.id ? (
-                      <Link href={`/admin/clients/${client.id}`} style={{ fontSize: 13 }}>Client</Link>
-                    ) : null}
-                    {trip?.id ? (
-                      <Link href={`/admin/trips/${trip.id}`} style={{ fontSize: 13 }}>Trip</Link>
-                    ) : null}
-                  </div>
-                  <details style={{ marginTop: 10 }}>
-                    <summary style={{ cursor: "pointer", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>
-                      Quick reply
-                    </summary>
-                    <div className="stack" style={{ marginTop: 8, gap: 8 }}>
-                      <form action={quickReplyFromDashboard} className="stack" style={{ gap: 8 }}>
-                      <input type="hidden" name="thread_id" value={thread.id} />
-                      <textarea
-                        className="textarea"
-                        name="body"
-                        rows={3}
-                        placeholder="Write a quick reply..."
-                        style={{ minHeight: 90 }}
-                      />
-                      <div className="row" style={{ gap: 8 }}>
-                        <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "7px 12px" }}>
-                          Send Reply
-                        </button>
-                      </div>
-                      </form>
-                      <div className="row" style={{ gap: 8 }}>
-                        <form action={quickReplyFromDashboard}>
-                          <input type="hidden" name="thread_id" value={thread.id} />
-                          <input type="hidden" name="body" value="Thank you for the message. I am reviewing this and will follow up shortly." />
-                          <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
-                            Reviewing
-                          </button>
-                        </form>
-                        <form action={quickReplyFromDashboard}>
-                          <input type="hidden" name="thread_id" value={thread.id} />
-                          <input type="hidden" name="body" value="Thanks for the update. I have this noted on your trip file." />
-                          <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
-                            Noted
-                          </button>
-                        </form>
-                      </div>
-                    </div>
-                  </details>
-                </CompactListItem>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      </div>
-
-      <div className="grid grid-2" style={{ alignItems: "start" }}>
-      {/* Client Follow-Ups */}
-      <div className="card stack">
-        <SectionTitle title="Upcoming Client Follow-Ups" href="/admin/clients" linkLabel="View Clients" />
-        {upcomingClientFollowUpsResult.error ? (
-          <pre>{JSON.stringify(upcomingClientFollowUpsResult.error, null, 2)}</pre>
-        ) : upcomingClientFollowUps.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>No client follow-ups due in the next 7 days.</p>
-        ) : (
-          <div className="stack" style={{ gap: 8 }}>
-            {upcomingClientFollowUps.map((followUp) => {
-              const client = getClientFromFollowUp(followUp);
-              const isDueSoon =
-                Boolean(followUp.follow_up_date) && followUp.follow_up_date! <= in3DaysStr;
-              return (
-                <CompactListItem
-                  key={followUp.id}
-                  title={getClientDisplayName(followUp)}
-                  subtitle={`${followUp.title ?? followUp.note_type} - ${formatDate(followUp.follow_up_date)}`}
-                  href={client?.id ? `/admin/clients/${client.id}` : undefined}
-                  cta="Open Client"
-                  tone={isDueSoon ? "warning" : "neutral"}
-                >
-                  <div style={{ marginTop: 6 }}>
-                    <FollowUpBadge isUpcoming={isDueSoon} />
-                  </div>
-                </CompactListItem>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Upcoming Departures */}
-      <div className="card stack">
-        <SectionTitle title="Upcoming Departures" href="/admin/trips" linkLabel="View Trips" />
-        {upcomingDeparturesResult.error ? (
-          <pre>{JSON.stringify(upcomingDeparturesResult.error, null, 2)}</pre>
-        ) : upcomingDepartures.length === 0 ? (
-          <p style={{ margin: 0, color: "#64748b" }}>No upcoming departures.</p>
-        ) : (
-          <div className="stack" style={{ gap: 8 }}>
-            {upcomingDepartures.map((trip) => (
-              <CompactListItem
-                key={trip.id}
-                title={trip.trip_name ?? "Trip"}
-                subtitle={`${trip.destinations ?? "Not set"} - ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
-                href={`/admin/trips/${trip.id}`}
-                cta="Open Trip"
               >
-                <div style={{ marginTop: 6 }}>
-                  <StatusBadge status={trip.trip_status} />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                  <StatusBadge status="new" />
+                  {(req.travel_types_requested ?? []).slice(0, 3).map((type) => (
+                    <span
+                      key={type}
+                      style={{
+                        fontSize: 12,
+                        padding: "3px 8px",
+                        borderRadius: 999,
+                        background: "#f0f7f8",
+                        color: "var(--accent-dark)",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {type.replace(/_/g, " ")}
+                    </span>
+                  ))}
                 </div>
               </CompactListItem>
             ))}
           </div>
         )}
       </div>
+
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+        {/* Final Payments Due in 21 Days */}
+        <div className="card stack">
+          <SectionTitle title="Final Payments Due in 21 Days" href="/admin/trips" linkLabel="View All Trips" />
+          {finalPaymentsDue21Result.error ? (
+            <pre>{JSON.stringify(finalPaymentsDue21Result.error, null, 2)}</pre>
+          ) : finalPaymentsDue21.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No final payments due in the next 21 days.</p>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {finalPaymentsDue21.map((trip) => (
+                <CompactListItem
+                  key={trip.id}
+                  title={trip.trip_name ?? "Trip"}
+                  subtitle={`${formatMoney(trip.balance_due)} due ${formatDate(trip.final_payment_due_date)} - Departing ${formatDate(trip.departure_date)}`}
+                  href={`/admin/trips/${trip.id}`}
+                  cta="Open Trip"
+                  tone="warning"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Private Messages */}
+        <div className="card stack">
+          <SectionTitle title="Private Client Messages" href="/admin/messages?type=private" linkLabel="Open Message Inbox" />
+          {privateMessageThreadsResult.error ? (
+            <pre>{JSON.stringify(privateMessageThreadsResult.error, null, 2)}</pre>
+          ) : privateMessageThreads.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No open private messages.</p>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {privateMessageThreads.map((thread) => {
+                const client = getClientFromMessageThread(thread);
+                const trip = getTripFromMessageThread(thread);
+                const hasUnread = Number(thread.admin_unread_count ?? 0) > 0;
+                return (
+                  <CompactListItem
+                    key={thread.id}
+                    title={getMessageClientDisplayName(thread)}
+                    subtitle={`${thread.subject}${trip?.trip_name ? ` - ${trip.trip_name}` : ""} - Last message ${formatDateTime(thread.last_message_at)}`}
+                    href={`/admin/messages?threadId=${thread.id}&type=private`}
+                    cta="Open Thread"
+                    tone={hasUnread ? "warning" : "neutral"}
+                  >
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                      {hasUnread ? <StatusBadge status={`${thread.admin_unread_count} unread`} /> : null}
+                      <PriorityBadge priority={thread.priority} />
+                      {client?.id ? (
+                        <Link href={`/admin/clients/${client.id}`} style={{ fontSize: 13 }}>Client</Link>
+                      ) : null}
+                      {trip?.id ? (
+                        <Link href={`/admin/trips/${trip.id}`} style={{ fontSize: 13 }}>Trip</Link>
+                      ) : null}
+                    </div>
+                    <details style={{ marginTop: 10 }}>
+                      <summary style={{ cursor: "pointer", color: "var(--accent-dark)", fontSize: 13, fontWeight: 800 }}>
+                        Quick reply
+                      </summary>
+                      <div className="stack" style={{ marginTop: 8, gap: 8 }}>
+                        <form action={quickReplyFromDashboard} className="stack" style={{ gap: 8 }}>
+                          <input type="hidden" name="thread_id" value={thread.id} />
+                          <textarea
+                            className="textarea"
+                            name="body"
+                            rows={3}
+                            placeholder="Write a quick reply..."
+                            style={{ minHeight: 90 }}
+                          />
+                          <div className="row" style={{ gap: 8 }}>
+                            <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "7px 12px" }}>
+                              Send Reply
+                            </button>
+                          </div>
+                        </form>
+                        <div className="row" style={{ gap: 8 }}>
+                          <form action={quickReplyFromDashboard}>
+                            <input type="hidden" name="thread_id" value={thread.id} />
+                            <input type="hidden" name="body" value="Thank you for the message. I am reviewing this and will follow up shortly." />
+                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
+                              Reviewing
+                            </button>
+                          </form>
+                          <form action={quickReplyFromDashboard}>
+                            <input type="hidden" name="thread_id" value={thread.id} />
+                            <input type="hidden" name="body" value="Thanks for the update. I have this noted on your trip file." />
+                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>
+                              Noted
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    </details>
+                  </CompactListItem>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+        {/* Client Follow-Ups */}
+        <div className="card stack">
+          <SectionTitle title="Upcoming Client Follow-Ups" href="/admin/clients" linkLabel="View Clients" />
+          {upcomingClientFollowUpsResult.error ? (
+            <pre>{JSON.stringify(upcomingClientFollowUpsResult.error, null, 2)}</pre>
+          ) : upcomingClientFollowUps.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No client follow-ups due in the next 7 days.</p>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {upcomingClientFollowUps.map((followUp) => {
+                const client = getClientFromFollowUp(followUp);
+                const isDueSoon =
+                  Boolean(followUp.follow_up_date) && followUp.follow_up_date! <= in3DaysStr;
+                return (
+                  <CompactListItem
+                    key={followUp.id}
+                    title={getClientDisplayName(followUp)}
+                    subtitle={`${followUp.title ?? followUp.note_type} - ${formatDate(followUp.follow_up_date)}`}
+                    href={client?.id ? `/admin/clients/${client.id}` : undefined}
+                    cta="Open Client"
+                    tone={isDueSoon ? "warning" : "neutral"}
+                  >
+                    <div style={{ marginTop: 6 }}>
+                      <FollowUpBadge isUpcoming={isDueSoon} />
+                    </div>
+                  </CompactListItem>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Upcoming Departures */}
+        <div className="card stack">
+          <SectionTitle title="Upcoming Departures" href="/admin/trips" linkLabel="View Trips" />
+          {upcomingDeparturesResult.error ? (
+            <pre>{JSON.stringify(upcomingDeparturesResult.error, null, 2)}</pre>
+          ) : upcomingDepartures.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No upcoming departures.</p>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {upcomingDepartures.map((trip) => (
+                <CompactListItem
+                  key={trip.id}
+                  title={trip.trip_name ?? "Trip"}
+                  subtitle={`${trip.destinations ?? "Not set"} - ${formatDate(trip.departure_date)} to ${formatDate(trip.return_date)}`}
+                  href={`/admin/trips/${trip.id}`}
+                  cta="Open Trip"
+                >
+                  <div style={{ marginTop: 6 }}>
+                    <StatusBadge status={trip.trip_status} />
+                  </div>
+                </CompactListItem>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </PageShell>
   );
