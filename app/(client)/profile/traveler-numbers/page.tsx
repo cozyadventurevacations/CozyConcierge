@@ -24,6 +24,7 @@ type TravelerProfile = {
   global_entry_passid: string | null;
   passport_number: string | null;
   passport_country: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   relationship_to_client: string | null;
   is_primary_traveler: boolean | null;
@@ -449,6 +450,7 @@ async function addAdditionalTravelerProfile(formData: FormData) {
     global_entry_passid: cleanText(formData, "global_entry_passid"),
     passport_number: cleanText(formData, "passport_number"),
     passport_country: cleanText(formData, "passport_country"),
+    passport_date_issued: cleanText(formData, "passport_date_issued"),
     passport_expiration_date: cleanText(formData, "passport_expiration_date"),
     relationship_to_client: cleanText(formData, "relationship_to_client"),
     is_primary_traveler: false,
@@ -496,6 +498,7 @@ async function updateAdditionalTravelerProfile(formData: FormData) {
       global_entry_passid: cleanText(formData, "global_entry_passid"),
       passport_number: cleanText(formData, "passport_number"),
       passport_country: cleanText(formData, "passport_country"),
+      passport_date_issued: cleanText(formData, "passport_date_issued"),
       passport_expiration_date: cleanText(formData, "passport_expiration_date"),
       relationship_to_client: cleanText(formData, "relationship_to_client"),
       is_minor: cleanCheckbox(formData, "is_minor"),
@@ -1068,7 +1071,7 @@ function AdditionalTravelerForm({
         >
           <h4 style={{ margin: 0 }}>Additional Traveler Passport Information</h4>
 
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             <label className="stack-sm">
               <span className="label">Passport Number</span>
               <input
@@ -1085,6 +1088,16 @@ function AdditionalTravelerForm({
                 name="passport_country"
                 defaultValue={traveler.passport_country ?? ""}
                 placeholder="US"
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Passport Date Issued</span>
+              <input
+                className="input"
+                type="date"
+                name="passport_date_issued"
+                defaultValue={traveler.passport_date_issued ?? ""}
               />
             </label>
 
@@ -1885,7 +1898,7 @@ export default async function TravelerNumbersPage({
                 >
                   <h3 style={{ margin: 0 }}>Additional Traveler Passport Information</h3>
 
-                  <div className="grid grid-3">
+                  <div className="grid grid-4">
                     <label className="stack-sm">
                       <span className="label">Passport Number</span>
                       <input className="input" name="passport_number" />
@@ -1894,6 +1907,11 @@ export default async function TravelerNumbersPage({
                     <label className="stack-sm">
                       <span className="label">Passport Country</span>
                       <input className="input" name="passport_country" placeholder="US" />
+                    </label>
+
+                    <label className="stack-sm">
+                      <span className="label">Passport Date Issued</span>
+                      <input className="input" type="date" name="passport_date_issued" />
                     </label>
 
                     <label className="stack-sm">

@@ -31,6 +31,7 @@ type ClientDetail = {
   accessibility_notes: string | null;
   food_allergies: string | null;
   passport_number: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   emergency_contact_name: string | null;
   emergency_contact_relationship: string | null;
@@ -93,6 +94,7 @@ type TravelerProfileRow = {
   global_entry_passid: string | null;
   passport_number: string | null;
   passport_country: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   notes: string | null;
   created_at: string | null;
@@ -446,7 +448,7 @@ export default async function AdminClientDetailPage({
        address_line_1, address_line_2, city, state, postal_code, date_of_birth,
        anniversary_date, preferred_airport, travel_style, airline_seating_preference,
        airline_class_preference, cruise_cabin_preference, travel_preference_notes,
-       accessibility_notes, food_allergies, passport_number, passport_expiration_date,
+       accessibility_notes, food_allergies, passport_number, passport_date_issued, passport_expiration_date,
        emergency_contact_name, emergency_contact_relationship, emergency_contact_phone,
        notes, created_at`,
     )
@@ -497,7 +499,7 @@ export default async function AdminClientDetailPage({
       .limit(5),
     supabase
       .from("traveler_profiles")
-      .select("id, client_account_id, first_name, middle_name, last_name, date_of_birth, known_traveler_number, redress_number, global_entry_passid, passport_number, passport_country, passport_expiration_date, notes, created_at")
+      .select("id, client_account_id, first_name, middle_name, last_name, date_of_birth, known_traveler_number, redress_number, global_entry_passid, passport_number, passport_country, passport_date_issued, passport_expiration_date, notes, created_at")
       .eq("client_account_id", clientId)
       .order("created_at", { ascending: true }),
     supabase
@@ -834,6 +836,7 @@ export default async function AdminClientDetailPage({
                     <InfoItem label="Global Entry PASSID" value={<SensitiveField value={safeDecrypt(traveler.global_entry_passid)} />} />
                     <InfoItem label="Passport Number" value={<SensitiveField value={safeDecrypt(traveler.passport_number)} />} />
                     <InfoItem label="Passport Country" value={traveler.passport_country} />
+                    <InfoItem label="Passport Date Issued" value={formatDate(traveler.passport_date_issued)} />
                     <InfoItem label="Passport Expiration" value={formatDate(traveler.passport_expiration_date)} />
                     <InfoItem label="Traveler Notes" value={traveler.notes} />
                   </div>
@@ -879,6 +882,7 @@ export default async function AdminClientDetailPage({
         </div>
         <div className="grid grid-2">
           <InfoItem label="Passport Number" value={<SensitiveField value={safeDecrypt(clientRow.passport_number)} />} />
+          <InfoItem label="Passport Date Issued" value={formatDate(clientRow.passport_date_issued)} />
           <InfoItem label="Passport Expiration" value={formatDate(clientRow.passport_expiration_date)} />
         </div>
       </div>

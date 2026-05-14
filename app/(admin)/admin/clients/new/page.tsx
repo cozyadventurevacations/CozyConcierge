@@ -173,6 +173,7 @@ async function createClient(formData: FormData) {
       food_allergies: cleanText(formData, "food_allergies"),
 
       passport_number: cleanText(formData, "passport_number"),
+      passport_date_issued: cleanText(formData, "passport_date_issued"),
       passport_expiration_date: cleanText(formData, "passport_expiration_date"),
 
       emergency_contact_name: cleanText(formData, "emergency_contact_name"),
@@ -382,11 +383,17 @@ export default async function NewClientPage({
         <div className="card stack">
           <h2 style={{ margin: 0 }}>Passport Information</h2>
 
-          <div className="grid grid-2">
+          <div className="grid grid-3">
             <Field
               label="Passport Number"
               name="passport_number"
               placeholder="Passport number"
+            />
+
+            <Field
+              label="Passport Date Issued"
+              name="passport_date_issued"
+              type="date"
             />
 
             <Field

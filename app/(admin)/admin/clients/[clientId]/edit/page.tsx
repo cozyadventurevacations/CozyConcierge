@@ -22,6 +22,7 @@ type ClientDetail = {
   travel_style: string | null;
   accessibility_notes: string | null;
   passport_number: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
@@ -63,6 +64,7 @@ async function updateClient(clientId: string, formData: FormData) {
       travel_style: cleanText(formData, "travel_style"),
       accessibility_notes: cleanText(formData, "accessibility_notes"),
       passport_number: encryptIfPresent(cleanText(formData, "passport_number")),
+      passport_date_issued: cleanText(formData, "passport_date_issued"),
       passport_expiration_date: cleanText(formData, "passport_expiration_date"),
       emergency_contact_name: cleanText(formData, "emergency_contact_name"),
       emergency_contact_phone: cleanText(formData, "emergency_contact_phone"),
@@ -105,6 +107,7 @@ export default async function EditClientPage({
       travel_style,
       accessibility_notes,
       passport_number,
+      passport_date_issued,
       passport_expiration_date,
       emergency_contact_name,
       emergency_contact_phone,
@@ -298,7 +301,7 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Passport Information</h2>
-          <div className="grid grid-2">
+          <div className="grid grid-3">
             <label className="stack-sm">
               <span className="label">Passport Number</span>
               <input
@@ -306,6 +309,15 @@ export default async function EditClientPage({
                 name="passport_number"
                 type="text"
                 defaultValue={decryptIfPresent(clientRow.passport_number) ?? ""}
+              />
+            </label>
+            <label className="stack-sm">
+              <span className="label">Passport Date Issued</span>
+              <input
+                className="input"
+                name="passport_date_issued"
+                type="date"
+                defaultValue={clientRow.passport_date_issued ?? ""}
               />
             </label>
             <label className="stack-sm">

@@ -33,6 +33,7 @@ type ClientAccount = {
   accessibility_notes: string | null;
   food_allergies: string | null;
   passport_number: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   emergency_contact_name: string | null;
   emergency_contact_relationship: string | null;
@@ -304,7 +305,7 @@ async function getCurrentClientAccount() {
   const userEmail = user.email?.trim().toLowerCase();
   if (!userEmail) throw new Error("Your login account does not have an email address.");
 
-  const selectFields = `id, first_name, middle_name, last_name, preferred_name, email, phone_primary, phone_secondary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, anniversary_date, preferred_airport, travel_style, airline_seating_preference, airline_class_preference, cruise_cabin_preference, travel_preference_notes, accessibility_notes, food_allergies, passport_number, passport_expiration_date, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, notes, notify_new_messages, notify_payment_reminders, notify_trip_updates, notify_travel_circle_invites, notification_preferences_updated_at, created_at`;
+  const selectFields = `id, first_name, middle_name, last_name, preferred_name, email, phone_primary, phone_secondary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, anniversary_date, preferred_airport, travel_style, airline_seating_preference, airline_class_preference, cruise_cabin_preference, travel_preference_notes, accessibility_notes, food_allergies, passport_number, passport_date_issued, passport_expiration_date, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, notes, notify_new_messages, notify_payment_reminders, notify_trip_updates, notify_travel_circle_invites, notification_preferences_updated_at, created_at`;
 
   const { data: byEmail, error: emailError } = await supabase.from("client_accounts").select(selectFields).ilike("email", userEmail).maybeSingle();
   if (emailError) throw new Error(emailError.message);
@@ -327,10 +328,10 @@ async function loadPrimaryTravelerId({ supabase, clientAccountId }: { supabase: 
   return data?.id ?? null;
 }
 
-async function syncPrimaryTraveler({ supabase, clientAccountId, firstName, middleName, lastName, dateOfBirth, passportNumber, passportExpirationDate }: { supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>; clientAccountId: string; firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; passportNumber: string | null; passportExpirationDate: string | null }) {
+async function syncPrimaryTraveler({ supabase, clientAccountId, firstName, middleName, lastName, dateOfBirth, passportNumber, passportDateIssued, passportExpirationDate }: { supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>; clientAccountId: string; firstName: string | null; middleName: string | null; lastName: string | null; dateOfBirth: string | null; passportNumber: string | null; passportDateIssued: string | null; passportExpirationDate: string | null }) {
   const passportFullName = buildName(firstName, middleName, lastName);
   const existingId = await loadPrimaryTravelerId({ supabase, clientAccountId });
-  const payload = { first_name: firstName, middle_name: middleName, last_name: lastName, date_of_birth: dateOfBirth, passport_full_name: passportFullName || null, passport_number: passportNumber, passport_expiration_date: passportExpirationDate, relationship_to_client: "Self", is_primary_traveler: true, is_minor: false };
+  const payload = { first_name: firstName, middle_name: middleName, last_name: lastName, date_of_birth: dateOfBirth, passport_full_name: passportFullName || null, passport_number: passportNumber, passport_date_issued: passportDateIssued, passport_expiration_date: passportExpirationDate, relationship_to_client: "Self", is_primary_traveler: true, is_minor: false };
 
   if (existingId) {
     const { error } = await supabase.from("traveler_profiles").update(payload).eq("id", existingId).eq("client_account_id", clientAccountId);
@@ -398,10 +399,11 @@ async function updatePassportIdentity(formData: FormData) {
   "use server";
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const passportNumber = cleanText(formData, "passport_number");
+  const passportDateIssued = cleanText(formData, "passport_date_issued");
   const passportExpirationDate = cleanText(formData, "passport_expiration_date");
-  const { error } = await supabase.from("client_accounts").update({ passport_number: passportNumber, passport_expiration_date: passportExpirationDate }).eq("id", clientAccount.id);
+  const { error } = await supabase.from("client_accounts").update({ passport_number: passportNumber, passport_date_issued: passportDateIssued, passport_expiration_date: passportExpirationDate }).eq("id", clientAccount.id);
   if (error) throw new Error(error.message);
-  await syncPrimaryTraveler({ supabase, clientAccountId: clientAccount.id, firstName: clientAccount.first_name, middleName: clientAccount.middle_name, lastName: clientAccount.last_name, dateOfBirth: clientAccount.date_of_birth, passportNumber, passportExpirationDate });
+  await syncPrimaryTraveler({ supabase, clientAccountId: clientAccount.id, firstName: clientAccount.first_name, middleName: clientAccount.middle_name, lastName: clientAccount.last_name, dateOfBirth: clientAccount.date_of_birth, passportNumber, passportDateIssued, passportExpirationDate });
   await revalidatePaths();
   redirect("/profile?updated=identity");
 }
@@ -612,8 +614,9 @@ export default async function ClientProfilePage({
           <div style={{ padding: "12px", borderRadius: 12, background: passportStatus.background, border: "1px solid #e6f0f2", color: passportStatus.color, lineHeight: 1.6, fontSize: 14 }}>
             <strong>Passport status:</strong> {passportStatus.helper}
           </div>
-          <div className="grid grid-2">
+          <div className="grid grid-3">
             <Field label="Passport Number" name="passport_number" defaultValue={clientAccount.passport_number} />
+            <Field label="Passport Date Issued" name="passport_date_issued" type="date" defaultValue={clientAccount.passport_date_issued} />
             <Field label="Passport Expiration" name="passport_expiration_date" type="date" defaultValue={clientAccount.passport_expiration_date} />
           </div>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>

@@ -26,6 +26,7 @@ type TravelerProfile = {
   global_entry_passid: string | null;
   passport_number: string | null;
   passport_country: string | null;
+  passport_date_issued: string | null;
   passport_expiration_date: string | null;
   relationship_to_client: string | null;
   is_primary_traveler: boolean | null;
@@ -283,6 +284,9 @@ async function updatePrimaryPassportDetails(formData: FormData) {
     passportMiddleName,
     passportLastName,
   );
+  const passportNumber = cleanText(formData, "passport_number");
+  const passportDateIssued = cleanText(formData, "passport_date_issued");
+  const passportExpirationDate = cleanText(formData, "passport_expiration_date");
 
   const { error } = await supabase
     .from("traveler_profiles")
@@ -291,9 +295,10 @@ async function updatePrimaryPassportDetails(formData: FormData) {
       middle_name: passportMiddleName,
       last_name: passportLastName,
       passport_full_name: passportFullName,
-      passport_number: encryptIfPresent(cleanText(formData, "passport_number")),
+      passport_number: encryptIfPresent(passportNumber),
       passport_country: cleanText(formData, "passport_country"),
-      passport_expiration_date: cleanText(formData, "passport_expiration_date"),
+      passport_date_issued: passportDateIssued,
+      passport_expiration_date: passportExpirationDate,
       relationship_to_client: "Self",
       is_primary_traveler: true,
       is_minor: false,
@@ -304,6 +309,19 @@ async function updatePrimaryPassportDetails(formData: FormData) {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  const { error: clientUpdateError } = await supabase
+    .from("client_accounts")
+    .update({
+      passport_number: passportNumber,
+      passport_date_issued: passportDateIssued,
+      passport_expiration_date: passportExpirationDate,
+    })
+    .eq("id", clientAccount.id);
+
+  if (clientUpdateError) {
+    throw new Error(clientUpdateError.message);
   }
 
   revalidatePath("/profile");
@@ -591,7 +609,7 @@ export default async function PassportUploadPage({
             </label>
           </div>
 
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             <label className="stack-sm">
               <span className="label">Passport Number</span>
               <input
@@ -608,6 +626,16 @@ export default async function PassportUploadPage({
                 name="passport_country"
                 defaultValue={primaryTraveler.passport_country ?? ""}
                 placeholder="US"
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Passport Date Issued</span>
+              <input
+                className="input"
+                type="date"
+                name="passport_date_issued"
+                defaultValue={primaryTraveler.passport_date_issued ?? ""}
               />
             </label>
 
