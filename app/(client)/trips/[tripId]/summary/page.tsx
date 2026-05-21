@@ -29,6 +29,10 @@ function fmtMoney(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function createSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -131,13 +135,15 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
     if (memberError || !memberAccess?.can_view_trip) redirect("/trips");
   }
 
-  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, activityResult] = await Promise.all([
+  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
     supabase.from("trip_documents").select("id, title, file_name, document_type, created_at").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
+    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
+    supabase.from("trip_proposals").select("planning_fee").eq("trip_id", tripId).maybeSingle(),
   ]);
 
   const [hotelDetails, cruiseDetails, transferDetails, activityDetails] = await Promise.all([
@@ -172,6 +178,15 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
   const sharedDocs = tripDocsResult.data ?? [];
   const hasBalance = typeof trip.balance_due === "number" && trip.balance_due > 0;
   const generatedDate = fmtDate(new Date().toISOString());
+  const componentPriceTotal = [
+    hotelResult.data?.total_price,
+    cruiseResult.data?.total_price,
+    airResult.data?.total_price,
+    transferResult.data?.total_price,
+    activityResult.data?.total_price,
+    insuranceResult.data?.total_price,
+  ].reduce((sum, value) => sum + Number(value ?? 0), 0);
+  const calculatedTripTotal = roundMoney(componentPriceTotal + Number(proposalResult.data?.planning_fee ?? 0));
 
   return (
     <main style={{ minHeight: "100vh", background: "#f7fafb", color: "#123f5b", padding: 24 }}>
@@ -240,6 +255,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
             <InfoBox label="Deposit" value={fmtMoney(trip.deposit_amount)} />
             <InfoBox label="Deposit Due" value={fmtDate(trip.deposit_due_date)} />
             <InfoBox label="Final Payment Due" value={fmtDate(trip.final_payment_due_date)} />
+            <InfoBox label="Calculated Trip Total" value={fmtMoney(calculatedTripTotal)} />
             <InfoBox label="Total Paid" value={fmtMoney(trip.total_paid)} />
           </div>
         </Section>

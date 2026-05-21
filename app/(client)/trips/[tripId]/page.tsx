@@ -34,6 +34,10 @@ function getTimelineDateKey(value: string | null | undefined) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function createSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -524,6 +528,24 @@ export default async function TripDetailPage({
     bookingStatus: insuranceResult.data.booking_status ?? null,
   } : null;
 
+  const componentPriceTotal = [
+    hotelResult.data?.total_price,
+    airResult.data?.total_price,
+    cruiseResult.data?.total_price,
+    transferResult.data?.total_price,
+    activityResult.data?.total_price,
+    insuranceResult.data?.total_price,
+  ].reduce((sum, value) => sum + Number(value ?? 0), 0);
+  const calculatedTripTotal = roundMoney(
+    componentPriceTotal + Number(proposalResult.data?.planning_fee ?? 0),
+  );
+  const proposalForClient = proposalResult.data
+    ? {
+        ...proposalResult.data,
+        total_price: calculatedTripTotal,
+      }
+    : null;
+
   let coverImageUrl: string | null = null;
   if (trip.cover_image_path) {
     const { data: coverData } = await supabaseAdmin.storage
@@ -601,7 +623,7 @@ export default async function TripDetailPage({
 
       <TripDetailClient
         trip={tripForClient}
-        proposal={proposalResult.data ?? null}
+        proposal={proposalForClient}
         clientNote={clientNoteResult.data ?? null}
         clientReminder={clientReminderResult.data ?? null}
         tripMembers={tripMembers}
