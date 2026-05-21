@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -209,54 +210,14 @@ export default async function EditClientPage({
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Address</h2>
-          <label className="stack-sm">
-            <span className="label">Address Line 1</span>
-            <input
-              className="input"
-              name="address_line_1"
-              type="text"
-              defaultValue={clientRow.address_line_1 ?? ""}
-            />
-          </label>
-          <label className="stack-sm">
-            <span className="label">Address Line 2</span>
-            <input
-              className="input"
-              name="address_line_2"
-              type="text"
-              defaultValue={clientRow.address_line_2 ?? ""}
-            />
-          </label>
-          <div className="grid grid-3">
-            <label className="stack-sm">
-              <span className="label">City</span>
-              <input
-                className="input"
-                name="city"
-                type="text"
-                defaultValue={clientRow.city ?? ""}
-              />
-            </label>
-            <label className="stack-sm">
-              <span className="label">State</span>
-              <input
-                className="input"
-                name="state"
-                type="text"
-                maxLength={2}
-                defaultValue={clientRow.state ?? ""}
-              />
-            </label>
-            <label className="stack-sm">
-              <span className="label">ZIP / Postal Code</span>
-              <input
-                className="input"
-                name="postal_code"
-                type="text"
-                defaultValue={clientRow.postal_code ?? ""}
-              />
-            </label>
-          </div>
+          <AddressAutocomplete
+            addressLine1Default={clientRow.address_line_1}
+            addressLine2Default={clientRow.address_line_2}
+            cityDefault={clientRow.city}
+            stateDefault={clientRow.state}
+            postalCodeDefault={clientRow.postal_code}
+            helperText="Start typing the client's street address, then choose the best match. Existing saved address details are shown here first."
+          />
         </section>
 
         <section className="stack">
