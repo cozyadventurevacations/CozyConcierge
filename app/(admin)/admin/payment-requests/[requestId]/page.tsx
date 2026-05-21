@@ -34,6 +34,36 @@ type PaymentRequestDetail = {
 
 const allowedStatuses = ["new", "sent", "completed", "cancelled", "declined"];
 
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function applyPaymentToTripTotals(
+  trip: { total_paid?: number | null; balance_due?: number | null },
+  amount: number,
+) {
+  const totalPaid = Number(trip.total_paid ?? 0) + amount;
+  const balanceDue = Number(trip.balance_due ?? 0) - amount;
+
+  return {
+    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
+    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+  };
+}
+
+function reversePaymentFromTripTotals(
+  trip: { total_paid?: number | null; balance_due?: number | null },
+  amount: number,
+) {
+  const totalPaid = Number(trip.total_paid ?? 0) - amount;
+  const balanceDue = Number(trip.balance_due ?? 0) + amount;
+
+  return {
+    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
+    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+  };
+}
+
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
   if (typeof value !== "number") return fallback;
 
@@ -188,12 +218,41 @@ async function updatePaymentRequestStatus(formData: FormData) {
 
   const { data: existingRequest, error: existingRequestError } = await supabase
     .from("payment_requests")
-    .select("id, trip_id")
+    .select("id, trip_id, status, requested_amount, requested_payment_date")
     .eq("id", requestId)
     .single();
 
   if (existingRequestError || !existingRequest) {
     throw new Error(existingRequestError?.message ?? "Payment request not found.");
+  }
+
+  const previousStatus = String(existingRequest.status ?? "new").toLowerCase();
+  const requestedAmount = Number(existingRequest.requested_amount ?? 0);
+  const ledgerReference = `payment-request:${requestId}`;
+
+  let hasLinkedLedgerEntry = false;
+
+  if (newStatus === "completed" || previousStatus === "completed") {
+    const { data: linkedLedgerEntry, error: linkedLedgerError } = await supabase
+      .from("trip_payment_ledger" as any)
+      .select("id")
+      .eq("trip_id", existingRequest.trip_id)
+      .eq("reference_number", ledgerReference)
+      .maybeSingle();
+
+    if (linkedLedgerError) {
+      throw new Error(linkedLedgerError.message);
+    }
+
+    hasLinkedLedgerEntry = Boolean(linkedLedgerEntry);
+  }
+
+  const isCompletingPayment = newStatus === "completed" && !hasLinkedLedgerEntry;
+  const isReopeningCompletedPayment =
+    previousStatus === "completed" && newStatus !== "completed" && hasLinkedLedgerEntry;
+
+  if ((isCompletingPayment || isReopeningCompletedPayment) && requestedAmount <= 0) {
+    throw new Error("This payment request does not have a valid amount to apply to the trip.");
   }
 
   const updates: {
@@ -216,6 +275,68 @@ async function updatePaymentRequestStatus(formData: FormData) {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (isCompletingPayment || isReopeningCompletedPayment) {
+    const { data: trip, error: tripError } = await supabase
+      .from("trips")
+      .select("id, total_paid, balance_due")
+      .eq("id", existingRequest.trip_id)
+      .single();
+
+    if (tripError || !trip) {
+      throw new Error(tripError?.message ?? "Linked trip not found.");
+    }
+
+    if (isCompletingPayment) {
+      const { error: ledgerError } = await supabase
+        .from("trip_payment_ledger" as any)
+        .insert({
+          trip_id: existingRequest.trip_id,
+          entry_type: "payment",
+          amount: requestedAmount,
+          entry_date: existingRequest.requested_payment_date ?? todayDateString(),
+          payment_method: "Client payment request",
+          reference_number: ledgerReference,
+          notes: "Applied automatically when the payment request was marked completed.",
+        });
+
+      if (ledgerError) {
+        throw new Error(ledgerError.message);
+      }
+
+      const updatedTotals = applyPaymentToTripTotals(trip, requestedAmount);
+      const { error: tripUpdateError } = await supabase
+        .from("trips")
+        .update(updatedTotals)
+        .eq("id", existingRequest.trip_id);
+
+      if (tripUpdateError) {
+        throw new Error(tripUpdateError.message);
+      }
+    }
+
+    if (isReopeningCompletedPayment) {
+      const { error: ledgerDeleteError } = await supabase
+        .from("trip_payment_ledger" as any)
+        .delete()
+        .eq("trip_id", existingRequest.trip_id)
+        .eq("reference_number", ledgerReference);
+
+      if (ledgerDeleteError) {
+        throw new Error(ledgerDeleteError.message);
+      }
+
+      const updatedTotals = reversePaymentFromTripTotals(trip, requestedAmount);
+      const { error: tripUpdateError } = await supabase
+        .from("trips")
+        .update(updatedTotals)
+        .eq("id", existingRequest.trip_id);
+
+      if (tripUpdateError) {
+        throw new Error(tripUpdateError.message);
+      }
+    }
   }
 
   revalidatePath("/admin/payment-requests");
