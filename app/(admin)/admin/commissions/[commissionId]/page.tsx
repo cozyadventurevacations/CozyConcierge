@@ -291,15 +291,18 @@ async function deleteCommission(formData: FormData) {
   }
 
   revalidatePath("/admin/commissions");
-  redirect("/admin/commissions");
+  redirect("/admin/commissions?deleted=1");
 }
 
 export default async function CommissionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ commissionId: string }>;
+  searchParams: Promise<{ saved?: string }>;
 }) {
   const { commissionId } = await params;
+  const { saved } = await searchParams;
   const { supabase } = await requireAdmin();
 
   const { data: commission, error } = await supabase
@@ -339,6 +342,25 @@ export default async function CommissionDetailPage({
 
   return (
     <PageShell title={row.commission_name} subtitle="Commission tracking detail.">
+      {saved === "created" || saved === "updated" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 900 }}>
+            {saved === "created" ? "Commission created successfully." : "Commission saved successfully."}
+          </p>
+          <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+            You are viewing the saved commission record.
+          </p>
+        </div>
+      ) : null}
+
       <div
         style={{
           display: "flex",

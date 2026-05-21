@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -209,14 +210,15 @@ async function deleteCommissionFromList(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/commissions");
+  redirect("/admin/commissions?deleted=1");
 }
 
 export default async function AdminCommissionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; filter?: string }>;
+  searchParams: Promise<{ q?: string; filter?: string; deleted?: string }>;
 }) {
-  const { q, filter: rawFilter } = await searchParams;
+  const { q, filter: rawFilter, deleted } = await searchParams;
   const searchTerm = String(q ?? "").trim();
   const activeFilter = (["all", "expected", "overdue", "outstanding", "received"].includes(String(rawFilter)) ? rawFilter : "all") as CommissionFilter;
 
@@ -256,6 +258,22 @@ export default async function AdminCommissionsPage({
 
   return (
     <PageShell title="Commissions" subtitle="Track expected and received agency commissions.">
+      {deleted === "1" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 900 }}>Commission deleted.</p>
+          <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+            The commission record was removed. This is useful for duplicate or test entries.
+          </p>
+        </div>
+      ) : null}
+
       <div
         style={{
           border: "1px solid #dbeafe",

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -268,7 +269,13 @@ async function updateCommission(commissionId: string, formData: FormData) {
     throw new Error(error.message);
   }
 
-  redirect(`/admin/commissions/${commissionId}`);
+  revalidatePath("/admin/commissions");
+  revalidatePath(`/admin/commissions/${commissionId}`);
+  if (trip_id) {
+    revalidatePath(`/admin/trips/${trip_id}`);
+  }
+
+  redirect(`/admin/commissions/${commissionId}?saved=updated`);
 }
 
 export default async function EditCommissionPage({

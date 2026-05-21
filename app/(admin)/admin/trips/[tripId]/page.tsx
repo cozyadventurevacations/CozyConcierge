@@ -1366,6 +1366,8 @@ function getSavedSectionAnchor(value: string | undefined) {
     case "Activity Component": return "activity-component";
     case "Insurance Component": return "insurance-component";
     case "Notes": return "trip-notes";
+    case "Commission":
+    case "Commissions": return "commissions";
     case "trip": return "trip-overview";
     default: return "trip-overview";
   }

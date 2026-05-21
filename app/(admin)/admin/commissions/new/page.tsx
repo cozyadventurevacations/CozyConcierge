@@ -165,10 +165,10 @@ async function createCommission(formData: FormData) {
   const returnToTripId = cleanText(formData, "return_to_trip_id");
 
   if (returnToTripId) {
-    redirect(`/admin/trips/${returnToTripId}`);
+    redirect(`/admin/trips/${returnToTripId}?saved=Commission#commissions`);
   }
 
-  redirect(`/admin/commissions/${data.id}`);
+  redirect(`/admin/commissions/${data.id}?saved=created`);
 }
 
 export default async function NewCommissionPage({
