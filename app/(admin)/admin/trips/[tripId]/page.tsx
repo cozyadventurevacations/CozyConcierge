@@ -21,6 +21,15 @@ const allowedTripStatuses = [
   "cancelled",
 ];
 
+const billableTripComponentTypes = [
+  "hotel",
+  "air",
+  "cruise",
+  "transfer",
+  "activity",
+  "insurance",
+];
+
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 
 const defaultTripMilestones = [
@@ -2472,8 +2481,9 @@ async function updateTrip(formData: FormData) {
 
   const { data: savedTripComponents, error: savedTripComponentsError } = await supabase
     .from("trip_components")
-    .select("total_price")
-    .eq("trip_id", tripId);
+    .select("component_type, total_price")
+    .eq("trip_id", tripId)
+    .in("component_type", billableTripComponentTypes);
 
   if (savedTripComponentsError) throw new Error(savedTripComponentsError.message);
 

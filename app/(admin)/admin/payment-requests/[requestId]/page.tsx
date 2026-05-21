@@ -33,6 +33,14 @@ type PaymentRequestDetail = {
 };
 
 const allowedStatuses = ["new", "sent", "completed", "cancelled", "declined"];
+const billableTripComponentTypes = [
+  "hotel",
+  "air",
+  "cruise",
+  "transfer",
+  "activity",
+  "insurance",
+];
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
@@ -53,8 +61,9 @@ async function recalculateTripPaymentTotals(
   ] = await Promise.all([
     supabase
       .from("trip_components" as any)
-      .select("total_price")
-      .eq("trip_id", tripId),
+      .select("component_type, total_price")
+      .eq("trip_id", tripId)
+      .in("component_type", billableTripComponentTypes),
     supabase
       .from("trip_proposals" as any)
       .select("id, planning_fee")
