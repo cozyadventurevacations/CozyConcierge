@@ -727,7 +727,7 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
           <div className="grid grid-2">
             <InfoItem label="Proposal Title" value={proposal.proposal_title} />
             <PriceItem label="Planning Fee" value={proposal.planning_fee} />
-            <PriceItem label="Total Price" value={proposal.total_price} />
+            <PriceItem label="Calculated Trip Total" value={proposal.total_price} />
           </div>
           {proposal.proposal_welcome_text && (
             <div>

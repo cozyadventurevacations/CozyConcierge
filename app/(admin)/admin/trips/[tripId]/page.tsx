@@ -337,6 +337,10 @@ function toMoneyNumber(value: FormDataEntryValue | null, fallback = 0) {
   return numberValue;
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function applyPaymentLedgerEntry(
   trip: { total_paid?: number | null; balance_due?: number | null },
   entryType: string,
@@ -360,8 +364,8 @@ function applyPaymentLedgerEntry(
   }
 
   return {
-    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
-    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+    total_paid: Math.max(0, roundMoney(totalPaid)),
+    balance_due: Math.max(0, roundMoney(balanceDue)),
   };
 }
 
@@ -388,8 +392,8 @@ function reversePaymentLedgerEntry(
   }
 
   return {
-    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
-    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
+    total_paid: Math.max(0, roundMoney(totalPaid)),
+    balance_due: Math.max(0, roundMoney(balanceDue)),
   };
 }
 
@@ -1614,9 +1618,11 @@ async function updateTrip(formData: FormData) {
     if (coverUpdateError) throw new Error(coverUpdateError.message);
   }
 
+  const planningFee = toMoneyNumber(formData.get("planning_fee"));
+
   const proposalUpdates = {
-    planning_fee: toMoneyNumber(formData.get("planning_fee")),
-    total_price: toMoneyNumber(formData.get("total_price")),
+    planning_fee: planningFee,
+    total_price: 0,
     proposal_title: String(formData.get("proposal_title") ?? "").trim() || null,
     proposal_welcome_text:
       String(formData.get("proposal_welcome_text") ?? "").trim() || null,
@@ -1770,6 +1776,7 @@ async function updateTrip(formData: FormData) {
   const hasAnyHotelValue =
     hotelSupplierId ||
     hotelName ||
+    hotelTotalPrice > 0 ||
     hotelAddress.addressLine1 ||
     hotelDetailPayload.check_in_date ||
     hotelDetailPayload.check_out_date ||
@@ -1864,6 +1871,7 @@ async function updateTrip(formData: FormData) {
 
   const hasAnyAirValue =
     airSupplierId ||
+    airTotalPrice > 0 ||
     outboundDepartureAirport ||
     outboundDestinationAirport ||
     outboundDepartureDatetime ||
@@ -2088,6 +2096,7 @@ async function updateTrip(formData: FormData) {
     cruiseSupplierId ||
     cruiseLine ||
     shipName ||
+    cruiseTotalPrice > 0 ||
     cruiseDetailPayload.sailing_date ||
     cruiseDetailPayload.return_date ||
     cruiseDetailPayload.departure_port ||
@@ -2181,6 +2190,7 @@ async function updateTrip(formData: FormData) {
   const hasAnyTransferValue =
     transferSupplierId ||
     transferSupplierName ||
+    transferTotalPrice > 0 ||
     transferPickupDatetime ||
     transferPickupLocation ||
     transferDropoffLocation ||
@@ -2277,6 +2287,7 @@ async function updateTrip(formData: FormData) {
     activitySupplierId ||
     activityName ||
     activitySupplierName ||
+    activityTotalPrice > 0 ||
     activityDatetime ||
     activityLocation ||
     activityConfirmationNumber;
@@ -2376,6 +2387,7 @@ async function updateTrip(formData: FormData) {
     insuranceSupplierId ||
     insuranceProviderName ||
     insurancePlanName ||
+    Number(insurancePremiumAmount ?? 0) > 0 ||
     insurancePolicyNumber ||
     insuranceCoverageStartDate ||
     insuranceCoverageEndDate;
@@ -2457,6 +2469,54 @@ async function updateTrip(formData: FormData) {
   await upsertTripNote("internal", internalNoteTitle, internalNoteContent);
   await upsertTripNote("client", clientNoteTitle, clientNoteContent);
   await upsertTripNote("client_reminder", clientReminderTitle, clientReminderContent);
+
+  const { data: savedTripComponents, error: savedTripComponentsError } = await supabase
+    .from("trip_components")
+    .select("total_price")
+    .eq("trip_id", tripId);
+
+  if (savedTripComponentsError) throw new Error(savedTripComponentsError.message);
+
+  const componentTotal = (savedTripComponents ?? []).reduce(
+    (sum, component) => sum + Number(component.total_price ?? 0),
+    0,
+  );
+  const calculatedTripTotal = roundMoney(componentTotal + planningFee);
+
+  const { data: savedTripLedgerEntries, error: savedTripLedgerError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .select("entry_type, amount")
+    .eq("trip_id", tripId);
+
+  if (savedTripLedgerError) throw new Error(savedTripLedgerError.message);
+
+  const ledgerBalanceAdjustment = (savedTripLedgerEntries ?? []).reduce(
+    (sum, entry) => {
+      const amount = Number(entry.amount ?? 0);
+      if (entry.entry_type === "credit") return sum - amount;
+      if (entry.entry_type === "fee" || entry.entry_type === "adjustment") return sum + amount;
+      return sum;
+    },
+    0,
+  );
+  const recalculatedBalanceDue = Math.max(
+    0,
+    roundMoney(calculatedTripTotal - Number(tripUpdates.total_paid ?? 0) + ledgerBalanceAdjustment),
+  );
+
+  const { error: proposalTotalError } = await supabase
+    .from("trip_proposals")
+    .update({ total_price: calculatedTripTotal })
+    .eq("trip_id", tripId);
+
+  if (proposalTotalError) throw new Error(proposalTotalError.message);
+
+  const { error: tripPricingError } = await supabase
+    .from("trips")
+    .update({ balance_due: recalculatedBalanceDue })
+    .eq("id", tripId);
+
+  if (tripPricingError) throw new Error(tripPricingError.message);
 
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}`);
@@ -3007,6 +3067,12 @@ export default async function AdminTripEditorPage({
   const activeTripComponents = tripComponentSummaries.filter(
     (summary) => summary.component,
   );
+  const componentPriceTotal = activeTripComponents.reduce(
+    (sum, summary) => sum + Number(summary.component?.total_price ?? 0),
+    0,
+  );
+  const proposalPlanningFee = Number(proposal?.planning_fee ?? 0);
+  const calculatedProposalTotal = roundMoney(componentPriceTotal + proposalPlanningFee);
   const componentsWithConfirmations = activeTripComponents.filter(
     (summary) => summary.component?.confirmation_number,
   );
@@ -4238,14 +4304,19 @@ export default async function AdminTripEditorPage({
             </label>
 
             <label>
-              <span className="label">Balance Due</span>
+              <span className="label">Balance Due (Calculated)</span>
               <input
                 className="input"
                 type="number"
                 step="0.01"
                 name="balance_due"
                 defaultValue={trip.balance_due ?? 0}
+                readOnly
+                style={{ background: "#f7fbfc", color: "#64748b" }}
               />
+              <span style={{ display: "block", marginTop: 6, color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>
+                Auto-calculated from component prices plus planning fee, minus payments and credits.
+              </span>
             </label>
 
             <label>
@@ -4492,16 +4563,22 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Total Price</span>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                name="total_price"
-                defaultValue={proposal?.total_price ?? 0}
-              />
-            </label>
+            <div
+              style={{
+                padding: "12px",
+                border: "1px solid #e6f0f2",
+                borderRadius: 12,
+                background: "#f7fbfc",
+              }}
+            >
+              <span className="label">Calculated Trip Total</span>
+              <p style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 900 }}>
+                {formatMoney(calculatedProposalTotal)}
+              </p>
+              <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>
+                Component prices ({formatMoney(componentPriceTotal)}) plus planning fee ({formatMoney(proposalPlanningFee)}). This total is calculated automatically.
+              </p>
+            </div>
 
             <label style={{ gridColumn: "1 / -1" }}>
               <span className="label">Proposal Title</span>
