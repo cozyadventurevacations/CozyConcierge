@@ -38,30 +38,97 @@ function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function applyPaymentToTripTotals(
-  trip: { total_paid?: number | null; balance_due?: number | null },
-  amount: number,
-) {
-  const totalPaid = Number(trip.total_paid ?? 0) + amount;
-  const balanceDue = Number(trip.balance_due ?? 0) - amount;
-
-  return {
-    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
-    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
-  };
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
-function reversePaymentFromTripTotals(
-  trip: { total_paid?: number | null; balance_due?: number | null },
-  amount: number,
+async function recalculateTripPaymentTotals(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  tripId: string,
 ) {
-  const totalPaid = Number(trip.total_paid ?? 0) - amount;
-  const balanceDue = Number(trip.balance_due ?? 0) + amount;
+  const [
+    { data: components, error: componentsError },
+    { data: proposal, error: proposalError },
+    { data: ledgerEntries, error: ledgerError },
+  ] = await Promise.all([
+    supabase
+      .from("trip_components" as any)
+      .select("total_price")
+      .eq("trip_id", tripId),
+    supabase
+      .from("trip_proposals" as any)
+      .select("id, planning_fee")
+      .eq("trip_id", tripId)
+      .maybeSingle(),
+    supabase
+      .from("trip_payment_ledger" as any)
+      .select("entry_type, amount")
+      .eq("trip_id", tripId),
+  ]);
 
-  return {
-    total_paid: Math.max(0, Math.round(totalPaid * 100) / 100),
-    balance_due: Math.max(0, Math.round(balanceDue * 100) / 100),
-  };
+  if (componentsError) {
+    throw new Error(componentsError.message);
+  }
+
+  if (proposalError) {
+    throw new Error(proposalError.message);
+  }
+
+  if (ledgerError) {
+    throw new Error(ledgerError.message);
+  }
+
+  const componentTotal = (components ?? []).reduce(
+    (sum, component) => sum + Number(component.total_price ?? 0),
+    0,
+  );
+  const planningFee = Number(proposal?.planning_fee ?? 0);
+  const calculatedTripTotal = roundMoney(componentTotal + planningFee);
+
+  const ledgerTotalPaid = (ledgerEntries ?? []).reduce((sum, entry) => {
+    const amount = Number(entry.amount ?? 0);
+    if (entry.entry_type === "payment") return sum + amount;
+    if (entry.entry_type === "refund") return sum - amount;
+    return sum;
+  }, 0);
+
+  const ledgerBalanceAdjustment = (ledgerEntries ?? []).reduce((sum, entry) => {
+    const amount = Number(entry.amount ?? 0);
+    if (entry.entry_type === "credit") return sum - amount;
+    if (entry.entry_type === "fee" || entry.entry_type === "adjustment") {
+      return sum + amount;
+    }
+    return sum;
+  }, 0);
+
+  const totalPaid = Math.max(0, roundMoney(ledgerTotalPaid));
+  const balanceDue = Math.max(
+    0,
+    roundMoney(calculatedTripTotal - totalPaid + ledgerBalanceAdjustment),
+  );
+
+  const { error: tripUpdateError } = await supabase
+    .from("trips")
+    .update({
+      total_paid: totalPaid,
+      balance_due: balanceDue,
+    })
+    .eq("id", tripId);
+
+  if (tripUpdateError) {
+    throw new Error(tripUpdateError.message);
+  }
+
+  if (proposal?.id) {
+    const { error: proposalUpdateError } = await supabase
+      .from("trip_proposals" as any)
+      .update({ total_price: calculatedTripTotal })
+      .eq("id", proposal.id);
+
+    if (proposalUpdateError) {
+      throw new Error(proposalUpdateError.message);
+    }
+  }
 }
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
@@ -278,16 +345,6 @@ async function updatePaymentRequestStatus(formData: FormData) {
   }
 
   if (isCompletingPayment || isReopeningCompletedPayment) {
-    const { data: trip, error: tripError } = await supabase
-      .from("trips")
-      .select("id, total_paid, balance_due")
-      .eq("id", existingRequest.trip_id)
-      .single();
-
-    if (tripError || !trip) {
-      throw new Error(tripError?.message ?? "Linked trip not found.");
-    }
-
     if (isCompletingPayment) {
       const { error: ledgerError } = await supabase
         .from("trip_payment_ledger" as any)
@@ -304,16 +361,6 @@ async function updatePaymentRequestStatus(formData: FormData) {
       if (ledgerError) {
         throw new Error(ledgerError.message);
       }
-
-      const updatedTotals = applyPaymentToTripTotals(trip, requestedAmount);
-      const { error: tripUpdateError } = await supabase
-        .from("trips")
-        .update(updatedTotals)
-        .eq("id", existingRequest.trip_id);
-
-      if (tripUpdateError) {
-        throw new Error(tripUpdateError.message);
-      }
     }
 
     if (isReopeningCompletedPayment) {
@@ -326,17 +373,11 @@ async function updatePaymentRequestStatus(formData: FormData) {
       if (ledgerDeleteError) {
         throw new Error(ledgerDeleteError.message);
       }
-
-      const updatedTotals = reversePaymentFromTripTotals(trip, requestedAmount);
-      const { error: tripUpdateError } = await supabase
-        .from("trips")
-        .update(updatedTotals)
-        .eq("id", existingRequest.trip_id);
-
-      if (tripUpdateError) {
-        throw new Error(tripUpdateError.message);
-      }
     }
+  }
+
+  if (newStatus === "completed" || previousStatus === "completed") {
+    await recalculateTripPaymentTotals(supabase, existingRequest.trip_id);
   }
 
   revalidatePath("/admin/payment-requests");

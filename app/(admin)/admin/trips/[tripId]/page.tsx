@@ -2499,9 +2499,22 @@ async function updateTrip(formData: FormData) {
     },
     0,
   );
+  const ledgerTotalPaid = (savedTripLedgerEntries ?? []).reduce(
+    (sum, entry) => {
+      const amount = Number(entry.amount ?? 0);
+      if (entry.entry_type === "payment") return sum + amount;
+      if (entry.entry_type === "refund") return sum - amount;
+      return sum;
+    },
+    0,
+  );
+  const totalPaidForBalance =
+    (savedTripLedgerEntries ?? []).length > 0
+      ? Math.max(0, roundMoney(ledgerTotalPaid))
+      : Number(tripUpdates.total_paid ?? 0);
   const recalculatedBalanceDue = Math.max(
     0,
-    roundMoney(calculatedTripTotal - Number(tripUpdates.total_paid ?? 0) + ledgerBalanceAdjustment),
+    roundMoney(calculatedTripTotal - totalPaidForBalance + ledgerBalanceAdjustment),
   );
 
   const { error: proposalTotalError } = await supabase
@@ -2513,7 +2526,10 @@ async function updateTrip(formData: FormData) {
 
   const { error: tripPricingError } = await supabase
     .from("trips")
-    .update({ balance_due: recalculatedBalanceDue })
+    .update({
+      total_paid: totalPaidForBalance,
+      balance_due: recalculatedBalanceDue,
+    })
     .eq("id", tripId);
 
   if (tripPricingError) throw new Error(tripPricingError.message);
