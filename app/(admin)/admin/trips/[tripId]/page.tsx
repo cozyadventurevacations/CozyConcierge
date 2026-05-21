@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
@@ -1341,11 +1342,33 @@ function SectionSaveButton({ label }: { label: string }) {
         paddingTop: 8,
       }}
     >
-      <button type="submit" className="btn btn-primary">
+      <button type="submit" name="save_section" value={label} className="btn btn-primary">
         Save {label}
       </button>
     </div>
   );
+}
+
+function getSavedSectionMessage(value: string | undefined) {
+  if (!value) return null;
+  if (value === "trip") return "Trip saved successfully.";
+  return `${value} saved successfully.`;
+}
+
+function getSavedSectionAnchor(value: string | undefined) {
+  switch (value) {
+    case "Trip Overview": return "trip-overview";
+    case "Proposal": return "proposal";
+    case "Hotel Component": return "hotel-component";
+    case "Air Component": return "air-component";
+    case "Cruise Component": return "cruise-component";
+    case "Transfer Component": return "transfer-component";
+    case "Activity Component": return "activity-component";
+    case "Insurance Component": return "insurance-component";
+    case "Notes": return "trip-notes";
+    case "trip": return "trip-overview";
+    default: return "trip-overview";
+  }
 }
 
 async function addTripCompanion(formData: FormData) {
@@ -1500,6 +1523,7 @@ async function updateTrip(formData: FormData) {
   "use server";
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
+  const savedSection = String(formData.get("save_section") ?? "trip").trim() || "trip";
   if (!tripId) throw new Error("Missing trip ID.");
 
   const { supabase } = await requireAdmin();
@@ -2435,6 +2459,7 @@ async function updateTrip(formData: FormData) {
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}`);
   revalidatePath("/admin/trips");
+  redirect(`/admin/trips/${tripId}?saved=${encodeURIComponent(savedSection)}#${getSavedSectionAnchor(savedSection)}`);
 }
 
 async function markTripCommissionReceived(formData: FormData) {
@@ -2705,10 +2730,14 @@ async function restoreTripFromDetail(formData: FormData) {
 
 export default async function AdminTripEditorPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tripId: string }>;
+  searchParams: Promise<{ saved?: string }>;
 }) {
   const { tripId } = await params;
+  const { saved } = await searchParams;
+  const savedMessage = getSavedSectionMessage(saved);
   const { supabase } = await requireAdmin();
 
   const { data: trip, error: tripError } = await supabase
@@ -3273,6 +3302,22 @@ export default async function AdminTripEditorPage({
 
       <form action={updateTrip} className="stack">
         <input type="hidden" name="trip_id" value={trip.id} />
+
+        {savedMessage ? (
+          <div
+            className="card"
+            style={{
+              border: "1px solid #bbf7d0",
+              background: "#f0fdf4",
+              color: "#166534",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 900 }}>{savedMessage}</p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+              Your latest trip changes are saved.
+            </p>
+          </div>
+        ) : null}
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 
@@ -6062,7 +6107,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <div className="row">
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" name="save_section" value="trip" className="btn btn-primary">
             Save Trip
           </button>
 
