@@ -403,9 +403,10 @@ export default async function AdminTripsPage({
         </div>
       ) : (
         <div style={{ width: "100%", overflowX: "auto" }}>
-          <table className="table" style={{ minWidth: 1100 }}>
+          <table className="table" style={{ minWidth: 980 }}>
             <thead>
               <tr>
+                <th>Actions</th>
                 <th>Trip Name</th>
                 <th>Client</th>
                 <th>Departure</th>
@@ -415,7 +416,6 @@ export default async function AdminTripsPage({
                 <th>Deposit</th>
                 <th>Balance Due</th>
                 <th>Final Due</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -426,6 +426,26 @@ export default async function AdminTripsPage({
 
                 return (
                   <tr key={trip.id} style={{ background: hasDeletionRequest ? "#fffbf7" : undefined }}>
+                    <td>
+                      <div style={{ display: "grid", gap: 6, minWidth: 92 }}>
+                        {!showDeleted && (
+                          <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
+                        )}
+                        {showDeleted ? (
+                          <form action={restoreTrip}>
+                            <input type="hidden" name="trip_id" value={trip.id} />
+                            <button type="submit" className="btn btn-outline" style={{ width: "100%", fontSize: 13, padding: "6px 10px" }}>Restore</button>
+                          </form>
+                        ) : deletable.allowed ? (
+                          <form action={softDeleteTrip}>
+                            <input type="hidden" name="trip_id" value={trip.id} />
+                            <button type="submit" className="btn btn-outline" style={{ width: "100%", fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</button>
+                          </form>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#94a3b8", padding: "5px 0" }} title={deletable.reason}>Cannot delete</span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <div>
                         <strong>{trip.trip_name}</strong>
@@ -457,26 +477,6 @@ export default async function AdminTripsPage({
                     </td>
                     <td>{formatMoney(trip.balance_due)}</td>
                     <td>{formatDate(trip.final_payment_due_date)}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {!showDeleted && (
-                          <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link>
-                        )}
-                        {showDeleted ? (
-                          <form action={restoreTrip}>
-                            <input type="hidden" name="trip_id" value={trip.id} />
-                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px" }}>Restore</button>
-                          </form>
-                        ) : deletable.allowed ? (
-                          <form action={softDeleteTrip}>
-                            <input type="hidden" name="trip_id" value={trip.id} />
-                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>Delete</button>
-                          </form>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#94a3b8", padding: "5px 0" }} title={deletable.reason}>Cannot delete</span>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
