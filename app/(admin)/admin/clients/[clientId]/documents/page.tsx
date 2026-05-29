@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -21,6 +24,39 @@ type ClientDocument = {
   notes: string | null;
   created_at: string | null;
 };
+
+function createSupabaseAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function cleanText(formData: FormData, fieldName: string) {
+  const value = String(formData.get(fieldName) ?? "").trim();
+  return value || null;
+}
+
+function sanitizeFileName(fileName: string) {
+  return fileName
+    .trim()
+    .replace(/[^a-zA-Z0-9.\-_]/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+}
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
@@ -115,11 +151,95 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
+async function uploadClientPassportDocument(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireAdmin();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const clientId = String(formData.get("client_id") ?? "").trim();
+  if (!clientId) throw new Error("Missing client ID.");
+
+  const { data: client, error: clientError } = await supabase
+    .from("client_accounts")
+    .select("id")
+    .eq("id", clientId)
+    .single();
+
+  if (clientError || !client) {
+    throw new Error(clientError?.message ?? "Client not found.");
+  }
+
+  const file = formData.get("passport_file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Please choose a passport image or PDF to upload.");
+  }
+
+  const maxFileSize = 15 * 1024 * 1024;
+
+  if (file.size > maxFileSize) {
+    throw new Error("File is too large. Please upload a file under 15MB.");
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+  ];
+
+  if (file.type && !allowedTypes.includes(file.type)) {
+    throw new Error("Please upload a JPG, PNG, WEBP, or PDF file.");
+  }
+
+  const documentTitle =
+    cleanText(formData, "document_title") ?? "Passport Document";
+  const notes = cleanText(formData, "notes");
+  const originalFileName = sanitizeFileName(file.name || "passport-document");
+  const storagePath = `${clientId}/passport/admin-${crypto.randomUUID()}-${originalFileName}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("client-documents")
+    .upload(storagePath, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { error: insertError } = await supabaseAdmin.from("client_documents").insert({
+    client_account_id: clientId,
+    uploaded_by_user_id: user.id,
+    document_type: "passport",
+    document_title: documentTitle,
+    file_name: file.name || originalFileName,
+    storage_path: storagePath,
+    content_type: file.type || null,
+    notes,
+  });
+
+  if (insertError) {
+    await supabaseAdmin.storage.from("client-documents").remove([storagePath]);
+    throw new Error(insertError.message);
+  }
+
+  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/documents`);
+  revalidatePath("/admin/clients");
+  redirect(`/admin/clients/${clientId}/documents?uploaded=true`);
+}
+
 export default async function AdminClientDocumentsPage({
+  searchParams,
   params,
 }: {
+  searchParams: Promise<{ uploaded?: string }>;
   params: Promise<{ clientId: string }>;
 }) {
+  const { uploaded } = await searchParams;
   const { clientId } = await params;
   const { supabase } = await requireAdmin();
 
@@ -241,6 +361,84 @@ export default async function AdminClientDocumentsPage({
       >
         <strong>Sensitive document reminder:</strong> Only open client documents when needed
         for legitimate trip support, supplier documentation, or travel planning.
+      </div>
+
+      {uploaded === "true" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <strong>Passport document uploaded successfully.</strong>
+        </div>
+      ) : null}
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Upload Passport for Client</h2>
+
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Use this when the client sends you a passport copy directly. The file
+          is stored in the same secure client document vault and marked as a
+          passport document.
+        </p>
+
+        <form action={uploadClientPassportDocument} className="stack">
+          <input type="hidden" name="client_id" value={clientRow.id} />
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Document Title</span>
+              <input
+                className="input"
+                name="document_title"
+                placeholder={`${clientName} Passport`}
+              />
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Passport File</span>
+              <input
+                className="input"
+                type="file"
+                name="passport_file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                required
+              />
+            </label>
+          </div>
+
+          <label className="stack-sm">
+            <span className="label">Notes</span>
+            <textarea
+              className="textarea"
+              name="notes"
+              rows={3}
+              placeholder="Optional notes, such as traveler name or trip this passport supports."
+            />
+          </label>
+
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Upload limits:</strong> JPG, PNG, WEBP, or PDF. Maximum file
+            size is 15MB. Only upload documents the client has provided for
+            legitimate travel support.
+          </div>
+
+          <button type="submit" className="btn btn-primary">
+            Upload Passport Document
+          </button>
+        </form>
       </div>
 
       <div className="card stack">
