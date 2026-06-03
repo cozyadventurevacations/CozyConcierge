@@ -33,6 +33,65 @@ function isRateLimited(request: Request): boolean {
   return false;
 }
 
+async function verifyTurnstileToken(request: Request, token: string) {
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+
+  if (!secretKey) {
+    return {
+      valid: false,
+      message: "Registration protection is not configured.",
+    };
+  }
+
+  if (!token) {
+    return {
+      valid: false,
+      message: "Please complete the security check before creating your account.",
+    };
+  }
+
+  const formData = new FormData();
+  formData.append("secret", secretKey);
+  formData.append("response", token);
+
+  const remoteIp = getRateLimitKey(request);
+  if (remoteIp && remoteIp !== "unknown") {
+    formData.append("remoteip", remoteIp);
+  }
+
+  const response = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    return {
+      valid: false,
+      message: "The security check could not be verified. Please try again.",
+    };
+  }
+
+  const result = (await response.json()) as {
+    success?: boolean;
+    "error-codes"?: string[];
+  };
+
+  if (!result.success) {
+    return {
+      valid: false,
+      message: "The security check failed. Please refresh and try again.",
+    };
+  }
+
+  return {
+    valid: true,
+    message: "",
+  };
+}
+
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -113,6 +172,7 @@ export async function POST(request: Request) {
     const phonePrimary = cleanText(body.phonePrimary);
     const password = cleanText(body.password);
     const website = cleanText(body.website);
+    const captchaToken = cleanText(body.captchaToken);
 
     if (website) {
       return NextResponse.json({
@@ -125,6 +185,19 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "First name, last name, email, and password are required.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const turnstileCheck = await verifyTurnstileToken(request, captchaToken);
+
+    if (!turnstileCheck.valid) {
+      return NextResponse.json(
+        {
+          error: turnstileCheck.message,
         },
         {
           status: 400,

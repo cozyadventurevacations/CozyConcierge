@@ -2,9 +2,21 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+
+declare global {
+  interface Window {
+    onTurnstileSuccess?: (token: string) => void;
+    onTurnstileExpired?: () => void;
+    onTurnstileError?: () => void;
+    turnstile?: {
+      reset: () => void;
+    };
+  }
+}
 
 function isValidPassword(password: string) {
   return password.length >= 8;
@@ -33,6 +45,7 @@ function BrandPanel() {
 export default function RegisterPage() {
   const router = useRouter();
   const supabase = createClient();
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -43,6 +56,26 @@ export default function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
+
+  useEffect(() => {
+    window.onTurnstileSuccess = (token: string) => {
+      setCaptchaToken(token);
+    };
+    window.onTurnstileExpired = () => {
+      setCaptchaToken("");
+    };
+    window.onTurnstileError = () => {
+      setCaptchaToken("");
+      setErrorMessage("The bot protection check could not be completed. Please refresh and try again.");
+    };
+
+    return () => {
+      delete window.onTurnstileSuccess;
+      delete window.onTurnstileExpired;
+      delete window.onTurnstileError;
+    };
+  }, []);
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +90,11 @@ export default function RegisterPage() {
       const cleanPhonePrimary = phonePrimary.trim();
       const formData = new FormData(event.currentTarget);
       const website = String(formData.get("website") ?? "").trim();
+
+      if (!turnstileSiteKey) {
+        setErrorMessage("Registration protection is not configured yet. Please contact Cozy Adventure Vacations.");
+        return;
+      }
 
       if (!cleanFirstName || !cleanLastName || !cleanEmail || !password) {
         setErrorMessage("Please enter your first name, last name, email, and password.");
@@ -73,6 +111,11 @@ export default function RegisterPage() {
         return;
       }
 
+      if (!captchaToken) {
+        setErrorMessage("Please complete the security check before creating your account.");
+        return;
+      }
+
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 20000);
 
@@ -80,7 +123,15 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ firstName: cleanFirstName, lastName: cleanLastName, email: cleanEmail, phonePrimary: cleanPhonePrimary, password, website }),
+        body: JSON.stringify({
+          firstName: cleanFirstName,
+          lastName: cleanLastName,
+          email: cleanEmail,
+          phonePrimary: cleanPhonePrimary,
+          password,
+          website,
+          captchaToken,
+        }),
       });
 
       window.clearTimeout(timeout);
@@ -90,6 +141,8 @@ export default function RegisterPage() {
 
       if (!response.ok) {
         setErrorMessage(result.error ?? `Unable to create client account. Server returned status ${response.status}.`);
+        window.turnstile?.reset();
+        setCaptchaToken("");
         return;
       }
 
@@ -109,6 +162,8 @@ export default function RegisterPage() {
         return;
       }
       setErrorMessage(error instanceof Error ? error.message : "Something went wrong while creating the account.");
+      window.turnstile?.reset();
+      setCaptchaToken("");
     } finally {
       setIsSubmitting(false);
     }
@@ -116,6 +171,13 @@ export default function RegisterPage() {
 
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "linear-gradient(135deg, #eef7f8 0%, #ffffff 58%, #f7fbfc 100%)" }}>
+      {turnstileSiteKey ? (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          async
+          defer
+        />
+      ) : null}
       <section style={{ width: "100%", maxWidth: 1040, display: "grid", gridTemplateColumns: "minmax(0, 0.85fr) minmax(380px, 1fr)", gap: 18, alignItems: "stretch" }}>
         <BrandPanel />
 
@@ -151,6 +213,29 @@ export default function RegisterPage() {
               <label className="stack-sm"><span className="label">Password</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="Minimum 8 characters" required /></label>
               <label className="stack-sm"><span className="label">Confirm Password</span><input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" required /></label>
             </div>
+
+            {turnstileSiteKey ? (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  padding: "8px 0",
+                }}
+              >
+                <div
+                  className="cf-turnstile"
+                  data-sitekey={turnstileSiteKey}
+                  data-callback="onTurnstileSuccess"
+                  data-expired-callback="onTurnstileExpired"
+                  data-error-callback="onTurnstileError"
+                  data-theme="light"
+                />
+              </div>
+            ) : (
+              <div style={{ padding: 12, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", lineHeight: 1.5 }}>
+                Registration protection is not configured yet.
+              </div>
+            )}
 
             <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ opacity: isSubmitting ? 0.75 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}>
               {isSubmitting ? "Creating Account..." : "Create Account"}
