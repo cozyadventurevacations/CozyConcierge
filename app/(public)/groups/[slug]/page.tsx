@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import Script from "next/script";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
@@ -64,12 +65,53 @@ function splitLines(value: string | null | undefined) {
     .filter(Boolean);
 }
 
+async function verifyTurnstileToken(token: string) {
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+
+  if (!secretKey) {
+    return {
+      valid: false,
+      message: "Group request security is not configured yet.",
+    };
+  }
+
+  if (!token) {
+    return {
+      valid: false,
+      message: "Please complete the security check before submitting.",
+    };
+  }
+
+  const verificationForm = new FormData();
+  verificationForm.append("secret", secretKey);
+  verificationForm.append("response", token);
+
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: verificationForm,
+    });
+
+    const result = (await response.json()) as { success?: boolean };
+
+    return result.success
+      ? { valid: true, message: "" }
+      : { valid: false, message: "Security check failed. Please refresh and try again." };
+  } catch {
+    return {
+      valid: false,
+      message: "We could not verify the security check. Please try again.",
+    };
+  }
+}
+
 async function requestGroupSpot(formData: FormData) {
   "use server";
 
   const supabase = await createServerSupabaseClient();
   const groupId = String(formData.get("group_id") ?? "").trim();
   const groupSlug = String(formData.get("group_slug") ?? "").trim();
+  const captchaToken = String(formData.get("cf-turnstile-response") ?? "").trim();
   const firstName = cleanText(formData, "first_name");
   const lastName = cleanText(formData, "last_name");
   const email = cleanText(formData, "email");
@@ -77,6 +119,22 @@ async function requestGroupSpot(formData: FormData) {
   if (!groupId || !groupSlug) throw new Error("Missing group details.");
   if (!firstName || !lastName || !email) {
     throw new Error("First name, last name, and email are required.");
+  }
+
+  const captcha = await verifyTurnstileToken(captchaToken);
+  if (!captcha.valid) throw new Error(captcha.message);
+
+  const { data: group, error: groupError } = await supabase
+    .from("travel_groups" as any)
+    .select("id, slug, status, visibility")
+    .eq("id", groupId)
+    .eq("slug", groupSlug)
+    .eq("visibility", "public")
+    .maybeSingle();
+
+  if (groupError || !group) throw new Error("This group is not available.");
+  if (["archived", "closed"].includes(String(group.status ?? ""))) {
+    throw new Error("This group is no longer accepting requests.");
   }
 
   const { error } = await supabase
@@ -117,6 +175,7 @@ export default async function PublicGroupLandingPage({
   const { slug } = await params;
   const { requested } = await searchParams;
   const supabase = await createServerSupabaseClient();
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   const { data, error } = await supabase
     .from("travel_groups" as any)
@@ -145,6 +204,9 @@ export default async function PublicGroupLandingPage({
 
   return (
     <main style={{ minHeight: "100vh", background: "#f7fafb" }}>
+      {turnstileSiteKey ? (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+      ) : null}
       <section
         style={{
           minHeight: "62vh",
@@ -228,6 +290,17 @@ export default async function PublicGroupLandingPage({
               <label className="stack-sm"><span className="label">Phone</span><input className="input" name="phone" /></label>
               <label className="stack-sm"><span className="label">How many travelers?</span><input className="input" type="number" min="1" name="party_size" defaultValue={1} /></label>
               <label className="stack-sm"><span className="label">Questions or notes</span><textarea className="textarea" name="notes" rows={4} /></label>
+              {turnstileSiteKey ? (
+                <div
+                  className="cf-turnstile"
+                  data-sitekey={turnstileSiteKey}
+                  data-theme="light"
+                />
+              ) : (
+                <p style={{ margin: 0, color: "#b42318", fontSize: 13 }}>
+                  Group request security is not configured yet.
+                </p>
+              )}
               <button className="btn btn-primary" type="submit">Request Group Information</button>
             </form>
           </div>

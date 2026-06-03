@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/logout",
+  "/groups",
 ];
 
 const PUBLIC_API_PATHS = [

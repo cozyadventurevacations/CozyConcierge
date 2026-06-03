@@ -115,6 +115,13 @@ for insert
 with check (
   status = 'interested'
   and client_account_id is null
+  and exists (
+    select 1
+    from public.travel_groups tg
+    where tg.id = group_id
+    and tg.visibility = 'public'
+    and tg.status not in ('archived', 'closed')
+  )
 );
 
 grant select on table public.travel_groups to anon, authenticated;
