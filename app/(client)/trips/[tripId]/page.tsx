@@ -598,16 +598,9 @@ export default async function TripDetailPage({
   };
 
   const deletionRequested = Boolean(trip.deletion_requested_at);
-  const bookedTripStatuses = new Set([
-    "reserved",
-    "confirmed",
-    "pending_final_payment",
-    "paid_in_full",
-  ]);
   const insuranceDecision = String(trip.insurance_decision ?? "");
   const shouldAskInsurance =
     isPrimaryClient &&
-    bookedTripStatuses.has(String(trip.trip_status ?? "")) &&
     insuranceDecision !== "accepted" &&
     insuranceDecision !== "declined";
 
@@ -636,9 +629,9 @@ export default async function TripDetailPage({
       {/* Deletion request status banner — primary client only */}
       {(insuranceNotice === "accepted" || insuranceNotice === "declined") && (
         <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
-          <p style={{ margin: 0, fontWeight: 800 }}>Insurance preference saved.</p>
+          <p style={{ margin: 0, fontWeight: 800 }}>Insurance waiver saved.</p>
           <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
-            Your advisor can now see that you {insuranceNotice === "accepted" ? "want travel insurance coverage reviewed" : "declined travel insurance coverage"}.
+            Your advisor can now see that you {insuranceNotice === "accepted" ? "want travel insurance coverage reviewed" : "declined travel insurance coverage for this trip"}.
           </p>
         </div>
       )}
@@ -646,9 +639,11 @@ export default async function TripDetailPage({
       {shouldAskInsurance && (
         <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
           <div>
-            <p style={{ margin: 0, fontWeight: 900 }}>Travel Insurance Coverage</p>
+            <p style={{ margin: 0, fontWeight: 900 }}>Travel Insurance Waiver</p>
             <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              Please let your advisor know whether you would like travel insurance coverage reviewed for this booked trip.
+              Please choose whether you would like travel insurance coverage reviewed for this trip.
+              If you decline, you are confirming that you do not want Cozy Adventure
+              Vacations to review travel insurance options for this trip at this time.
             </p>
           </div>
           <form action={recordInsuranceDecision} className="row">
@@ -668,7 +663,7 @@ export default async function TripDetailPage({
               className="btn btn-outline"
               style={{ borderColor: "#fed7aa", color: "#9a3412" }}
             >
-              No, I decline
+              I decline coverage review
             </button>
           </form>
         </div>

@@ -4139,15 +4139,36 @@ export default async function AdminTripEditorPage({
           </div>
         ) : null}
 
-        {trip.insurance_decision ? (
-          <div className="card" style={{ border: "1px solid #dbeafe", background: "#eff6ff", color: "#1e3a8a" }}>
-            <p style={{ margin: 0, fontWeight: 900 }}>Client Insurance Preference</p>
-            <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
-              Client {trip.insurance_decision === "accepted" ? "wants travel insurance coverage reviewed" : "declined travel insurance coverage"}
-              {trip.insurance_decision_at ? ` on ${formatDate(trip.insurance_decision_at)}.` : "."}
-            </p>
+        <div
+          className="card"
+          style={{
+            border: trip.insurance_decision ? "1px solid #dbeafe" : "1px solid #fed7aa",
+            background: trip.insurance_decision ? "#eff6ff" : "#fff7ed",
+            color: trip.insurance_decision ? "#1e3a8a" : "#9a3412",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 900 }}>
+                {trip.insurance_decision ? "Client Insurance Waiver" : "Insurance Waiver Needed"}
+              </p>
+              <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+                {trip.insurance_decision
+                  ? `Client ${trip.insurance_decision === "accepted" ? "wants travel insurance coverage reviewed" : "declined travel insurance coverage for this trip"}${trip.insurance_decision_at ? ` on ${formatDate(trip.insurance_decision_at)}.` : "."}`
+                  : "The primary client has not accepted or declined the travel insurance waiver yet. Ask them to open this trip in their portal and answer the Travel Insurance Waiver box near the top of the page."}
+              </p>
+            </div>
+            {!trip.insurance_decision && clientInfo?.id ? (
+              <Link
+                href={`/admin/clients/${clientInfo.id}#private-message`}
+                className="btn btn-primary"
+                style={{ fontSize: 13, padding: "8px 14px" }}
+              >
+                Message Client
+              </Link>
+            ) : null}
           </div>
-        ) : null}
+        </div>
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 

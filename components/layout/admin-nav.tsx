@@ -6,6 +6,7 @@ export const adminNav = [
   { href: "/admin/hotels", label: "Hotels" },
   { href: "/admin/suppliers", label: "Suppliers" },
   { href: "/admin/commissions", label: "Commissions" },
+  { href: "/admin/email-automations", label: "Email Automations" },
   { href: "/admin/messages", label: "Messages" },
   { href: "/logout", label: "Logout" },
 ];
