@@ -626,9 +626,7 @@ function AiWritingToolButton({
       </div>
       <button
         type="submit"
-        name="component_type"
-        value={componentType}
-        formAction={generateTripComponentWriting}
+        formAction={generateTripComponentWriting.bind(null, componentType)}
         className="btn btn-outline"
         disabled={disabled}
         style={{
@@ -1467,6 +1465,30 @@ function getGeneratedText(payload: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function normalizeTripComponentType(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  const aliases: Record<string, string> = {
+    accommodation: "hotel",
+    accommodations: "hotel",
+    flight: "air",
+    flights: "air",
+    airfare: "air",
+    airline: "air",
+    transportation: "transfer",
+    transport: "transfer",
+    ground_transportation: "transfer",
+    ground_transfer: "transfer",
+    excursion: "activity",
+    excursions: "activity",
+    tour: "activity",
+    tours: "activity",
+    travel_insurance: "insurance",
+    protection: "insurance",
+  };
+
+  return aliases[normalized] ?? normalized;
+}
+
 function getComponentLabel(componentType: string) {
   switch (componentType) {
     case "hotel": return "Hotel";
@@ -1709,11 +1731,13 @@ async function removeTripCompanion(formData: FormData) {
   revalidatePath(`/trips/${tripId}`);
 }
 
-async function generateTripComponentWriting(formData: FormData) {
+async function generateTripComponentWriting(componentTypeArg: string, formData: FormData) {
   "use server";
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
-  const componentType = String(formData.get("component_type") ?? "").trim();
+  const componentType = normalizeTripComponentType(
+    componentTypeArg || String(formData.get("component_type") ?? ""),
+  );
 
   if (!tripId) throw new Error("Missing trip ID.");
   if (!billableTripComponentTypes.includes(componentType)) {
