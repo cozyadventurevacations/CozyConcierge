@@ -165,6 +165,7 @@ async function uploadTripDocument(formData: FormData) {
   const visibility = validateVisibility(
     String(formData.get("visibility") ?? "internal").trim(),
   );
+  const attachToCommission = formData.get("attach_to_commission") === "on";
   const file = formData.get("file");
 
   if (!tripId) throw new Error("Missing trip ID.");
@@ -241,6 +242,7 @@ async function uploadTripDocument(formData: FormData) {
       visibility,
       component_id: componentLink?.id ?? null,
       component_type: componentLink?.component_type ?? null,
+      attach_to_commission: Boolean(componentLink && attachToCommission),
       uploaded_by_user_profile_id: userProfile.id,
     });
 
@@ -265,6 +267,7 @@ async function updateDocumentVisibility(formData: FormData) {
   const visibility = validateVisibility(
     String(formData.get("visibility") ?? "").trim(),
   );
+  const attachToCommission = formData.get("attach_to_commission") === "on";
 
   if (!tripId) throw new Error("Missing trip ID.");
   if (!documentId) throw new Error("Missing document ID.");
@@ -302,6 +305,7 @@ async function updateDocumentVisibility(formData: FormData) {
       visibility,
       component_id: componentLink?.id ?? null,
       component_type: componentLink?.component_type ?? null,
+      attach_to_commission: Boolean(componentLink && attachToCommission),
     })
     .eq("id", documentId)
     .eq("trip_id", tripId);
@@ -577,6 +581,23 @@ export default async function AdminTripDocumentsPage({
           </select>
         </label>
 
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px",
+            borderRadius: 12,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <input type="checkbox" name="attach_to_commission" />
+          <span style={{ fontWeight: 800 }}>
+            Attach to matching commission
+          </span>
+        </label>
+
         <div
           style={{
             padding: "12px",
@@ -616,6 +637,7 @@ export default async function AdminTripDocumentsPage({
                 <tr>
                   <th>File Name</th>
                   <th>Component</th>
+                  <th>Commission</th>
                   <th>Visibility</th>
                   <th>Type</th>
                   <th>Size</th>
@@ -631,6 +653,7 @@ export default async function AdminTripDocumentsPage({
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
                     <td>{getComponentTypeLabel(doc.component_type)}</td>
+                    <td>{doc.attach_to_commission ? "Attached" : "No"}</td>
                     <td>
                       <VisibilityBadge visibility={doc.visibility} />
                     </td>
@@ -681,6 +704,14 @@ export default async function AdminTripDocumentsPage({
                           <option value="client">Client & Agent</option>
                           <option value="travel_circle">Travel Circle & Agent</option>
                         </select>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800 }}>
+                          <input
+                            type="checkbox"
+                            name="attach_to_commission"
+                            defaultChecked={Boolean(doc.attach_to_commission)}
+                          />
+                          Commission
+                        </label>
                         <button
                           type="submit"
                           className="btn btn-primary"

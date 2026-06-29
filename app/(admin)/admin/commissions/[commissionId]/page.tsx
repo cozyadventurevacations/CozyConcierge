@@ -43,6 +43,7 @@ type CommissionDocumentRow = {
   storage_path: string;
   visibility: string | null;
   component_type: string | null;
+  attach_to_commission: boolean | null;
   created_at: string | null;
   signedUrl?: string | null;
 };
@@ -375,9 +376,10 @@ export default async function CommissionDetailPage({
     ? await (async () => {
         const { data: documents } = await supabase
           .from("trip_documents")
-          .select("id, file_name, storage_path, visibility, component_type, created_at")
+          .select("id, file_name, storage_path, visibility, component_type, attach_to_commission, created_at")
           .eq("trip_id", row.trip_id)
           .eq("component_id", row.component_id)
+          .eq("attach_to_commission", true)
           .order("created_at", { ascending: false });
 
         return Promise.all(
@@ -565,7 +567,7 @@ export default async function CommissionDetailPage({
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Attached Component Documents</h2>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          These secure files come from the trip documents attached to the same travel component as this commission.
+          These secure files come from trip documents attached to the same travel component and marked for commission review.
         </p>
 
         {!row.component_id ? (
@@ -574,7 +576,7 @@ export default async function CommissionDetailPage({
           </p>
         ) : attachedDocuments.length === 0 ? (
           <p style={{ margin: 0, color: "#667085" }}>
-            No documents are attached to this component yet.
+            No component documents are marked for commission review yet.
           </p>
         ) : (
           <div style={{ width: "100%", overflowX: "auto" }}>

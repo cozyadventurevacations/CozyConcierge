@@ -36,6 +36,31 @@ const billableTripComponentTypes = [
 
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 
+const MAX_COMPONENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
+
+const allowedComponentDocumentMimeTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+const allowedComponentDocumentExtensions = [
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+];
+
 const defaultTripMilestones = [
   { title: "Quote requested", description: "Initial client request or inquiry has been received." },
   { title: "Trip created", description: "Trip record has been created in Cozy Concierge." },
@@ -312,6 +337,35 @@ function requireAllowedValue(
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
+}
+
+function getUploadedFileExtension(fileName: string) {
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex === -1) return "";
+  return fileName.slice(lastDotIndex).toLowerCase();
+}
+
+function validateComponentDocumentFile(file: File) {
+  if (file.size === 0) {
+    throw new Error("Selected file is empty.");
+  }
+
+  if (file.size > MAX_COMPONENT_DOCUMENT_SIZE_BYTES) {
+    throw new Error("File is too large. Maximum upload size is 15MB.");
+  }
+
+  const extension = getUploadedFileExtension(file.name);
+  const mimeType = file.type || "";
+  const hasAllowedExtension = allowedComponentDocumentExtensions.includes(extension);
+  const hasAllowedMimeType = mimeType
+    ? allowedComponentDocumentMimeTypes.includes(mimeType)
+    : false;
+
+  if (!hasAllowedExtension || (mimeType && !hasAllowedMimeType)) {
+    throw new Error(
+      "Invalid file type. Allowed files: PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, and XLSX.",
+    );
+  }
 }
 
 function buildSubmittedAddress(formData: FormData, prefix: string) {
@@ -652,6 +706,86 @@ function AiWritingToolButton({
           Save this component first, then generate copy.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function ComponentDocumentUploadCard({
+  formId,
+  componentLabel,
+  componentId,
+}: {
+  formId: string;
+  componentLabel: string;
+  componentId?: string | null;
+}) {
+  const disabled = !componentId;
+
+  return (
+    <div
+      className="card stack"
+      style={{
+        background: "#f8fafc",
+        border: "1px solid #dbeafe",
+      }}
+    >
+      <div>
+        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+          Booking Documents
+        </p>
+        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 13 }}>
+          Upload confirmations, invoices, vouchers, or supplier files directly to this {componentLabel.toLowerCase()} component.
+        </p>
+      </div>
+
+      {disabled ? (
+        <p style={{ margin: 0, color: "#92400e", fontSize: 13, fontWeight: 700 }}>
+          Save this component first, then upload documents to it.
+        </p>
+      ) : (
+        <>
+          <input type="hidden" name="component_id" value={componentId ?? ""} form={formId} />
+          <label className="stack-sm">
+            <span className="label">Document File</span>
+            <input
+              className="input"
+              type="file"
+              name="file"
+              form={formId}
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+            />
+          </label>
+
+          <label className="stack-sm">
+            <span className="label">Visibility</span>
+            <select className="select" name="visibility" defaultValue="internal" form={formId}>
+              <option value="internal">Agent Only</option>
+              <option value="client">Client & Agent</option>
+              <option value="travel_circle">Travel Circle & Agent</option>
+            </select>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              fontWeight: 800,
+            }}
+          >
+            <input type="checkbox" name="attach_to_commission" form={formId} />
+            Attach this document to the component commission
+          </label>
+
+          <button type="submit" className="btn btn-outline" form={formId} style={{ alignSelf: "flex-start" }}>
+            Upload to {componentLabel}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -1945,6 +2079,95 @@ async function generateTripItinerarySummary(formData: FormData) {
   redirect(`/admin/trips/${tripId}?saved=ai-itinerary#trip-notes`);
 }
 
+async function uploadComponentDocument(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const componentId = String(formData.get("component_id") ?? "").trim();
+  const visibility = requireAllowedValue(
+    String(formData.get("visibility") ?? "internal").trim(),
+    ["internal", "client", "travel_circle"],
+    "internal",
+  );
+  const attachToCommission = formData.get("attach_to_commission") === "on";
+  const file = formData.get("file");
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!componentId) throw new Error("Save this component before uploading a document.");
+  if (!(file instanceof File)) throw new Error("File is required.");
+
+  validateComponentDocumentFile(file);
+
+  const { data: userProfile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (profileError || !userProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const { data: component, error: componentError } = await supabase
+    .from("trip_components")
+    .select("id, trip_id, component_type")
+    .eq("id", componentId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (componentError || !component) {
+    throw new Error("Selected trip component was not found.");
+  }
+
+  const safeFileName =
+    file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/_+/g, "_") || "document";
+
+  const storagePath = `${tripId}/components/${component.component_type}/${crypto.randomUUID()}-${safeFileName}`;
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from("trip-documents")
+    .upload(storagePath, fileBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { error: insertError } = await supabase
+    .from("trip_documents")
+    .insert({
+      trip_id: tripId,
+      file_name: file.name,
+      storage_path: storagePath,
+      mime_type: file.type || null,
+      file_size_bytes: file.size,
+      visibility,
+      component_id: component.id,
+      component_type: component.component_type,
+      attach_to_commission: attachToCommission,
+      uploaded_by_user_profile_id: userProfile.id,
+    });
+
+  if (insertError) {
+    await supabase.storage.from("trip-documents").remove([storagePath]);
+    throw new Error(insertError.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?documentUploaded=1#${component.component_type}-component`);
+}
+
 async function updateTrip(formData: FormData) {
   "use server";
 
@@ -3232,10 +3455,10 @@ export default async function AdminTripEditorPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; documentUploaded?: string }>;
 }) {
   const { tripId } = await params;
-  const { saved } = await searchParams;
+  const { saved, documentUploaded } = await searchParams;
   const savedMessage = getSavedSectionMessage(saved);
   const { supabase } = await requireAdmin();
 
@@ -3812,6 +4035,24 @@ export default async function AdminTripEditorPage({
         <input type="hidden" name="trip_id" value={trip.id} />
       </form>
 
+      {[
+        "hotel",
+        "air",
+        "cruise",
+        "transfer",
+        "activity",
+        "insurance",
+      ].map((componentType) => (
+        <form
+          key={componentType}
+          id={`upload-${componentType}-document-form`}
+          action={uploadComponentDocument}
+          style={{ display: "none" }}
+        >
+          <input type="hidden" name="trip_id" value={trip.id} />
+        </form>
+      ))}
+
       <form action={updateTrip} className="stack">
         <input type="hidden" name="trip_id" value={trip.id} />
 
@@ -3827,6 +4068,22 @@ export default async function AdminTripEditorPage({
             <p style={{ margin: 0, fontWeight: 900 }}>{savedMessage}</p>
             <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
               Your latest trip changes are saved.
+            </p>
+          </div>
+        ) : null}
+
+        {documentUploaded ? (
+          <div
+            className="card"
+            style={{
+              border: "1px solid #bbf7d0",
+              background: "#f0fdf4",
+              color: "#166534",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 900 }}>Document uploaded.</p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+              The file is saved to this component and will appear on the commission only if you checked that option.
             </p>
           </div>
         ) : null}
@@ -5221,6 +5478,11 @@ export default async function AdminTripEditorPage({
             fullCommissionAmount={hotel.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="hotel" disabled={!hotel.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-hotel-document-form"
+            componentLabel="Hotel"
+            componentId={hotel.component?.id}
+          />
           <div className="grid grid-2">
             <SupplierSelect
               name="hotel_supplier_id"
@@ -5398,6 +5660,11 @@ export default async function AdminTripEditorPage({
             fullCommissionAmount={air.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="air" disabled={!air.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-air-document-form"
+            componentLabel="Air"
+            componentId={air.component?.id}
+          />
 
           <div className="grid grid-2">
             <SupplierSelect
@@ -5706,6 +5973,11 @@ export default async function AdminTripEditorPage({
             fullCommissionAmount={cruise.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="cruise" disabled={!cruise.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-cruise-document-form"
+            componentLabel="Cruise"
+            componentId={cruise.component?.id}
+          />
           <div className="grid grid-2">
             <SupplierSelect
               name="cruise_supplier_id"
@@ -5890,6 +6162,11 @@ export default async function AdminTripEditorPage({
             }
           />
           <AiWritingToolButton componentType="transfer" disabled={!transfer.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-transfer-document-form"
+            componentLabel="Transfer"
+            componentId={transfer.component?.id}
+          />
           <div className="grid grid-2">
             <SupplierSelect
               name="transfer_supplier_id"
@@ -6121,6 +6398,11 @@ export default async function AdminTripEditorPage({
             }
           />
           <AiWritingToolButton componentType="activity" disabled={!activity.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-activity-document-form"
+            componentLabel="Activity"
+            componentId={activity.component?.id}
+          />
           <div className="grid grid-2">
             <SupplierSelect
               name="activity_supplier_id"
@@ -6348,6 +6630,11 @@ export default async function AdminTripEditorPage({
             }
           />
           <AiWritingToolButton componentType="insurance" disabled={!insurance.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-insurance-document-form"
+            componentLabel="Insurance"
+            componentId={insurance.component?.id}
+          />
           <div className="grid grid-2">
             <SupplierSelect
               name="insurance_supplier_id"
