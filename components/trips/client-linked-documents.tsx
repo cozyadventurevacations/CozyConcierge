@@ -304,7 +304,7 @@ export async function ClientLinkedDocuments({ tripId }: { tripId: string }) {
 
                   <td>{formatDateTime(clientDocument?.created_at)}</td>
 
-                  <td>{linkedDocument.notes ?? clientDocument?.notes ?? "Not provided"}</td>
+                  <td className="preserve-formatting">{linkedDocument.notes ?? clientDocument?.notes ?? "Not provided"}</td>
 
                   <td>
                     {linkedDocument.signedUrl ? (

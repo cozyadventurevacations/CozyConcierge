@@ -388,7 +388,7 @@ function InfoItem({ label, value }: { label: string; value: string | number | nu
   return (
     <div style={{ padding: "12px", border: "1px solid #eef2f5", borderRadius: 12, background: "#fbfdfe" }}>
       <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45, color: isEmpty ? "#aab8c2" : "inherit", fontStyle: isEmpty ? "italic" : "normal" }}>{display}</p>
+      <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.45, color: isEmpty ? "#aab8c2" : "inherit", fontStyle: isEmpty ? "italic" : "normal" }}>{display}</p>
     </div>
   );
 }
@@ -688,7 +688,7 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
         <div className="card stack" style={{ borderLeft: "4px solid var(--accent-dark)", background: "#f7fbfc", borderRadius: "0 16px 16px 0" }}>
           <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Important Reminder</p>
           <h3 style={{ margin: "4px 0 0" }}>{clientReminder.title ?? "Reminders Before You Travel"}</h3>
-          <p style={{ margin: 0, lineHeight: 1.65, color: "#374151" }}>{clientReminder.content}</p>
+          <p className="preserve-formatting" style={{ margin: 0, lineHeight: 1.65, color: "#374151" }}>{clientReminder.content}</p>
         </div>
       )}
 
@@ -732,13 +732,13 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
           {proposal.proposal_welcome_text && (
             <div>
               <span className="label">Welcome Note</span>
-              <p style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_welcome_text}</p>
+              <p className="preserve-formatting" style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_welcome_text}</p>
             </div>
           )}
           {proposal.proposal_closing_text && (
             <div>
               <span className="label">Closing Note</span>
-              <p style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_closing_text}</p>
+              <p className="preserve-formatting" style={{ lineHeight: 1.7, margin: "6px 0 0", color: "#374151" }}>{proposal.proposal_closing_text}</p>
             </div>
           )}
         </SectionCard>
@@ -748,7 +748,7 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
         <div className="card stack" style={{ borderLeft: "4px solid var(--accent-dark)", borderRadius: "0 16px 16px 0" }}>
           <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Advisor Note</p>
           <h3 style={{ margin: "4px 0 0" }}>{clientNote.title ?? "Notes from Your Advisor"}</h3>
-          <p style={{ lineHeight: 1.65, margin: 0, color: "#374151" }}>{clientNote.content}</p>
+          <p className="preserve-formatting" style={{ lineHeight: 1.65, margin: 0, color: "#374151" }}>{clientNote.content}</p>
         </div>
       )}
     </div>

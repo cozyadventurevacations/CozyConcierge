@@ -231,7 +231,7 @@ function InfoItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div style={{ padding: "12px", border: "1px solid #eef2f5", borderRadius: 12, background: "#fbfdfe" }}>
       <span className="label">{label}</span>
-      <p style={{ margin: "6px 0 0", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+      <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.45 }}>
         {isEmpty ? "Not provided" : value}
       </p>
     </div>
@@ -858,7 +858,7 @@ export default async function AdminClientDetailPage({
                                 <td>{loyalty.company_name}</td>
                                 <td>{loyalty.program_name ?? "Not provided"}</td>
                                 <td><SensitiveField value={safeDecrypt(loyalty.loyalty_number)} /></td>
-                                <td>{loyalty.notes ?? "Not provided"}</td>
+                                <td className="preserve-formatting">{loyalty.notes ?? "Not provided"}</td>
                                 <td>{formatDateTime(loyalty.created_at, "")}</td>
                               </tr>
                             ))}

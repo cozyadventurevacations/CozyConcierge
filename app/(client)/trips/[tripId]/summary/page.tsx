@@ -110,7 +110,7 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", gap: 10, padding: "9px 0", borderBottom: "1px solid #eef4f6" }}>
       <strong style={{ color: "#64748b" }}>{label}</strong>
-      <span style={{ lineHeight: 1.45 }}>{value || "Not provided"}</span>
+      <span className="preserve-formatting" style={{ lineHeight: 1.45 }}>{value || "Not provided"}</span>
     </div>
   );
 }

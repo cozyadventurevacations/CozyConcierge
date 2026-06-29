@@ -192,7 +192,7 @@ function InfoItem({
         {label}
       </p>
 
-      <p style={{ margin: "4px 0 0", fontWeight: 700, lineHeight: 1.5 }}>
+      <p className="preserve-formatting" style={{ margin: "4px 0 0", fontWeight: 700, lineHeight: 1.5 }}>
         {value === null || value === undefined || value === "" ? "Not provided" : value}
       </p>
     </div>

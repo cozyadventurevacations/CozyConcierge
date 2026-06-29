@@ -1333,7 +1333,7 @@ function SnapshotRow({
       }}
     >
       <span className="label">{label}</span>
-      <span style={{ lineHeight: 1.45 }}>{value === null || value === undefined || value === "" ? "Not provided" : value}</span>
+      <span className="preserve-formatting" style={{ lineHeight: 1.45 }}>{value === null || value === undefined || value === "" ? "Not provided" : value}</span>
     </div>
   );
 }

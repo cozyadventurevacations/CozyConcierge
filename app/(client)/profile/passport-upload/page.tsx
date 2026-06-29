@@ -789,7 +789,7 @@ export default async function PassportUploadPage({
                     <td>{document.document_title}</td>
                     <td>{document.file_name}</td>
                     <td>{formatDateTime(document.created_at)}</td>
-                    <td>{document.notes ?? "Not provided"}</td>
+                    <td className="preserve-formatting">{document.notes ?? "Not provided"}</td>
                     <td>
                       {document.signedUrl ? (
                         <a

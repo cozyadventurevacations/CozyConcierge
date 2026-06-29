@@ -165,6 +165,14 @@ select {
 .textarea {
   min-height: 120px;
   resize: vertical;
+  white-space: pre-wrap;
+  tab-size: 2;
+}
+
+.preserve-formatting {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .btn {
