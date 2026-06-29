@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
+import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
 type ClientOption = {
@@ -216,15 +217,13 @@ export default async function AdminCreateTripPage({
                 />
               </label>
 
-              <label className="stack-sm">
-                <span className="label">Departure Date</span>
-                <input className="input" type="date" name="departure_date" required />
-              </label>
-
-              <label className="stack-sm">
-                <span className="label">Return Date</span>
-                <input className="input" type="date" name="return_date" required />
-              </label>
+              <LinkedDateRange
+                startName="departure_date"
+                endName="return_date"
+                startLabel="Departure Date"
+                endLabel="Return Date"
+                required
+              />
 
               <label className="stack-sm">
                 <span className="label">Occasion</span>

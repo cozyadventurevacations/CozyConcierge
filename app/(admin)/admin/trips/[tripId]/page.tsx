@@ -8,6 +8,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { AirlinePicker } from "@/components/forms/airline-picker";
 import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
+import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 
@@ -4647,25 +4648,14 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Departure Date</span>
-              <input
-                className="input"
-                type="date"
-                name="departure_date"
-                defaultValue={trip.departure_date ?? ""}
-              />
-            </label>
-
-            <label>
-              <span className="label">Return Date</span>
-              <input
-                className="input"
-                type="date"
-                name="return_date"
-                defaultValue={trip.return_date ?? ""}
-              />
-            </label>
+            <LinkedDateRange
+              startName="departure_date"
+              endName="return_date"
+              startLabel="Departure Date"
+              endLabel="Return Date"
+              startDefaultValue={trip.departure_date}
+              endDefaultValue={trip.return_date}
+            />
 
             <label>
               <span className="label">Occasion</span>
@@ -5258,25 +5248,14 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Check-in</span>
-              <input
-                className="input"
-                type="date"
-                name="hotel_check_in_date"
-                defaultValue={hotel.details?.check_in_date ?? ""}
-              />
-            </label>
-
-            <label>
-              <span className="label">Check-out</span>
-              <input
-                className="input"
-                type="date"
-                name="hotel_check_out_date"
-                defaultValue={hotel.details?.check_out_date ?? ""}
-              />
-            </label>
+            <LinkedDateRange
+              startName="hotel_check_in_date"
+              endName="hotel_check_out_date"
+              startLabel="Check-in"
+              endLabel="Check-out"
+              startDefaultValue={hotel.details?.check_in_date}
+              endDefaultValue={hotel.details?.check_out_date}
+            />
 
             <label>
               <span className="label">Room Category</span>
@@ -5744,25 +5723,14 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Sailing Date</span>
-              <input
-                className="input"
-                type="date"
-                name="cruise_sailing_date"
-                defaultValue={cruise.details?.sailing_date ?? ""}
-              />
-            </label>
-
-            <label>
-              <span className="label">Return Date</span>
-              <input
-                className="input"
-                type="date"
-                name="cruise_return_date"
-                defaultValue={cruise.details?.return_date ?? ""}
-              />
-            </label>
+            <LinkedDateRange
+              startName="cruise_sailing_date"
+              endName="cruise_return_date"
+              startLabel="Sailing Date"
+              endLabel="Return Date"
+              startDefaultValue={cruise.details?.sailing_date}
+              endDefaultValue={cruise.details?.return_date}
+            />
 
             <label>
               <span className="label">Departure Port</span>
@@ -6394,25 +6362,14 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Coverage Start Date</span>
-              <input
-                className="input"
-                type="date"
-                name="insurance_coverage_start_date"
-                defaultValue={insurance.details?.coverage_start_date ?? ""}
-              />
-            </label>
-
-            <label>
-              <span className="label">Coverage End Date</span>
-              <input
-                className="input"
-                type="date"
-                name="insurance_coverage_end_date"
-                defaultValue={insurance.details?.coverage_end_date ?? ""}
-              />
-            </label>
+            <LinkedDateRange
+              startName="insurance_coverage_start_date"
+              endName="insurance_coverage_end_date"
+              startLabel="Coverage Start Date"
+              endLabel="Coverage End Date"
+              startDefaultValue={insurance.details?.coverage_start_date}
+              endDefaultValue={insurance.details?.coverage_end_date}
+            />
 
             <label>
               <span className="label">Insured Traveler Count</span>
