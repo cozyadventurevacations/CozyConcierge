@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { labelForEmailAutomationType } from "@/lib/email-automations/config";
 
 const FROM_EMAIL = "jeremyb@cozyadventurevacations.com";
 const FROM_NAME = "Jeremy | Cozy Adventure Vacations";
@@ -31,6 +32,13 @@ type EmailPreferenceClient = {
   notify_trip_updates?: boolean | null;
 };
 
+type AutomationSetting = {
+  email_type: string;
+  enabled: boolean | null;
+  subject_override: string | null;
+  custom_note: string | null;
+};
+
 function wantsPaymentReminders(client: EmailPreferenceClient | null | undefined) {
   return client?.notify_payment_reminders !== false;
 }
@@ -55,6 +63,49 @@ function emailWrapper(content: string) {
         <p style="margin: 4px 0 0;">Please do not reply with credit card numbers, passport scans, passwords, or other sensitive information. Use your <a href="${PORTAL_URL}" style="color: #2c5f8a;">secure client portal</a> for document uploads.</p>
       </div>
     </div>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function applyAutomationSetting(
+  message: { subject: string; html: string },
+  setting: AutomationSetting | null | undefined,
+) {
+  const subjectOverride = setting?.subject_override?.trim();
+  const customNote = setting?.custom_note?.trim();
+
+  let html = message.html;
+
+  if (customNote) {
+    const noteHtml = `
+      <div style="margin: 18px 0; padding: 14px; border-radius: 10px; background: #f7fbfc; border: 1px solid #dbeafe; color: #123f5b;">
+        ${escapeHtml(customNote).replace(/\n/g, "<br/>")}
+      </div>`;
+
+    html = html.replace(
+      '<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; font-size: 13px; color: #888;">',
+      `${noteHtml}<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; font-size: 13px; color: #888;">`,
+    );
+  }
+
+  return {
+    subject: subjectOverride || message.subject,
+    html,
+  };
+}
+
+function settingFor(settings: Map<string, AutomationSetting>, emailType: string) {
+  return settings.get(emailType) ?? null;
+}
+
+function isAutomationEnabled(settings: Map<string, AutomationSetting>, emailType: string) {
+  return settingFor(settings, emailType)?.enabled !== false;
 }
 
 // ─── Email Templates ──────────────────────────────────────────────────────────
@@ -291,6 +342,17 @@ export async function GET(request: Request) {
   const skipped: string[] = [];
   const errors: string[] = [];
 
+  const { data: automationSettingsData } = await supabase
+    .from("email_automation_settings")
+    .select("email_type, enabled, subject_override, custom_note");
+
+  const automationSettings = new Map(
+    ((automationSettingsData ?? []) as AutomationSetting[]).map((setting) => [
+      setting.email_type,
+      setting,
+    ]),
+  );
+
   async function sendEmail(
     to: string,
     subject: string,
@@ -300,17 +362,28 @@ export async function GET(request: Request) {
     tripId: string | null,
     emailType: string
   ) {
+    if (!isAutomationEnabled(automationSettings, emailType)) {
+      skipped.push(`${labelForEmailAutomationType(emailType)} (${tag}) paused`);
+      return;
+    }
+
     const duplicate = await alreadySent(supabase, clientAccountId, tripId, emailType, todayStr);
     if (duplicate) {
       skipped.push(`${tag} (duplicate)`);
       return;
     }
+
+    const adjustedMessage = applyAutomationSetting(
+      { subject, html },
+      settingFor(automationSettings, emailType),
+    );
+
     try {
       await resend.emails.send({
         from: `${FROM_NAME} <${FROM_EMAIL}>`,
         to,
-        subject,
-        html,
+        subject: adjustedMessage.subject,
+        html: adjustedMessage.html,
       });
       await logEmail(supabase, clientAccountId, tripId, emailType, todayStr, "sent");
       sent.push(tag);
