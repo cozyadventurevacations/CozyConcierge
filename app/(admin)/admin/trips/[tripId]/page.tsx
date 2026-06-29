@@ -3307,6 +3307,43 @@ async function softDeleteTripFromDetail(formData: FormData) {
   revalidatePath("/admin/dashboard");
 }
 
+async function overrideSoftDeleteTripFromDetail(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const confirmation = String(formData.get("override_confirmation") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (confirmation !== "OVERRIDE DELETE TRIP") {
+    throw new Error("Override delete requires typing OVERRIDE DELETE TRIP.");
+  }
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, deleted_at")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+  if (trip.deleted_at) throw new Error("Trip is already deleted.");
+
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deletion_requested_at: null,
+      deletion_requested_by: null,
+    })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin/dashboard");
+}
+
 async function addTripPaymentLedgerEntry(formData: FormData) {
   "use server";
 
@@ -4026,6 +4063,14 @@ export default async function AdminTripEditorPage({
       </form>
 
       <form
+        id="override-soft-delete-trip-detail-form"
+        action={overrideSoftDeleteTripFromDetail}
+        style={{ display: "none" }}
+      >
+        <input type="hidden" name="trip_id" value={trip.id} />
+      </form>
+
+      <form
         id="add-trip-payment-ledger-entry-form"
         action={addTripPaymentLedgerEntry}
         style={{ display: "none" }}
@@ -4144,6 +4189,47 @@ export default async function AdminTripEditorPage({
                 )}
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {!tripDeleted && !deletionEligibility.allowed ? (
+          <div
+            className="card stack"
+            style={{
+              border: "1px solid #fecaca",
+              background: "#fff1f2",
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0, color: "#be123c" }}>Override Trip Deletion Protection</h3>
+              <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
+                Normal deletion is blocked because this trip has protected activity:
+                {" "}{deletionEligibility.reason}. Use this only for clearing test data
+                before launch. This is still a soft delete, so the trip can be restored
+                from the deleted trips view.
+              </p>
+            </div>
+
+            <label className="stack-sm" style={{ maxWidth: 420 }}>
+              <span className="label" style={{ color: "#9f1239" }}>
+                Type OVERRIDE DELETE TRIP
+              </span>
+              <input
+                className="input"
+                name="override_confirmation"
+                form="override-soft-delete-trip-detail-form"
+                placeholder="OVERRIDE DELETE TRIP"
+              />
+            </label>
+
+            <button
+              type="submit"
+              form="override-soft-delete-trip-detail-form"
+              className="btn btn-outline"
+              style={{ color: "#be123c", borderColor: "#fecaca", alignSelf: "flex-start" }}
+            >
+              Override and Soft Delete Trip
+            </button>
           </div>
         ) : null}
 

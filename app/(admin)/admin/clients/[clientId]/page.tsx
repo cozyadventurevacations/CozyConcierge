@@ -430,6 +430,183 @@ async function deleteClientAccount(formData: FormData) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+async function deleteRowsByIds(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  table: string,
+  column: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return;
+
+  const { error } = await supabase
+    .from(table as any)
+    .delete()
+    .in(column, ids);
+
+  if (error) throw new Error(error.message);
+}
+
+async function deleteRowsByColumn(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  table: string,
+  column: string,
+  value: string,
+) {
+  const { error } = await supabase
+    .from(table as any)
+    .delete()
+    .eq(column, value);
+
+  if (error) throw new Error(error.message);
+}
+
+async function deleteOwnedTripRecords(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  tripIds: string[],
+) {
+  if (tripIds.length === 0) return;
+
+  const { data: componentRows, error: componentError } = await supabase
+    .from("trip_components" as any)
+    .select("id")
+    .in("trip_id", tripIds);
+
+  if (componentError) throw new Error(componentError.message);
+
+  const componentIds = (componentRows ?? [])
+    .map((component: { id?: string | null }) => component.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (componentIds.length > 0) {
+    await deleteRowsByIds(supabase, "flight_segments", "air_component_id", componentIds);
+    await deleteRowsByIds(supabase, "air_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "hotel_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "cruise_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "transfer_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "activity_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "insurance_components", "component_id", componentIds);
+  }
+
+  const { data: tripDocuments } = await supabase
+    .from("trip_documents" as any)
+    .select("storage_path")
+    .in("trip_id", tripIds);
+
+  const tripDocumentPaths = (tripDocuments ?? [])
+    .map((document: { storage_path?: string | null }) => document.storage_path)
+    .filter((path): path is string => Boolean(path));
+
+  if (tripDocumentPaths.length > 0) {
+    await supabase.storage.from("trip-documents").remove(tripDocumentPaths);
+  }
+
+  await deleteRowsByIds(supabase, "messages", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "message_threads", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_member_invites", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_members", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "payment_requests", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "email_automation_log", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_payment_ledger", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_milestones", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_notes", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_client_documents", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_documents", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "commissions", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_components", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trips", "id", tripIds);
+}
+
+async function overrideDeleteClientAccount(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const clientId = String(formData.get("client_id") ?? "").trim();
+  const confirmation = String(formData.get("override_delete_confirmation") ?? "").trim();
+  const acknowledged = formData.get("override_delete_acknowledgement") === "on";
+
+  if (!clientId) throw new Error("Missing client ID.");
+  if (!acknowledged || confirmation !== "OVERRIDE DELETE CLIENT") {
+    throw new Error("Override deletion requires checking the acknowledgement box and typing OVERRIDE DELETE CLIENT.");
+  }
+
+  const { data: ownedTrips, error: ownedTripsError } = await supabase
+    .from("trips")
+    .select("id")
+    .eq("client_account_id", clientId);
+
+  if (ownedTripsError) throw new Error(ownedTripsError.message);
+
+  const ownedTripIds = (ownedTrips ?? [])
+    .map((trip: { id?: string | null }) => trip.id)
+    .filter((id): id is string => Boolean(id));
+
+  await deleteOwnedTripRecords(supabase, ownedTripIds);
+
+  const { data: askCozyThreads, error: askCozyError } = await supabase
+    .from("ask_cozy_threads" as any)
+    .select("id")
+    .eq("client_account_id", clientId);
+
+  if (askCozyError) throw new Error(askCozyError.message);
+
+  const askCozyThreadIds = (askCozyThreads ?? [])
+    .map((thread: { id?: string | null }) => thread.id)
+    .filter((id): id is string => Boolean(id));
+
+  await deleteRowsByIds(supabase, "ask_cozy_messages", "thread_id", askCozyThreadIds);
+  await deleteRowsByColumn(supabase, "ask_cozy_threads", "client_account_id", clientId);
+
+  const { data: messageThreads, error: messageThreadError } = await supabase
+    .from("message_threads" as any)
+    .select("id")
+    .eq("client_account_id", clientId);
+
+  if (messageThreadError) throw new Error(messageThreadError.message);
+
+  const messageThreadIds = (messageThreads ?? [])
+    .map((thread: { id?: string | null }) => thread.id)
+    .filter((id): id is string => Boolean(id));
+
+  await deleteRowsByIds(supabase, "messages", "thread_id", messageThreadIds);
+  await deleteRowsByColumn(supabase, "messages", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "messages", "sender_client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "message_threads", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "trip_members", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "payment_requests", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "email_automation_log", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "client_notes", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "quote_requests", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "traveler_loyalty_numbers", "client_account_id", clientId);
+  await deleteRowsByColumn(supabase, "traveler_profiles", "client_account_id", clientId);
+
+  const { data: clientDocuments } = await supabase
+    .from("client_documents")
+    .select("storage_path")
+    .eq("client_account_id", clientId);
+
+  const clientDocumentPaths = (clientDocuments ?? [])
+    .map((document: { storage_path?: string | null }) => document.storage_path)
+    .filter((path): path is string => Boolean(path));
+
+  if (clientDocumentPaths.length > 0) {
+    await supabase.storage.from("client-documents").remove(clientDocumentPaths);
+  }
+
+  await deleteRowsByColumn(supabase, "client_documents", "client_account_id", clientId);
+
+  const { error } = await supabase
+    .from("client_accounts")
+    .delete()
+    .eq("id", clientId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/clients");
+  revalidatePath("/admin/dashboard");
+  redirect("/admin/clients?deleted=1");
+}
+
 export default async function AdminClientDetailPage({
   params,
   searchParams,
@@ -1130,6 +1307,33 @@ export default async function AdminClientDetailPage({
             Delete Client
           </button>
         </form>
+
+        <div className="card stack" style={{ border: "1px solid #be123c", background: "#ffffff" }}>
+          <div>
+            <h3 style={{ margin: 0, color: "#be123c" }}>Override Delete Client</h3>
+            <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
+              Use this only for clearing test data before launch. This permanently
+              deletes this client&apos;s app history, owned trips, Travel Circle access,
+              messages, notes, documents, traveler profiles, payment requests, and
+              client record. This cannot be restored from the app.
+            </p>
+          </div>
+
+          <form action={overrideDeleteClientAccount} className="stack" style={{ maxWidth: 560 }}>
+            <input type="hidden" name="client_id" value={clientRow.id} />
+            <label className="row" style={{ alignItems: "flex-start", color: "#9f1239", lineHeight: 1.5 }}>
+              <input type="checkbox" name="override_delete_acknowledgement" style={{ marginTop: 4 }} />
+              <span>I understand this override permanently deletes linked app data for this client.</span>
+            </label>
+            <label className="stack-sm">
+              <span className="label" style={{ color: "#9f1239" }}>Type OVERRIDE DELETE CLIENT</span>
+              <input className="input" name="override_delete_confirmation" placeholder="OVERRIDE DELETE CLIENT" />
+            </label>
+            <button type="submit" className="btn btn-primary" style={{ background: "#be123c" }}>
+              Override Delete Client
+            </button>
+          </form>
+        </div>
       </div>
     </PageShell>
   );
