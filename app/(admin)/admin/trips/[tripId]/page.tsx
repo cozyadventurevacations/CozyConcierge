@@ -8,6 +8,8 @@ import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { AirlinePicker } from "@/components/forms/airline-picker";
 import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
+import { HotelLibraryPicker } from "@/components/forms/hotel-library-picker";
+import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
@@ -57,6 +59,8 @@ type SupplierOption = {
   supplier_name: string;
   supplier_type: string | null;
 };
+
+type HotelLibraryOption = HotelLibraryRow;
 
 type ClientInfo = {
   id: string;
@@ -3288,6 +3292,13 @@ export default async function AdminTripEditorPage({
 
   const supplierRows = (suppliers ?? []) as SupplierOption[];
 
+  const { data: hotelLibrary } = await supabase
+    .from("hotel_library")
+    .select("id, hotel_name, address_line_1, address_line_2, city, state, postal_code, country, phone, website_url, google_place_id, google_maps_url")
+    .order("hotel_name", { ascending: true });
+
+  const savedHotelRows = (hotelLibrary ?? []) as HotelLibraryOption[];
+
   const loadComponent = async (type: string, detailTable: string) => {
     const { data: component } = await supabase
       .from("trip_components")
@@ -5218,15 +5229,6 @@ export default async function AdminTripEditorPage({
             />
 
             <label>
-              <span className="label">Hotel Name</span>
-              <input
-                className="input"
-                name="hotel_name"
-                defaultValue={hotel.details?.hotel_name ?? ""}
-              />
-            </label>
-
-            <label>
               <span className="label">Booking Status</span>
               <select
                 className="select"
@@ -5239,34 +5241,29 @@ export default async function AdminTripEditorPage({
               </select>
             </label>
 
-            <div className="stack" style={{ gridColumn: "1 / -1" }}>
-              <h3 style={{ margin: 0 }}>Hotel Address</h3>
-              <AddressAutocomplete
-                addressLine1Default={hotel.component?.address_line_1 ?? hotel.details?.hotel_address ?? ""}
-                addressLine2Default={hotel.component?.address_line_2 ?? ""}
-                cityDefault={hotel.component?.city ?? ""}
-                stateDefault={hotel.component?.state ?? ""}
-                postalCodeDefault={hotel.component?.postal_code ?? ""}
-                fieldNames={{
-                  addressLine1: "hotel_address_line_1",
-                  addressLine2: "hotel_address_line_2",
-                  city: "hotel_city",
-                  state: "hotel_state",
-                  postalCode: "hotel_postal_code",
-                }}
-                addressLine1Label="Hotel Address Line 1"
-              />
-              <label className="stack-sm">
-                <span className="label">Country</span>
-                <input
-                  className="input"
-                  name="hotel_country"
-                  defaultValue={hotel.component?.country ?? ""}
-                  placeholder="United States"
-                  autoComplete="country-name"
-                />
-              </label>
-            </div>
+            <HotelLibraryPicker
+              savedHotels={savedHotelRows}
+              fieldNames={{
+                hotelName: "hotel_name",
+                googlePlaceId: "hotel_google_place_id",
+                addressLine1: "hotel_address_line_1",
+                addressLine2: "hotel_address_line_2",
+                city: "hotel_city",
+                state: "hotel_state",
+                postalCode: "hotel_postal_code",
+                country: "hotel_country",
+              }}
+              defaults={{
+                hotelName: hotel.details?.hotel_name ?? "",
+                addressLine1: hotel.component?.address_line_1 ?? hotel.details?.hotel_address ?? "",
+                addressLine2: hotel.component?.address_line_2 ?? "",
+                city: hotel.component?.city ?? "",
+                state: hotel.component?.state ?? "",
+                postalCode: hotel.component?.postal_code ?? "",
+                country: hotel.component?.country ?? "",
+              }}
+              title="Hotel Lookup"
+            />
 
             <label>
               <span className="label">Stars</span>
