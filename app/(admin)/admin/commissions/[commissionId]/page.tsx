@@ -17,6 +17,8 @@ type CommissionDetail = {
   id: string;
   client_account_id: string | null;
   trip_id: string | null;
+  component_id: string | null;
+  component_type: string | null;
   supplier_id: string | null;
   commission_name: string;
   booking_number: string | null;
@@ -33,6 +35,16 @@ type CommissionDetail = {
   received_payment_date: string | null;
   notes: string | null;
   created_at: string | null;
+};
+
+type CommissionDocumentRow = {
+  id: string;
+  file_name: string;
+  storage_path: string;
+  visibility: string | null;
+  component_type: string | null;
+  created_at: string | null;
+  signedUrl?: string | null;
 };
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
@@ -100,6 +112,25 @@ function calculateExpectedCommission(
   const percentage = Number(agencyCommissionPercent ?? 90);
 
   return Math.round(fullCommission * (percentage / 100) * 100) / 100;
+}
+
+function getComponentTypeLabel(componentType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    hotel: "Hotel",
+    air: "Air",
+    cruise: "Cruise",
+    transfer: "Transfer",
+    activity: "Activity",
+    insurance: "Insurance",
+  };
+
+  return componentType ? labels[componentType] ?? componentType : "Not linked";
+}
+
+function getVisibilityLabel(visibility: string | null | undefined) {
+  if (visibility === "client") return "Client & Agent";
+  if (visibility === "travel_circle") return "Travel Circle & Agent";
+  return "Agent Only";
 }
 
 function InfoItem({
@@ -340,6 +371,30 @@ export default async function CommissionDetailPage({
   const outstandingAmount =
     expectedCommissionAmount - Number(row.received_commission_amount ?? 0);
 
+  const attachedDocuments: CommissionDocumentRow[] = row.trip_id && row.component_id
+    ? await (async () => {
+        const { data: documents } = await supabase
+          .from("trip_documents")
+          .select("id, file_name, storage_path, visibility, component_type, created_at")
+          .eq("trip_id", row.trip_id)
+          .eq("component_id", row.component_id)
+          .order("created_at", { ascending: false });
+
+        return Promise.all(
+          ((documents ?? []) as CommissionDocumentRow[]).map(async (document) => {
+            const { data } = await supabase.storage
+              .from("trip-documents")
+              .createSignedUrl(document.storage_path, 60 * 60);
+
+            return {
+              ...document,
+              signedUrl: data?.signedUrl ?? null,
+            };
+          }),
+        );
+      })()
+    : [];
+
   return (
     <PageShell title={row.commission_name} subtitle="Commission tracking detail.">
       {saved === "created" || saved === "updated" ? (
@@ -502,8 +557,65 @@ export default async function CommissionDetailPage({
         <div className="grid grid-2">
           <InfoItem label="Client" value={row.client_name_snapshot} />
           <InfoItem label="Trip" value={row.trip_name_snapshot} />
+          <InfoItem label="Trip Component" value={getComponentTypeLabel(row.component_type)} />
           <InfoItem label="Supplier" value={row.supplier_name_snapshot} />
         </div>
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Attached Component Documents</h2>
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          These secure files come from the trip documents attached to the same travel component as this commission.
+        </p>
+
+        {!row.component_id ? (
+          <p style={{ margin: 0, color: "#667085" }}>
+            This commission is not linked to a trip component.
+          </p>
+        ) : attachedDocuments.length === 0 ? (
+          <p style={{ margin: 0, color: "#667085" }}>
+            No documents are attached to this component yet.
+          </p>
+        ) : (
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Component</th>
+                  <th>Visibility</th>
+                  <th>Uploaded</th>
+                  <th>Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attachedDocuments.map((document) => (
+                  <tr key={document.id}>
+                    <td>{document.file_name}</td>
+                    <td>{getComponentTypeLabel(document.component_type)}</td>
+                    <td>{getVisibilityLabel(document.visibility)}</td>
+                    <td>{formatDateTime(document.created_at)}</td>
+                    <td>
+                      {document.signedUrl ? (
+                        <a
+                          href={document.signedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-primary"
+                          style={{ padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap" }}
+                        >
+                          Open Secure Link
+                        </a>
+                      ) : (
+                        "Unavailable"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card stack">

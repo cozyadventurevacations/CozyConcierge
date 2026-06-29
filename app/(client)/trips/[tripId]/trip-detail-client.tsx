@@ -55,6 +55,7 @@ type TripMemberRow = {
 type DocumentRow = {
   id: string;
   file_name: string;
+  component_type: string | null;
   created_at: string | null;
   signedUrl: string | null;
 };
@@ -395,6 +396,19 @@ function InfoItem({ label, value }: { label: string; value: string | number | nu
 
 function PriceItem({ label, value }: { label: string; value: number | null | undefined }) {
   return <InfoItem label={label} value={fmtMoney(value)} />;
+}
+
+function getComponentTypeLabel(componentType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    hotel: "Hotel",
+    air: "Air",
+    cruise: "Cruise",
+    transfer: "Transfer",
+    activity: "Activity",
+    insurance: "Insurance",
+  };
+
+  return componentType ? labels[componentType] ?? componentType : "General";
 }
 
 function SectionCard({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle?: string; children: ReactNode }) {
@@ -960,6 +974,7 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
               <thead>
                 <tr>
                   <th>File</th>
+                  <th>Component</th>
                   <th>Uploaded</th>
                   <th>Open</th>
                 </tr>
@@ -968,6 +983,7 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
                 {documents.map((doc) => (
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
+                    <td>{getComponentTypeLabel(doc.component_type)}</td>
                     <td style={{ fontSize: 13, color: "#667085" }}>{fmtDateTime(doc.created_at, "")}</td>
                     <td>
                       {doc.signedUrl ? (

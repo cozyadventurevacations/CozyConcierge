@@ -28,6 +28,31 @@ const allowedExtensions = [
   ".xlsx",
 ];
 
+const tripComponentTypeLabels: Record<string, string> = {
+  hotel: "Hotel",
+  air: "Air",
+  cruise: "Cruise",
+  transfer: "Transfer",
+  activity: "Activity",
+  insurance: "Insurance",
+};
+
+function getComponentTypeLabel(componentType: string | null | undefined) {
+  if (!componentType) return "General Trip Document";
+  return tripComponentTypeLabels[componentType] ?? componentType;
+}
+
+function getComponentSelectLabel(component: any) {
+  const typeLabel = getComponentTypeLabel(component.component_type);
+  const detail =
+    component.display_name ||
+    component.supplier_name ||
+    component.confirmation_number ||
+    null;
+
+  return detail ? `${typeLabel} - ${detail}` : typeLabel;
+}
+
 function validateVisibility(value: string) {
   if (
     value !== "internal" &&
@@ -136,6 +161,7 @@ async function uploadTripDocument(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
+  const componentId = String(formData.get("component_id") ?? "").trim();
   const visibility = validateVisibility(
     String(formData.get("visibility") ?? "internal").trim(),
   );
@@ -164,6 +190,22 @@ async function uploadTripDocument(formData: FormData) {
 
   if (tripError || !trip) {
     throw new Error("Trip not found or access denied.");
+  }
+
+  let componentLink: { id: string; component_type: string } | null = null;
+  if (componentId) {
+    const { data: component, error: componentError } = await supabase
+      .from("trip_components")
+      .select("id, component_type")
+      .eq("id", componentId)
+      .eq("trip_id", tripId)
+      .single();
+
+    if (componentError || !component) {
+      throw new Error("Selected trip component was not found.");
+    }
+
+    componentLink = component as { id: string; component_type: string };
   }
 
   const safeFileName =
@@ -197,6 +239,8 @@ async function uploadTripDocument(formData: FormData) {
       mime_type: file.type || null,
       file_size_bytes: file.size,
       visibility,
+      component_id: componentLink?.id ?? null,
+      component_type: componentLink?.component_type ?? null,
       uploaded_by_user_profile_id: userProfile.id,
     });
 
@@ -217,6 +261,7 @@ async function updateDocumentVisibility(formData: FormData) {
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
   const documentId = String(formData.get("document_id") ?? "").trim();
+  const componentId = String(formData.get("component_id") ?? "").trim();
   const visibility = validateVisibility(
     String(formData.get("visibility") ?? "").trim(),
   );
@@ -235,9 +280,29 @@ async function updateDocumentVisibility(formData: FormData) {
     throw new Error(docError?.message ?? "Document not found.");
   }
 
+  let componentLink: { id: string; component_type: string } | null = null;
+  if (componentId) {
+    const { data: component, error: componentError } = await supabase
+      .from("trip_components")
+      .select("id, component_type")
+      .eq("id", componentId)
+      .eq("trip_id", tripId)
+      .single();
+
+    if (componentError || !component) {
+      throw new Error("Selected trip component was not found.");
+    }
+
+    componentLink = component as { id: string; component_type: string };
+  }
+
   const { error } = await supabase
     .from("trip_documents")
-    .update({ visibility })
+    .update({
+      visibility,
+      component_id: componentLink?.id ?? null,
+      component_type: componentLink?.component_type ?? null,
+    })
     .eq("id", documentId)
     .eq("trip_id", tripId);
 
@@ -318,6 +383,12 @@ export default async function AdminTripDocumentsPage({
       </PageShell>
     );
   }
+
+  const { data: tripComponents, error: componentsError } = await supabase
+    .from("trip_components")
+    .select("id, component_type, display_name, supplier_name, confirmation_number")
+    .eq("trip_id", tripId)
+    .order("component_type", { ascending: true });
 
   const { data: documents, error: docsError } = await supabase
     .from("trip_documents")
@@ -459,6 +530,33 @@ export default async function AdminTripDocumentsPage({
 
         <h2 style={{ margin: 0 }}>Upload Document</h2>
 
+        {componentsError ? (
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: 12,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              lineHeight: 1.6,
+            }}
+          >
+            Could not load trip components for document tagging. You can still upload a general trip document.
+          </div>
+        ) : null}
+
+        <label className="stack-sm">
+          <span className="label">Travel Component</span>
+          <select className="select" name="component_id" defaultValue="">
+            <option value="">General trip document</option>
+            {(tripComponents ?? []).map((component: any) => (
+              <option key={component.id} value={component.id}>
+                {getComponentSelectLabel(component)}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="stack-sm">
           <span className="label">File</span>
           <input
@@ -473,9 +571,9 @@ export default async function AdminTripDocumentsPage({
         <label className="stack-sm">
           <span className="label">Visibility</span>
           <select className="select" name="visibility" defaultValue="internal">
-            <option value="internal">Internal Only</option>
-            <option value="client">Visible to Lead Client</option>
-            <option value="travel_circle">Shared With Travel Circle</option>
+            <option value="internal">Agent Only</option>
+            <option value="client">Client & Agent</option>
+            <option value="travel_circle">Travel Circle & Agent</option>
           </select>
         </label>
 
@@ -492,8 +590,8 @@ export default async function AdminTripDocumentsPage({
           <strong>Upload limits:</strong> PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, or XLSX.
           Maximum file size is 15MB.
           <br />
-          <strong>Visibility:</strong> Use Internal Only for advisor-only files,
-          Visible to Lead Client for the primary traveler, and Shared With Travel Circle
+          <strong>Visibility:</strong> Use Agent Only for advisor-only files,
+          Client & Agent for the primary traveler, and Travel Circle & Agent
           for itineraries, vouchers, confirmations, or travel packets approved for companions.
         </div>
 
@@ -517,12 +615,13 @@ export default async function AdminTripDocumentsPage({
               <thead>
                 <tr>
                   <th>File Name</th>
+                  <th>Component</th>
                   <th>Visibility</th>
                   <th>Type</th>
                   <th>Size</th>
                   <th>Uploaded</th>
                   <th>Open</th>
-                  <th>Update Visibility</th>
+                  <th>Update Details</th>
                   <th>Delete</th>
                 </tr>
               </thead>
@@ -531,6 +630,7 @@ export default async function AdminTripDocumentsPage({
                 {documentsWithUrls.map((doc) => (
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
+                    <td>{getComponentTypeLabel(doc.component_type)}</td>
                     <td>
                       <VisibilityBadge visibility={doc.visibility} />
                     </td>
@@ -562,12 +662,24 @@ export default async function AdminTripDocumentsPage({
                         <input type="hidden" name="document_id" value={doc.id} />
                         <select
                           className="select"
+                          name="component_id"
+                          defaultValue={doc.component_id ?? ""}
+                        >
+                          <option value="">General</option>
+                          {(tripComponents ?? []).map((component: any) => (
+                            <option key={component.id} value={component.id}>
+                              {getComponentSelectLabel(component)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="select"
                           name="visibility"
                           defaultValue={doc.visibility}
                         >
-                          <option value="internal">Internal</option>
-                          <option value="client">Lead Client</option>
-                          <option value="travel_circle">Travel Circle</option>
+                          <option value="internal">Agent Only</option>
+                          <option value="client">Client & Agent</option>
+                          <option value="travel_circle">Travel Circle & Agent</option>
                         </select>
                         <button
                           type="submit"

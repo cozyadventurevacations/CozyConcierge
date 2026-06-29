@@ -501,6 +501,7 @@ function SupplierSelect({
 
 function buildCommissionHref({
   tripId,
+  componentId,
   supplierId,
   bookingNumber,
   commissionName,
@@ -508,6 +509,7 @@ function buildCommissionHref({
   fullCommissionAmount,
 }: {
   tripId: string;
+  componentId?: string | null;
   supplierId?: string | null;
   bookingNumber?: string | null;
   commissionName?: string | null;
@@ -518,6 +520,7 @@ function buildCommissionHref({
 
   params.set("tripId", tripId);
 
+  if (componentId) params.set("componentId", componentId);
   if (supplierId) params.set("supplierId", supplierId);
   if (bookingNumber) params.set("bookingNumber", bookingNumber);
   if (commissionName) params.set("commissionName", commissionName);
@@ -543,6 +546,7 @@ function buildCommissionHref({
 
 function ComponentCommissionLink({
   tripId,
+  componentId,
   supplierId,
   bookingNumber,
   commissionName,
@@ -550,6 +554,7 @@ function ComponentCommissionLink({
   fullCommissionAmount,
 }: {
   tripId: string;
+  componentId?: string | null;
   supplierId?: string | null;
   bookingNumber?: string | null;
   commissionName: string;
@@ -577,6 +582,7 @@ function ComponentCommissionLink({
       <Link
         href={buildCommissionHref({
           tripId,
+          componentId,
           supplierId,
           bookingNumber,
           commissionName,
@@ -5192,6 +5198,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hotel.component ? "Added" : "Missing"} tone={hotel.component ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={hotel.component?.id ?? ""}
             supplierId={hotel.component?.supplier_id ?? ""}
             bookingNumber={hotel.component?.confirmation_number ?? ""}
             commissionName={`${
@@ -5386,6 +5393,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={air.component ? "Added" : "Missing"} tone={air.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={air.component?.id ?? ""}
             supplierId={air.component?.supplier_id ?? ""}
             bookingNumber={air.component?.confirmation_number ?? ""}
             commissionName={`${air.component?.supplier_name ?? "Air"} Commission`}
@@ -5688,6 +5696,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={cruise.component ? "Added" : "Missing"} tone={cruise.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={cruise.component?.id ?? ""}
             supplierId={cruise.component?.supplier_id ?? ""}
             bookingNumber={cruise.component?.confirmation_number ?? ""}
             commissionName={`${
@@ -5868,6 +5877,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={transfer.component ? "Added" : "Missing"} tone={transfer.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={transfer.component?.id ?? ""}
             supplierId={transfer.component?.supplier_id ?? ""}
             bookingNumber={transfer.component?.confirmation_number ?? ""}
             commissionName={`${
@@ -6098,6 +6108,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={activity.component ? "Added" : "Missing"} tone={activity.component ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={activity.component?.id ?? ""}
             supplierId={activity.component?.supplier_id ?? ""}
             bookingNumber={activity.component?.confirmation_number ?? ""}
             commissionName={`${
@@ -6319,6 +6330,7 @@ export default async function AdminTripEditorPage({
         <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={insurance.component ? "Added" : "Missing"} tone={insurance.component ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
+            componentId={insurance.component?.id ?? ""}
             supplierId={insurance.component?.supplier_id ?? ""}
             bookingNumber={
               insurance.component?.confirmation_number ??

@@ -25,6 +25,7 @@ type TripDocumentRow = {
   file_name: string;
   storage_path: string;
   visibility: string | null;
+  component_type: string | null;
   created_at: string | null;
 };
 
@@ -137,6 +138,19 @@ function getRoleLabel(role: string | null | undefined) {
     default:
       return role ?? "Travel Companion";
   }
+}
+
+function getComponentTypeLabel(componentType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    hotel: "Hotel",
+    air: "Air",
+    cruise: "Cruise",
+    transfer: "Transfer",
+    activity: "Activity",
+    insurance: "Insurance",
+  };
+
+  return componentType ? labels[componentType] ?? componentType : "General";
 }
 
 async function getCurrentClientAccount() {
@@ -298,7 +312,7 @@ export default async function ClientTripDocumentsPage({
 
   const { data: documents, error: documentsError } = await supabase
     .from("trip_documents")
-    .select("id, trip_id, file_name, storage_path, visibility, created_at")
+    .select("id, trip_id, file_name, storage_path, visibility, component_type, created_at")
     .eq("trip_id", tripId)
     .in("visibility", allowedVisibility)
     .order("created_at", { ascending: false });
@@ -491,6 +505,7 @@ export default async function ClientTripDocumentsPage({
               <thead>
                 <tr>
                   <th>File Name</th>
+                  <th>Travel Component</th>
                   <th>Shared With</th>
                   <th>Uploaded</th>
                   <th>Open</th>
@@ -501,6 +516,7 @@ export default async function ClientTripDocumentsPage({
                 {documentsWithUrls.map((doc) => (
                   <tr key={doc.id}>
                     <td>{doc.file_name}</td>
+                    <td>{getComponentTypeLabel(doc.component_type)}</td>
                     <td>
                       <VisibilityBadge visibility={doc.visibility} />
                     </td>

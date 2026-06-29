@@ -22,6 +22,38 @@ type SupplierOption = {
   supplier_type: string | null;
 };
 
+type ComponentOption = {
+  id: string;
+  component_type: string;
+  display_name: string | null;
+  supplier_name: string | null;
+  confirmation_number: string | null;
+};
+
+function getComponentTypeLabel(componentType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    hotel: "Hotel",
+    air: "Air",
+    cruise: "Cruise",
+    transfer: "Transfer",
+    activity: "Activity",
+    insurance: "Insurance",
+  };
+
+  return componentType ? labels[componentType] ?? componentType : "Trip Component";
+}
+
+function getComponentDisplayName(component: ComponentOption) {
+  const typeLabel = getComponentTypeLabel(component.component_type);
+  const detail =
+    component.display_name ||
+    component.supplier_name ||
+    component.confirmation_number ||
+    null;
+
+  return detail ? `${typeLabel} - ${detail}` : typeLabel;
+}
+
 function cleanText(formData: FormData, fieldName: string) {
   const value = String(formData.get(fieldName) ?? "").trim();
   return value || null;
@@ -67,10 +99,12 @@ async function createCommission(formData: FormData) {
 
   const client_account_id = cleanText(formData, "client_account_id");
   const trip_id = cleanText(formData, "trip_id");
+  const component_id = cleanText(formData, "component_id");
   const supplier_id = cleanText(formData, "supplier_id");
 
   let client_name_snapshot: string | null = null;
   let trip_name_snapshot: string | null = null;
+  let component_type: string | null = null;
   let supplier_name_snapshot = cleanText(formData, "supplier_name_snapshot");
 
   if (client_account_id) {
@@ -112,6 +146,25 @@ async function createCommission(formData: FormData) {
     }
   }
 
+  if (component_id) {
+    if (!trip_id) {
+      throw new Error("A trip is required when linking a commission to a trip component.");
+    }
+
+    const { data: component, error: componentError } = await supabase
+      .from("trip_components")
+      .select("id, trip_id, component_type")
+      .eq("id", component_id)
+      .eq("trip_id", trip_id)
+      .maybeSingle();
+
+    if (componentError || !component) {
+      throw new Error(componentError?.message ?? "Selected trip component was not found.");
+    }
+
+    component_type = component.component_type ?? null;
+  }
+
   const gross_booking_amount = toMoneyNumber(
     formData.get("gross_booking_amount"),
   );
@@ -139,6 +192,8 @@ async function createCommission(formData: FormData) {
     .insert({
       client_account_id,
       trip_id,
+      component_id,
+      component_type,
       supplier_id,
       commission_name,
       booking_number: cleanText(formData, "booking_number"),
@@ -177,6 +232,7 @@ export default async function NewCommissionPage({
   searchParams: Promise<{
     tripId?: string;
     supplierId?: string;
+    componentId?: string;
     bookingNumber?: string;
     commissionName?: string;
     grossBookingAmount?: string;
@@ -186,6 +242,7 @@ export default async function NewCommissionPage({
   const {
     tripId,
     supplierId,
+    componentId,
     bookingNumber,
     commissionName,
     grossBookingAmount,
@@ -194,6 +251,7 @@ export default async function NewCommissionPage({
 
   const selectedTripId = String(tripId ?? "").trim();
   const selectedSupplierId = String(supplierId ?? "").trim();
+  const selectedComponentId = String(componentId ?? "").trim();
 
   const defaultBookingNumber = String(bookingNumber ?? "").trim();
   const defaultCommissionName = String(commissionName ?? "").trim();
@@ -228,6 +286,30 @@ export default async function NewCommissionPage({
     (supplier) => supplier.id === selectedSupplierId,
   );
 
+  let selectedComponent: ComponentOption | null = null;
+  let linkedComponentDocumentCount = 0;
+
+  if (selectedComponentId && selectedTripId) {
+    const { data: component } = await supabase
+      .from("trip_components")
+      .select("id, component_type, display_name, supplier_name, confirmation_number")
+      .eq("id", selectedComponentId)
+      .eq("trip_id", selectedTripId)
+      .maybeSingle();
+
+    selectedComponent = (component as ComponentOption | null) ?? null;
+
+    if (selectedComponent) {
+      const { count } = await supabase
+        .from("trip_documents")
+        .select("id", { count: "exact", head: true })
+        .eq("trip_id", selectedTripId)
+        .eq("component_id", selectedComponent.id);
+
+      linkedComponentDocumentCount = count ?? 0;
+    }
+  }
+
   const generatedCommissionName =
     defaultCommissionName ||
     [
@@ -245,6 +327,7 @@ export default async function NewCommissionPage({
     >
       <form action={createCommission} className="card stack" style={{ maxWidth: 900 }}>
         <input type="hidden" name="return_to_trip_id" value={selectedTripId} />
+        <input type="hidden" name="component_id" value={selectedComponent?.id ?? ""} />
 
         <section className="stack">
           <h2 style={{ margin: 0 }}>Commission Basics</h2>
@@ -321,6 +404,26 @@ export default async function NewCommissionPage({
               {selectedSupplier.supplier_type
                 ? ` — ${selectedSupplier.supplier_type}`
                 : ""}
+            </div>
+          ) : null}
+
+          {selectedComponent ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#ecfdf3",
+                border: "1px solid #bbf7d0",
+                color: "#166534",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Component linked:</strong>{" "}
+              {getComponentDisplayName(selectedComponent)}
+              <br />
+              {linkedComponentDocumentCount > 0
+                ? `${linkedComponentDocumentCount} component document${linkedComponentDocumentCount === 1 ? "" : "s"} will appear on this commission record.`
+                : "No component documents are attached yet. Documents added later to this component will appear on the commission record automatically."}
             </div>
           ) : null}
 
