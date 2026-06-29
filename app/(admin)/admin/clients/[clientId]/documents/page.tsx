@@ -232,14 +232,57 @@ async function uploadClientPassportDocument(formData: FormData) {
   redirect(`/admin/clients/${clientId}/documents?uploaded=true`);
 }
 
+async function deleteClientDocument(formData: FormData) {
+  "use server";
+
+  await requireAdmin();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const clientId = String(formData.get("client_id") ?? "").trim();
+  const documentId = String(formData.get("document_id") ?? "").trim();
+
+  if (!clientId) throw new Error("Missing client ID.");
+  if (!documentId) throw new Error("Missing document ID.");
+
+  const { data: document, error: documentError } = await supabaseAdmin
+    .from("client_documents")
+    .select("id, client_account_id, storage_path")
+    .eq("id", documentId)
+    .eq("client_account_id", clientId)
+    .single();
+
+  if (documentError || !document) {
+    throw new Error(documentError?.message ?? "Document not found.");
+  }
+
+  const { error: storageError } = await supabaseAdmin.storage
+    .from("client-documents")
+    .remove([document.storage_path]);
+
+  if (storageError) throw new Error(storageError.message);
+
+  const { error: deleteError } = await supabaseAdmin
+    .from("client_documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("client_account_id", clientId);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/documents`);
+  revalidatePath("/admin/clients");
+  redirect(`/admin/clients/${clientId}/documents?deleted=true`);
+}
+
 export default async function AdminClientDocumentsPage({
   searchParams,
   params,
 }: {
-  searchParams: Promise<{ uploaded?: string }>;
+  searchParams: Promise<{ uploaded?: string; deleted?: string }>;
   params: Promise<{ clientId: string }>;
 }) {
-  const { uploaded } = await searchParams;
+  const { uploaded, deleted } = await searchParams;
   const { clientId } = await params;
   const { supabase } = await requireAdmin();
 
@@ -376,6 +419,19 @@ export default async function AdminClientDocumentsPage({
         </div>
       ) : null}
 
+      {deleted === "true" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <strong>Document deleted successfully.</strong>
+        </div>
+      ) : null}
+
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Upload Passport for Client</h2>
 
@@ -476,6 +532,7 @@ export default async function AdminClientDocumentsPage({
                   <th>Content Type</th>
                   <th>Notes</th>
                   <th>Open</th>
+                  <th>Delete</th>
                 </tr>
               </thead>
 
@@ -512,6 +569,19 @@ export default async function AdminClientDocumentsPage({
                       >
                         Open Secure Link
                       </a>
+                    </td>
+                    <td>
+                      <form action={deleteClientDocument}>
+                        <input type="hidden" name="client_id" value={clientRow.id} />
+                        <input type="hidden" name="document_id" value={document.id} />
+                        <button
+                          type="submit"
+                          className="btn btn-outline"
+                          style={{ color: "#b42318", borderColor: "#fecaca", whiteSpace: "nowrap" }}
+                        >
+                          Delete
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))}

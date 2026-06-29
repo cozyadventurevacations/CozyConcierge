@@ -157,35 +157,55 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
         {rows.length === 0 ? (
           <div><p style={{ margin: 0, color: "#64748b" }}>No clients found.</p>{searchTerm ? <p style={{ margin: "6px 0 0", color: "#64748b" }}>Try clearing the search or using a broader term.</p> : null}</div>
         ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 920 }}>
-              <thead><tr><th>Actions</th><th>Name</th><th>Passport</th><th>Email</th><th>Phone</th><th>Location</th><th>Travel Style</th><th>Airport</th><th>Added</th></tr></thead>
-              <tbody>
-                {rows.map((client) => {
-                  const status = passportStatus(client, uploadedPassportIds);
-                  const location = [client.city, client.state].filter(Boolean).join(", ") || "-";
-                  return (
-                    <tr key={client.id} style={{ background: status.tone === "danger" || status.tone === "warning" ? "#fffbf7" : undefined }}>
-                      <td>
-                        <div style={{ display: "grid", gap: 6, minWidth: 92 }}>
-                          <Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
-                          <Link href={`/admin/clients/${client.id}#private-message`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px" }}>Message</Link>
-                          <Link href={`/admin/clients/${client.id}#delete-client`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</Link>
-                        </div>
-                      </td>
-                      <td><strong>{clientName(client)}</strong>{client.preferred_name ? <span style={{ display: "block", color: "#64748b", fontSize: 12 }}>Goes by {client.preferred_name}</span> : null}</td>
-                      <td><Badge label={status.label} tone={status.tone} /><span style={{ display: "block", color: "#64748b", fontSize: 12, marginTop: 3 }}>{status.helper}</span></td>
-                      <td>{client.email ?? "-"}</td>
-                      <td>{client.phone_primary ?? "-"}</td>
-                      <td>{location}</td>
-                      <td>{client.travel_style ?? "-"}</td>
-                      <td>{client.preferred_airport ?? "-"}</td>
-                      <td>{formatDate(client.created_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-2">
+            {rows.map((client) => {
+              const status = passportStatus(client, uploadedPassportIds);
+              const location = [client.city, client.state].filter(Boolean).join(", ") || "-";
+              const attention = status.tone === "danger" || status.tone === "warning";
+
+              return (
+                <div
+                  key={client.id}
+                  className="card stack"
+                  style={{
+                    border: attention ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+                    background: attention ? "#fffbf7" : "#ffffff",
+                    borderRadius: 14,
+                  }}
+                >
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <h3 style={{ margin: 0 }}>{clientName(client)}</h3>
+                      {client.preferred_name ? (
+                        <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>
+                          Goes by {client.preferred_name}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="row" style={{ gap: 6 }}>
+                      <Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
+                      <Link href={`/admin/clients/${client.id}#private-message`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px" }}>Message</Link>
+                      <Link href={`/admin/clients/${client.id}#delete-client`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</Link>
+                    </div>
+                  </div>
+
+                  <div className="row">
+                    <Badge label={status.label} tone={status.tone} />
+                    <span style={{ color: "#64748b", fontSize: 13 }}>{status.helper}</span>
+                  </div>
+
+                  <div className="grid grid-2" style={{ gap: 10 }}>
+                    <div><span className="label">Email</span><strong>{client.email ?? "-"}</strong></div>
+                    <div><span className="label">Phone</span><strong>{client.phone_primary ?? "-"}</strong></div>
+                    <div><span className="label">Location</span><strong>{location}</strong></div>
+                    <div><span className="label">Airport</span><strong>{client.preferred_airport ?? "-"}</strong></div>
+                    <div><span className="label">Travel Style</span><strong>{client.travel_style ?? "-"}</strong></div>
+                    <div><span className="label">Added</span><strong>{formatDate(client.created_at)}</strong></div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

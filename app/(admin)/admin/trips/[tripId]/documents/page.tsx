@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import OpenAI, { toFile } from "openai";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
@@ -151,6 +153,40 @@ function VisibilityBadge({ visibility }: { visibility: string | null | undefined
       }}
     >
       {label}
+    </span>
+  );
+}
+
+function ExtractionStatusBadge({
+  status,
+}: {
+  status: string | null | undefined;
+}) {
+  const normalized = status ?? "not_started";
+  const styles =
+    normalized === "extracted"
+      ? { background: "#ecfdf3", color: "#027a48", label: "Extracted" }
+      : normalized === "failed"
+        ? { background: "#fef2f2", color: "#b42318", label: "Needs Review" }
+        : normalized === "processing"
+          ? { background: "#eff6ff", color: "#1d4ed8", label: "Processing" }
+          : { background: "#f8fafc", color: "#475467", label: "Not Extracted" };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 10px",
+        background: styles.background,
+        color: styles.color,
+        fontWeight: 800,
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {styles.label}
     </span>
   );
 }
@@ -364,12 +400,121 @@ async function deleteTripDocument(formData: FormData) {
   revalidatePath(`/trips/${tripId}`);
 }
 
+async function extractBookingDetails(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const documentId = String(formData.get("document_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!documentId) throw new Error("Missing document ID.");
+
+  const { data: document, error: docError } = await supabase
+    .from("trip_documents")
+    .select("id, trip_id, file_name, storage_path, mime_type, component_id, component_type")
+    .eq("id", documentId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (docError || !document) {
+    throw new Error(docError?.message ?? "Document not found.");
+  }
+
+  if (!document.component_id || !document.component_type) {
+    throw new Error("Attach this document to a travel component before extracting booking details.");
+  }
+
+  const mimeType = String(document.mime_type ?? "");
+  const canExtract =
+    mimeType === "application/pdf" ||
+    mimeType.startsWith("image/");
+
+  if (!canExtract) {
+    throw new Error("Booking extraction currently supports PDF and image documents.");
+  }
+
+  await supabase
+    .from("trip_documents")
+    .update({
+      booking_extraction_status: "processing",
+      booking_extraction_summary: null,
+      booking_extraction_json: null,
+      booking_extracted_at: null,
+    })
+    .eq("id", documentId)
+    .eq("trip_id", tripId);
+
+  const { data: fileBlob, error: downloadError } = await supabase.storage
+    .from("trip-documents")
+    .download(document.storage_path);
+
+  if (downloadError || !fileBlob) {
+    await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "failed",
+        booking_extraction_summary: downloadError?.message ?? "Could not download document.",
+      })
+      .eq("id", documentId)
+      .eq("trip_id", tripId);
+
+    throw new Error(downloadError?.message ?? "Could not download document.");
+  }
+
+  try {
+    const bytes = new Uint8Array(await fileBlob.arrayBuffer());
+    const extracted = await extractBookingDetailsFromDocument({
+      fileName: document.file_name,
+      mimeType: mimeType || null,
+      bytes,
+    });
+
+    const summary = formatExtractedSummary(extracted);
+
+    const { error: updateError } = await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "extracted",
+        booking_extraction_json: extracted,
+        booking_extraction_summary: summary,
+        booking_extracted_at: new Date().toISOString(),
+      })
+      .eq("id", documentId)
+      .eq("trip_id", tripId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  } catch (error) {
+    await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "failed",
+        booking_extraction_summary:
+          error instanceof Error ? error.message : "Booking extraction failed.",
+      })
+      .eq("id", documentId)
+      .eq("trip_id", tripId);
+
+    throw error;
+  }
+
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}/documents?extracted=1`);
+}
+
 export default async function AdminTripDocumentsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tripId: string }>;
+  searchParams: Promise<{ extracted?: string }>;
 }) {
   const { tripId } = await params;
+  const { extracted } = await searchParams;
   const { supabase } = await requireAdmin();
 
   const { data: trip, error: tripError } = await supabase
@@ -623,6 +768,20 @@ export default async function AdminTripDocumentsPage({
         </div>
       </form>
 
+      {extracted ? (
+        <div
+          className="card"
+          style={{
+            background: "#ecfdf3",
+            border: "1px solid #bbf7d0",
+            color: "#027a48",
+            fontWeight: 800,
+          }}
+        >
+          Booking details were extracted and saved for review.
+        </div>
+      ) : null}
+
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Uploaded Documents</h2>
 
@@ -631,124 +790,335 @@ export default async function AdminTripDocumentsPage({
         ) : documentsWithUrls.length === 0 ? (
           <p style={{ margin: 0, color: "#667085" }}>No documents uploaded yet.</p>
         ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 980 }}>
-              <thead>
-                <tr>
-                  <th>File Name</th>
-                  <th>Component</th>
-                  <th>Commission</th>
-                  <th>Visibility</th>
-                  <th>Type</th>
-                  <th>Size</th>
-                  <th>Uploaded</th>
-                  <th>Open</th>
-                  <th>Update Details</th>
-                  <th>Delete</th>
-                </tr>
-              </thead>
+          <div className="stack">
+            {documentsWithUrls.map((doc) => {
+              const canExtract =
+                Boolean(doc.component_id) &&
+                (doc.mime_type === "application/pdf" ||
+                  String(doc.mime_type ?? "").startsWith("image/"));
 
-              <tbody>
-                {documentsWithUrls.map((doc) => (
-                  <tr key={doc.id}>
-                    <td>{doc.file_name}</td>
-                    <td>{getComponentTypeLabel(doc.component_type)}</td>
-                    <td>{doc.attach_to_commission ? "Attached" : "No"}</td>
-                    <td>
+              return (
+                <div
+                  key={doc.id}
+                  className="card stack"
+                  style={{
+                    borderRadius: 14,
+                    background: "#ffffff",
+                    border: "1px solid #e6f0f2",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div className="stack-sm" style={{ minWidth: 0, flex: "1 1 260px" }}>
+                      <h3 style={{ margin: 0, overflowWrap: "anywhere" }}>
+                        {doc.file_name}
+                      </h3>
+                      <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
+                        {getComponentTypeLabel(doc.component_type)} | {formatFileSize(doc.file_size_bytes)} | Uploaded {formatDateTime(doc.created_at)}
+                      </p>
+                    </div>
+
+                    <div className="row" style={{ gap: 8 }}>
                       <VisibilityBadge visibility={doc.visibility} />
-                    </td>
-                    <td>{doc.mime_type ?? "unknown"}</td>
-                    <td>{formatFileSize(doc.file_size_bytes)}</td>
-                    <td>{formatDateTime(doc.created_at)}</td>
-                    <td>
-                      {doc.signedUrl ? (
-                        <a
-                          href={doc.signedUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Open
-                        </a>
-                      ) : (
-                        "Unavailable"
-                      )}
-                    </td>
-                    <td>
-                      <form action={updateDocumentVisibility} className="row">
-                        <input type="hidden" name="trip_id" value={trip.id} />
-                        <input type="hidden" name="document_id" value={doc.id} />
-                        <select
-                          className="select"
-                          name="component_id"
-                          defaultValue={doc.component_id ?? ""}
-                        >
-                          <option value="">General</option>
-                          {(tripComponents ?? []).map((component: any) => (
-                            <option key={component.id} value={component.id}>
-                              {getComponentSelectLabel(component)}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="select"
-                          name="visibility"
-                          defaultValue={doc.visibility}
-                        >
-                          <option value="internal">Agent Only</option>
-                          <option value="client">Client & Agent</option>
-                          <option value="travel_circle">Travel Circle & Agent</option>
-                        </select>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800 }}>
-                          <input
-                            type="checkbox"
-                            name="attach_to_commission"
-                            defaultChecked={Boolean(doc.attach_to_commission)}
-                          />
-                          Commission
+                      <ExtractionStatusBadge status={doc.booking_extraction_status} />
+                    </div>
+                  </div>
+
+                  <div className="row" style={{ gap: 8 }}>
+                    <span className="badge">
+                      Commission: {doc.attach_to_commission ? "Attached" : "No"}
+                    </span>
+                    <span className="badge" style={{ background: "#f8fafc", color: "#475467" }}>
+                      {doc.mime_type ?? "unknown type"}
+                    </span>
+                  </div>
+
+                  {doc.booking_extraction_summary ? (
+                    <div
+                      style={{
+                        padding: "12px",
+                        borderRadius: 12,
+                        background:
+                          doc.booking_extraction_status === "failed"
+                            ? "#fef2f2"
+                            : "#f7fbfc",
+                        border:
+                          doc.booking_extraction_status === "failed"
+                            ? "1px solid #fecaca"
+                            : "1px solid #e6f0f2",
+                        color:
+                          doc.booking_extraction_status === "failed"
+                            ? "#b42318"
+                            : "#123f5b",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <strong>Extracted details:</strong> {doc.booking_extraction_summary}
+                    </div>
+                  ) : null}
+
+                  {doc.booking_extraction_json ? (
+                    <details>
+                      <summary style={{ cursor: "pointer", fontWeight: 800 }}>
+                        View extracted fields
+                      </summary>
+                      <pre
+                        style={{
+                          margin: "10px 0 0",
+                          padding: 12,
+                          borderRadius: 12,
+                          background: "#0f172a",
+                          color: "#e2e8f0",
+                          overflowX: "auto",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {JSON.stringify(doc.booking_extraction_json, null, 2)}
+                      </pre>
+                    </details>
+                  ) : null}
+
+                  <div
+                    className="grid grid-2"
+                    style={{
+                      alignItems: "start",
+                    }}
+                  >
+                    <form action={updateDocumentVisibility} className="stack-sm">
+                      <input type="hidden" name="trip_id" value={trip.id} />
+                      <input type="hidden" name="document_id" value={doc.id} />
+
+                      <div className="grid grid-2">
+                        <label className="stack-sm">
+                          <span className="label">Component</span>
+                          <select
+                            className="select"
+                            name="component_id"
+                            defaultValue={doc.component_id ?? ""}
+                          >
+                            <option value="">General</option>
+                            {(tripComponents ?? []).map((component: any) => (
+                              <option key={component.id} value={component.id}>
+                                {getComponentSelectLabel(component)}
+                              </option>
+                            ))}
+                          </select>
                         </label>
-                        <button
-                          type="submit"
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Save
-                        </button>
-                      </form>
-                    </td>
-                    <td>
+
+                        <label className="stack-sm">
+                          <span className="label">Visibility</span>
+                          <select
+                            className="select"
+                            name="visibility"
+                            defaultValue={doc.visibility}
+                          >
+                            <option value="internal">Agent Only</option>
+                            <option value="client">Client & Agent</option>
+                            <option value="travel_circle">Travel Circle & Agent</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800 }}>
+                        <input
+                          type="checkbox"
+                          name="attach_to_commission"
+                          defaultChecked={Boolean(doc.attach_to_commission)}
+                        />
+                        Attach to matching commission
+                      </label>
+
+                      <button type="submit" className="btn btn-primary">
+                        Save Document Settings
+                      </button>
+                    </form>
+
+                    <div className="stack-sm">
+                      <div className="row" style={{ gap: 8 }}>
+                        {doc.signedUrl ? (
+                          <a
+                            href={doc.signedUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-outline"
+                          >
+                            Open Document
+                          </a>
+                        ) : null}
+
+                        {canExtract ? (
+                          <form action={extractBookingDetails}>
+                            <input type="hidden" name="trip_id" value={trip.id} />
+                            <input type="hidden" name="document_id" value={doc.id} />
+                            <button type="submit" className="btn btn-secondary">
+                              Extract Booking Details
+                            </button>
+                          </form>
+                        ) : (
+                          <span style={{ color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
+                            Attach a PDF or image to a component to extract booking details.
+                          </span>
+                        )}
+                      </div>
+
                       <form action={deleteTripDocument}>
                         <input type="hidden" name="trip_id" value={trip.id} />
                         <input type="hidden" name="document_id" value={doc.id} />
-                        <button
-                          type="submit"
-                          className="btn btn-primary"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Delete
+                        <button type="submit" className="btn btn-outline">
+                          Delete Document
                         </button>
                       </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     </PageShell>
   );
+}
+
+function extractJsonObject(text: string) {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    throw new Error("The booking extractor did not return any details.");
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error("The booking extractor returned an unreadable response.");
+    }
+
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+}
+
+function formatExtractedSummary(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+
+  const payload = value as Record<string, unknown>;
+  const parts = [
+    payload.supplier_name ? `Supplier: ${String(payload.supplier_name)}` : null,
+    payload.confirmation_number
+      ? `Confirmation: ${String(payload.confirmation_number)}`
+      : null,
+    payload.start_date || payload.end_date
+      ? `Dates: ${String(payload.start_date ?? "unknown")} to ${String(payload.end_date ?? "unknown")}`
+      : null,
+    payload.total_amount ? `Total: ${String(payload.total_amount)}` : null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" | ") : "Booking details extracted for review.";
+}
+
+async function extractBookingDetailsFromDocument({
+  fileName,
+  mimeType,
+  bytes,
+}: {
+  fileName: string;
+  mimeType: string | null;
+  bytes: Uint8Array;
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY. Booking extraction is not configured.");
+  }
+
+  const client = new OpenAI({ apiKey });
+  const openAiFile = await toFile(
+    bytes,
+    fileName,
+    { type: mimeType || "application/octet-stream" },
+  );
+
+  const uploadedFile = await client.files.create({
+    file: openAiFile,
+    purpose: "user_data",
+  });
+
+  try {
+    const fileInput =
+      mimeType?.startsWith("image/")
+        ? {
+            type: "input_image" as const,
+            file_id: uploadedFile.id,
+            detail: "high" as const,
+          }
+        : {
+            type: "input_file" as const,
+            file_id: uploadedFile.id,
+            filename: fileName,
+            detail: "high" as const,
+          };
+
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "system",
+          content: [
+            "You extract booking details for a travel agency CRM.",
+            "Only use information visible in the uploaded document.",
+            "Do not guess, invent, or calculate missing values.",
+            "Return only valid JSON. No markdown.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: [
+                "Extract booking details from this travel document.",
+                "Return this JSON shape:",
+                "{",
+                '  "component_type": "hotel | air | cruise | transfer | activity | insurance | unknown",',
+                '  "supplier_name": string | null,',
+                '  "confirmation_number": string | null,',
+                '  "traveler_names": string[],',
+                '  "start_date": "YYYY-MM-DD" | null,',
+                '  "end_date": "YYYY-MM-DD" | null,',
+                '  "start_time": string | null,',
+                '  "end_time": string | null,',
+                '  "location_or_route": string | null,',
+                '  "room_or_cabin_or_service": string | null,',
+                '  "total_amount": string | null,',
+                '  "currency": string | null,',
+                '  "deposit_amount": string | null,',
+                '  "final_payment_due_date": "YYYY-MM-DD" | null,',
+                '  "cancellation_terms": string | null,',
+                '  "payment_terms": string | null,',
+                '  "important_notes": string[],',
+                '  "missing_or_unclear_fields": string[]',
+                "}",
+              ].join("\n"),
+            },
+            fileInput,
+          ],
+        },
+      ],
+      temperature: 0.1,
+    });
+
+    return extractJsonObject(response.output_text || "");
+  } finally {
+    await client.files.delete(uploadedFile.id).catch(() => {});
+  }
 }

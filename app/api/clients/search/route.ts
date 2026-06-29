@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
     const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
     const normalizedQuery = q.toLowerCase();
 
-    if (normalizedQuery.length < 5 || !normalizedQuery.includes("@") || normalizedQuery.startsWith("@")) {
+    if (normalizedQuery.length < 2) {
       return NextResponse.json({ clients: [] });
     }
 
@@ -21,21 +21,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const safeEmailPrefix = normalizedQuery.replace(/[%_]/g, "");
+    const safeQuery = normalizedQuery.replace(/[%_]/g, "");
 
-    // Only search by email prefix. This keeps Travel Circle invite autofill useful
-    // without exposing a broad searchable client directory to every signed-in client.
     const { data: clients, error } = await supabase
       .from("client_accounts")
       .select("id, first_name, last_name, email")
-      .ilike("email", `${safeEmailPrefix}%`)
+      .or(
+        [
+          `first_name.ilike.${safeQuery}%`,
+          `last_name.ilike.${safeQuery}%`,
+          `email.ilike.${safeQuery}%`,
+        ].join(","),
+      )
       .limit(6);
 
     if (error) {
       return NextResponse.json({ clients: [] });
     }
 
-    return NextResponse.json({ clients: clients ?? [] });
+    const safeClients = (clients ?? []).map((client) => {
+      const email = String(client.email ?? "");
+      const [name, domain] = email.split("@");
+      const emailHint = name && domain
+        ? `${name.slice(0, 2)}***@${domain}`
+        : null;
+
+      return {
+        id: client.id,
+        first_name: client.first_name,
+        last_name: client.last_name,
+        email_hint: emailHint,
+      };
+    });
+
+    return NextResponse.json({ clients: safeClients });
   } catch {
     return NextResponse.json({ clients: [] });
   }

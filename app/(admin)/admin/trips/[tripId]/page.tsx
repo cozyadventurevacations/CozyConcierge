@@ -94,6 +94,8 @@ type ClientInfo = {
   email: string | null;
 };
 
+type ClientOption = ClientInfo;
+
 type CommissionRow = {
   id: string;
   commission_name: string;
@@ -1733,8 +1735,7 @@ async function addTripCompanion(formData: FormData) {
   const { supabase } = await requireAdmin();
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
-  const email = String(formData.get("companion_email") ?? "").trim().toLowerCase();
-  const inviteName = String(formData.get("companion_name") ?? "").trim() || null;
+  const companionClientAccountId = String(formData.get("companion_client_account_id") ?? "").trim();
   const role = requireAllowedValue(
     String(formData.get("companion_role") ?? "viewer").trim(),
     ["viewer", "contributor"],
@@ -1742,7 +1743,7 @@ async function addTripCompanion(formData: FormData) {
   );
 
   if (!tripId) throw new Error("Missing trip ID.");
-  if (!email) throw new Error("Companion email is required.");
+  if (!companionClientAccountId) throw new Error("Choose a registered client to add.");
 
   const { data: tripRow, error: tripError } = await supabase
     .from("trips")
@@ -1757,10 +1758,13 @@ async function addTripCompanion(formData: FormData) {
   const { data: existingClient, error: clientError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email, notify_travel_circle_invites")
-    .ilike("email", email)
+    .eq("id", companionClientAccountId)
     .maybeSingle();
 
   if (clientError) throw new Error(clientError.message);
+  if (!existingClient?.id || !existingClient.email) {
+    throw new Error("The selected client account could not be found.");
+  }
 
   if (existingClient?.id === tripRow.client_account_id) {
     return;
@@ -1776,15 +1780,12 @@ async function addTripCompanion(formData: FormData) {
 
   const payload = {
     trip_id: tripId,
-    client_account_id: existingClient?.id ?? null,
-    invite_email: existingClient?.email ?? email,
+    client_account_id: existingClient.id,
+    invite_email: existingClient.email,
     invite_name:
-      inviteName ||
-      (existingClient
-        ? `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null
-        : null),
+      `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null,
     role,
-    invite_status: existingClient ? "active" : "invited",
+    invite_status: "active",
     invited_by_type: "admin",
     ...rolePermissions,
     updated_at: new Date().toISOString(),
@@ -1796,11 +1797,7 @@ async function addTripCompanion(formData: FormData) {
     .eq("trip_id", tripId)
     .neq("invite_status", "removed");
 
-  if (existingClient?.id) {
-    existingMemberQuery = existingMemberQuery.eq("client_account_id", existingClient.id);
-  } else {
-    existingMemberQuery = existingMemberQuery.ilike("invite_email", email);
-  }
+  existingMemberQuery = existingMemberQuery.eq("client_account_id", existingClient.id);
 
   const { data: existingMember, error: existingMemberError } = await existingMemberQuery.maybeSingle();
 
@@ -1819,10 +1816,10 @@ async function addTripCompanion(formData: FormData) {
     if (error) throw new Error(error.message);
   }
 
-  if (!existingClient || existingClient.notify_travel_circle_invites !== false) {
+  if (existingClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
-      to: email,
-      inviteName,
+      to: existingClient.email,
+      inviteName: `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null,
       role,
       tripName: tripRow.trip_name ?? "Your Trip",
       destinations: tripRow.destinations,
@@ -3502,6 +3499,15 @@ export default async function AdminTripEditorPage({
 
   const clientInfo = clientAccount as ClientInfo | null;
 
+  const { data: clientOptions } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .order("last_name", { ascending: true })
+    .order("first_name", { ascending: true });
+
+  const registeredClientOptions = ((clientOptions ?? []) as ClientOption[])
+    .filter((client) => client.id !== trip.client_account_id);
+
   const { data: proposal } = await supabase
     .from("trip_proposals")
     .select("*")
@@ -4088,6 +4094,16 @@ export default async function AdminTripEditorPage({
           </div>
         ) : null}
 
+        {trip.insurance_decision ? (
+          <div className="card" style={{ border: "1px solid #dbeafe", background: "#eff6ff", color: "#1e3a8a" }}>
+            <p style={{ margin: 0, fontWeight: 900 }}>Client Insurance Preference</p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+              Client {trip.insurance_decision === "accepted" ? "wants travel insurance coverage reviewed" : "declined travel insurance coverage"}
+              {trip.insurance_decision_at ? ` on ${formatDate(trip.insurance_decision_at)}.` : "."}
+            </p>
+          </div>
+        ) : null}
+
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 
         {(deletionRequested || tripDeleted) ? (
@@ -4562,30 +4578,28 @@ export default async function AdminTripEditorPage({
               <div className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
                 <h3 style={{ margin: 0 }}>Add a Travel Companion</h3>
                 <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                  Add an existing client by email, or invite someone by email for later account setup.
-                  If the email does not already belong to a client account, the invite will stay pending until they register or log in with that same email and open Travel Invitations.
+                  Add a registered Cozy Concierge client to this trip&apos;s Travel Circle. For privacy, outside email invites are no longer created from this form.
                 </p>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
                   <label>
-                    <span className="label">Companion Email</span>
-                    <input
-                      className="input"
+                    <span className="label">Registered Client</span>
+                    <select
+                      className="select"
                       form="add-trip-companion-form"
-                      name="companion_email"
-                      type="email"
-                      placeholder="traveler@example.com"
-                    />
-                  </label>
-
-                  <label>
-                    <span className="label">Name / Label</span>
-                    <input
-                      className="input"
-                      form="add-trip-companion-form"
-                      name="companion_name"
-                      placeholder="Optional display name"
-                    />
+                      name="companion_client_account_id"
+                      defaultValue=""
+                    >
+                      <option value="">Choose a client...</option>
+                      {registeredClientOptions.map((client) => {
+                        const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
+                        return (
+                          <option key={client.id} value={client.id}>
+                            {name || client.email || "Unnamed Client"}{client.email ? ` - ${client.email}` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </label>
 
                   <label>

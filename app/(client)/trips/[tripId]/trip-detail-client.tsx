@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { InviteCompanionForm } from "../../messages/invite-companion-form";
 import { PaymentTimeline } from "./payment-timeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1081,19 +1082,10 @@ function TravelCircleTab({ tripId, tripMembers, canManageTravelCircle, onInviteC
           <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
             <div>
               <p style={{ margin: 0, fontWeight: 800, fontSize: 15 }}>Invite a Travel Companion</p>
-              <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>If they already have a Cozy Concierge account, access is connected right away. Otherwise the invite is saved as pending.</p>
+              <p style={{ margin: "4px 0 0", color: "#667085", fontSize: 13 }}>For privacy, Travel Companions must already have a Cozy Concierge client account.</p>
             </div>
-            <form action={onInviteCompanion} className="stack">
-              <input type="hidden" name="trip_id" value={tripId} />
-              <div className="grid grid-3">
-                <label className="stack-sm">
-                  <span className="label">Name</span>
-                  <input className="input" name="invite_name" placeholder="e.g. Pat Brown" />
-                </label>
-                <label className="stack-sm">
-                  <span className="label">Email</span>
-                  <input className="input" name="invite_email" type="email" required placeholder="traveler@example.com" />
-                </label>
+            <InviteCompanionForm threadId="" tripId={tripId} action={onInviteCompanion}>
+              <div className="grid grid-2">
                 <label className="stack-sm">
                   <span className="label">Access Level</span>
                   <select className="select" name="role" defaultValue="viewer">
@@ -1102,10 +1094,7 @@ function TravelCircleTab({ tripId, tripMembers, canManageTravelCircle, onInviteC
                   </select>
                 </label>
               </div>
-              <div>
-                <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Add Travel Companion</button>
-              </div>
-            </form>
+            </InviteCompanionForm>
           </div>
         )}
 

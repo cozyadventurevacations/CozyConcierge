@@ -591,23 +591,31 @@ async function inviteCompanionToCircle(formData: FormData) {
 
   const threadId = String(formData.get("thread_id") ?? "").trim();
   const tripId = String(formData.get("trip_id") ?? "").trim();
-  const email = String(formData.get("invite_email") ?? "").trim().toLowerCase();
-  const name = String(formData.get("invite_name") ?? "").trim() || null;
+  const inviteClientAccountId = String(formData.get("invite_client_account_id") ?? "").trim();
 
   if (!threadId) throw new Error("Missing thread ID.");
   if (!tripId) throw new Error("Missing trip ID.");
-  if (!email) throw new Error("Email is required.");
+  if (!inviteClientAccountId) throw new Error("Choose a registered client to add.");
 
   // Allow primary client OR trip owner role to invite
   const canManage = await canManageCompanions(supabase, clientAccount.id, tripId);
   if (!canManage) throw new Error("Only the trip owner can invite companions.");
 
-  // Check if already a member
+  const { data: existingClient } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email, notify_travel_circle_invites")
+    .eq("id", inviteClientAccountId)
+    .maybeSingle();
+
+  if (!existingClient?.id || !existingClient.email) {
+    throw new Error("The selected client account could not be found.");
+  }
+
   const { data: existing } = await supabase
     .from("trip_members" as any)
     .select("id")
     .eq("trip_id", tripId)
-    .ilike("invite_email", email)
+    .eq("client_account_id", existingClient.id)
     .neq("invite_status", "removed")
     .maybeSingle();
 
@@ -616,26 +624,21 @@ async function inviteCompanionToCircle(formData: FormData) {
     redirect(`/messages?threadId=${threadId}`);
   }
 
-  // Check if they have a Cozy account
-  const { data: existingClient } = await supabase
-    .from("client_accounts")
-    .select("id, first_name, last_name, email, notify_travel_circle_invites")
-    .ilike("email", email)
-    .maybeSingle();
-
   const { data: tripRow } = await supabase
     .from("trips")
     .select("trip_name, destinations, departure_date")
     .eq("id", tripId)
     .maybeSingle();
 
+  const inviteName = `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null;
+
   await supabase.from("trip_members" as any).insert({
     trip_id: tripId,
-    client_account_id: existingClient?.id ?? null,
-    invite_email: existingClient?.email ?? email,
-    invite_name: name || (existingClient ? `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null : null),
+    client_account_id: existingClient.id,
+    invite_email: existingClient.email,
+    invite_name: inviteName,
     role: "viewer",
-    invite_status: existingClient ? "active" : "invited",
+    invite_status: "active",
     invited_by_type: "client",
     can_view_trip: true,
     can_view_shared_documents: true,
@@ -645,9 +648,9 @@ async function inviteCompanionToCircle(formData: FormData) {
     updated_at: new Date().toISOString(),
   });
 
-  if (!existingClient || existingClient.notify_travel_circle_invites !== false) {
+  if (existingClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
-      to: email, inviteName: name, role: "viewer",
+      to: existingClient.email, inviteName, role: "viewer",
       tripName: tripRow?.trip_name ?? "Your Trip",
       destinations: tripRow?.destinations ?? null,
       departureDate: tripRow?.departure_date ?? null,

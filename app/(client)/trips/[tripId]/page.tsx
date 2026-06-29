@@ -123,23 +123,25 @@ async function inviteTravelCompanion(formData: FormData) {
   const tripId = String(formData.get("trip_id") ?? "").trim();
   if (!tripId) throw new Error("Missing trip ID.");
 
-  const inviteName = String(formData.get("invite_name") ?? "").trim() || null;
-  const inviteEmail = String(formData.get("invite_email") ?? "").trim().toLowerCase() || null;
+  const inviteClientAccountId = String(formData.get("invite_client_account_id") ?? "").trim();
   const requestedRole = String(formData.get("role") ?? "viewer").trim();
   const role = requestedRole === "contributor" ? "contributor" : "viewer";
 
-  if (!inviteEmail) throw new Error("Travel Companion email is required.");
+  if (!inviteClientAccountId) throw new Error("Choose a registered client to add.");
 
   const { supabase, clientAccount, trip } = await requireTripCircleManager(tripId);
-
-  if (inviteEmail === clientAccount.email?.trim().toLowerCase()) return;
 
   const { data: existingClient } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email, notify_travel_circle_invites")
-    .ilike("email", inviteEmail)
+    .eq("id", inviteClientAccountId)
     .maybeSingle();
 
+  if (!existingClient?.id || !existingClient.email) {
+    throw new Error("The selected client account could not be found.");
+  }
+
+  if (existingClient.id === clientAccount.id) return;
   if (existingClient?.id === trip.client_account_id) return;
 
   let existingMemberQuery = supabase
@@ -148,24 +150,20 @@ async function inviteTravelCompanion(formData: FormData) {
     .eq("trip_id", tripId)
     .neq("invite_status", "removed");
 
-  if (existingClient?.id) {
-    existingMemberQuery = existingMemberQuery.or(
-      `client_account_id.eq.${existingClient.id},invite_email.ilike.${inviteEmail}`,
-    );
-  } else {
-    existingMemberQuery = existingMemberQuery.ilike("invite_email", inviteEmail);
-  }
+  existingMemberQuery = existingMemberQuery.eq("client_account_id", existingClient.id);
 
   const { data: existingMembers } = await existingMemberQuery.limit(1);
   if ((existingMembers ?? []).length > 0) return;
 
+  const inviteName = `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null;
+
   const { error: insertError } = await supabase.from("trip_members" as any).insert({
     trip_id: tripId,
-    client_account_id: existingClient?.id ?? null,
-    invite_email: inviteEmail,
+    client_account_id: existingClient.id,
+    invite_email: existingClient.email,
     invite_name: inviteName,
     role,
-    invite_status: existingClient ? "active" : "invited",
+    invite_status: "active",
     invited_by_type: "client",
     invited_by_client_account_id: clientAccount.id,
     can_view_trip: true,
@@ -177,9 +175,9 @@ async function inviteTravelCompanion(formData: FormData) {
 
   if (insertError) throw new Error(insertError.message);
 
-  if (!existingClient || existingClient.notify_travel_circle_invites !== false) {
+  if (existingClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
-      to: inviteEmail,
+      to: existingClient.email,
       inviteName,
       role,
       tripName: trip.trip_name ?? "Your Trip",
@@ -274,6 +272,46 @@ async function requestTripDeletion(formData: FormData) {
   redirect(`/trips/${tripId}?deletion=requested`);
 }
 
+async function recordInsuranceDecision(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const decision = String(formData.get("insurance_decision") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (decision !== "accepted" && decision !== "declined") {
+    throw new Error("Choose yes or no for travel insurance.");
+  }
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+
+  if (trip.client_account_id !== clientAccount.id) {
+    throw new Error("Only the primary traveler can answer the insurance question.");
+  }
+
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      insurance_decision: decision,
+      insurance_decision_at: new Date().toISOString(),
+      insurance_decision_by_client_account_id: clientAccount.id,
+    })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/trips/${tripId}?insurance=${decision}`);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function TripDetailPage({
@@ -281,10 +319,10 @@ export default async function TripDetailPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ deletion?: string }>;
+  searchParams: Promise<{ deletion?: string; insurance?: string }>;
 }) {
   const { tripId } = await params;
-  const { deletion } = await searchParams;
+  const { deletion, insurance: insuranceNotice } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
@@ -560,6 +598,18 @@ export default async function TripDetailPage({
   };
 
   const deletionRequested = Boolean(trip.deletion_requested_at);
+  const bookedTripStatuses = new Set([
+    "reserved",
+    "confirmed",
+    "pending_final_payment",
+    "paid_in_full",
+  ]);
+  const insuranceDecision = String(trip.insurance_decision ?? "");
+  const shouldAskInsurance =
+    isPrimaryClient &&
+    bookedTripStatuses.has(String(trip.trip_status ?? "")) &&
+    insuranceDecision !== "accepted" &&
+    insuranceDecision !== "declined";
 
   return (
     <PageShell
@@ -584,6 +634,46 @@ export default async function TripDetailPage({
         </div>
       )}
       {/* Deletion request status banner — primary client only */}
+      {(insuranceNotice === "accepted" || insuranceNotice === "declined") && (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Insurance preference saved.</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
+            Your advisor can now see that you {insuranceNotice === "accepted" ? "want travel insurance coverage reviewed" : "declined travel insurance coverage"}.
+          </p>
+        </div>
+      )}
+
+      {shouldAskInsurance && (
+        <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+          <div>
+            <p style={{ margin: 0, fontWeight: 900 }}>Travel Insurance Coverage</p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+              Please let your advisor know whether you would like travel insurance coverage reviewed for this booked trip.
+            </p>
+          </div>
+          <form action={recordInsuranceDecision} className="row">
+            <input type="hidden" name="trip_id" value={trip.id} />
+            <button
+              type="submit"
+              name="insurance_decision"
+              value="accepted"
+              className="btn btn-primary"
+            >
+              Yes, review coverage
+            </button>
+            <button
+              type="submit"
+              name="insurance_decision"
+              value="declined"
+              className="btn btn-outline"
+              style={{ borderColor: "#fed7aa", color: "#9a3412" }}
+            >
+              No, I decline
+            </button>
+          </form>
+        </div>
+      )}
+
       {isPrimaryClient && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, border: deletionRequested ? "1px solid #fed7aa" : "1px solid #e6f0f2", background: deletionRequested ? "#fff7ed" : "#f7fbfc" }}>
           <div>

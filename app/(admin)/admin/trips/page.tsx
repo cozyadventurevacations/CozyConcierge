@@ -402,86 +402,83 @@ export default async function AdminTripsPage({
           </p>
         </div>
       ) : (
-        <div style={{ width: "100%", overflowX: "auto" }}>
-          <table className="table" style={{ minWidth: 980 }}>
-            <thead>
-              <tr>
-                <th>Actions</th>
-                <th>Trip Name</th>
-                <th>Client</th>
-                <th>Departure</th>
-                <th>Return</th>
-                <th>Status</th>
-                <th>Payment</th>
-                <th>Deposit</th>
-                <th>Balance Due</th>
-                <th>Final Due</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tripRows.map((trip) => {
-                const clientName = getTripClientName(trip);
-                const deletable = isDeletable(trip);
-                const hasDeletionRequest = Boolean(trip.deletion_requested_at);
+        <div className="grid grid-2">
+          {tripRows.map((trip) => {
+            const clientName = getTripClientName(trip);
+            const deletable = isDeletable(trip);
+            const hasDeletionRequest = Boolean(trip.deletion_requested_at);
 
-                return (
-                  <tr key={trip.id} style={{ background: hasDeletionRequest ? "#fffbf7" : undefined }}>
-                    <td>
-                      <div style={{ display: "grid", gap: 6, minWidth: 92 }}>
-                        {!showDeleted && (
-                          <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
-                        )}
-                        {showDeleted ? (
-                          <form action={restoreTrip}>
-                            <input type="hidden" name="trip_id" value={trip.id} />
-                            <button type="submit" className="btn btn-outline" style={{ width: "100%", fontSize: 13, padding: "6px 10px" }}>Restore</button>
-                          </form>
-                        ) : deletable.allowed ? (
-                          <form action={softDeleteTrip}>
-                            <input type="hidden" name="trip_id" value={trip.id} />
-                            <button type="submit" className="btn btn-outline" style={{ width: "100%", fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</button>
-                          </form>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#94a3b8", padding: "5px 0" }} title={deletable.reason}>Cannot delete</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <div>
-                        <strong>{trip.trip_name}</strong>
-                        {hasDeletionRequest && (
-                          <span style={{ display: "block", fontSize: 11, color: "#c2410c", fontWeight: 700, marginTop: 2 }}>
-                            Deletion requested{trip.deletion_requested_by ? ` by ${trip.deletion_requested_by}` : ""}
-                          </span>
-                        )}
-                        {showDeleted && trip.retain_data && (
-                          <span style={{ display: "block", fontSize: 11, color: "#027a48", fontWeight: 700, marginTop: 2 }}>ðŸ”’ Retained</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>{clientName || "Unknown Client"}</td>
-                    <td>{formatDate(trip.departure_date)}</td>
-                    <td>{formatDate(trip.return_date)}</td>
-                    <td><StatusBadge status={trip.trip_status} /></td>
-                    <td><PaymentBadge trip={trip} /></td>
-                    <td>
-                      <div style={{ display: "grid", gap: 3 }}>
-                        <strong>{formatMoney(trip.deposit_amount)}</strong>
-                        <span style={{ color: "#64748b", fontSize: 12 }}>Due {formatDate(trip.deposit_due_date)}</span>
-                        {trip.deposit_paid ? (
-                          <span style={{ color: "#027a48", fontSize: 12, fontWeight: 800 }}>Deposit paid</span>
-                        ) : (
-                          <span style={{ color: "#c2410c", fontSize: 12, fontWeight: 800 }}>Not marked paid</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>{formatMoney(trip.balance_due)}</td>
-                    <td>{formatDate(trip.final_payment_due_date)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+            return (
+              <div
+                key={trip.id}
+                className="card stack"
+                style={{
+                  border: hasDeletionRequest ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+                  background: hasDeletionRequest ? "#fffbf7" : "#ffffff",
+                  borderRadius: 14,
+                }}
+              >
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>{trip.trip_name}</h3>
+                    <p style={{ margin: "4px 0 0", color: "#64748b" }}>
+                      {clientName || "Unknown Client"}
+                    </p>
+                    {hasDeletionRequest ? (
+                      <p style={{ margin: "6px 0 0", color: "#c2410c", fontWeight: 800, fontSize: 13 }}>
+                        Deletion requested{trip.deletion_requested_by ? ` by ${trip.deletion_requested_by}` : ""}
+                      </p>
+                    ) : null}
+                    {showDeleted && trip.retain_data ? (
+                      <p style={{ margin: "6px 0 0", color: "#027a48", fontWeight: 800, fontSize: 13 }}>
+                        Retained
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="row" style={{ gap: 6 }}>
+                    {!showDeleted ? (
+                      <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
+                    ) : null}
+                    {showDeleted ? (
+                      <form action={restoreTrip}>
+                        <input type="hidden" name="trip_id" value={trip.id} />
+                        <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px" }}>Restore</button>
+                      </form>
+                    ) : deletable.allowed ? (
+                      <form action={softDeleteTrip}>
+                        <input type="hidden" name="trip_id" value={trip.id} />
+                        <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</button>
+                      </form>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#94a3b8", padding: "7px 0" }} title={deletable.reason}>Cannot delete</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="row">
+                  <StatusBadge status={trip.trip_status} />
+                  <PaymentBadge trip={trip} />
+                </div>
+
+                <div className="grid grid-2" style={{ gap: 10 }}>
+                  <div><span className="label">Departure</span><strong>{formatDate(trip.departure_date)}</strong></div>
+                  <div><span className="label">Return</span><strong>{formatDate(trip.return_date)}</strong></div>
+                  <div>
+                    <span className="label">Deposit</span>
+                    <strong>{formatMoney(trip.deposit_amount)}</strong>
+                    <span style={{ display: "block", color: "#64748b", fontSize: 12 }}>Due {formatDate(trip.deposit_due_date)}</span>
+                    <span style={{ display: "block", color: trip.deposit_paid ? "#027a48" : "#c2410c", fontSize: 12, fontWeight: 800 }}>
+                      {trip.deposit_paid ? "Deposit paid" : "Not marked paid"}
+                    </span>
+                  </div>
+                  <div><span className="label">Balance Due</span><strong>{formatMoney(trip.balance_due)}</strong></div>
+                  <div><span className="label">Final Due</span><strong>{formatDate(trip.final_payment_due_date)}</strong></div>
+                  <div><span className="label">Delete Rule</span><strong>{deletable.reason}</strong></div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </PageShell>

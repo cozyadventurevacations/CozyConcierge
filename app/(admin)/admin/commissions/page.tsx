@@ -330,73 +330,70 @@ export default async function AdminCommissionsPage({
         {rows.length === 0 ? (
           <p style={{ margin: 0, color: "#64748b" }}>{searchTerm ? "No commissions found. Try clearing the search or using a broader term." : "No commission records match this view."}</p>
         ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 1180 }}>
-              <thead>
-                <tr>
-                  <th>Commission</th>
-                  <th>Client</th>
-                  <th>Trip</th>
-                  <th>Supplier</th>
-                  <th>Booking #</th>
-                  <th>Status</th>
-                  <th>Expected</th>
-                  <th>Received</th>
-                  <th>Outstanding</th>
-                  <th>Expected Date</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((commission) => {
-                  const overdue = isOverdueCommission(commission);
-                  const outstanding = outstandingAmount(commission);
-                  const received = isReceived(commission);
-                  return (
-                    <tr key={commission.id} style={{ background: overdue ? "#fff7ed" : undefined }}>
-                      <td>
-                        <strong>{commission.commission_name}</strong>
-                        {overdue ? (
-                          <span style={{ display: "block", marginTop: 3, color: "#c2410c", fontSize: 12, fontWeight: 800 }}>Overdue follow-up</span>
-                        ) : null}
-                      </td>
-                      <td>{commission.client_name_snapshot ?? "-"}</td>
-                      <td>{commission.trip_name_snapshot ?? "-"}</td>
-                      <td>{commission.supplier_name_snapshot ?? "-"}</td>
-                      <td>{commission.booking_number ?? "-"}</td>
-                      <td><StatusBadge status={commission.commission_status} /></td>
-                      <td>{formatMoney(commission.expected_commission_amount)}</td>
-                      <td>{formatMoney(commission.received_commission_amount)}</td>
-                      <td style={{ fontWeight: overdue ? 900 : 700, color: overdue ? "#c2410c" : undefined }}>{formatMoney(outstanding)}</td>
-                      <td>
-                        <span style={{ color: overdue ? "#c2410c" : undefined, fontWeight: overdue ? 800 : undefined }}>
-                          {formatDate(commission.expected_payment_date)}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <Link href={`/admin/commissions/${commission.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link>
-                          {!received && outstanding > 0 ? (
-                            <form action={markCommissionReceivedFromList}>
-                              <input type="hidden" name="commission_id" value={commission.id} />
-                              <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#027a48", borderColor: "#bbf7d0" }}>
-                                Mark Paid
-                              </button>
-                            </form>
-                          ) : null}
-                          <form action={deleteCommissionFromList}>
-                            <input type="hidden" name="commission_id" value={commission.id} />
-                            <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>
-                              Delete
-                            </button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-2">
+            {rows.map((commission) => {
+              const overdue = isOverdueCommission(commission);
+              const outstanding = outstandingAmount(commission);
+              const received = isReceived(commission);
+
+              return (
+                <div
+                  key={commission.id}
+                  className="card stack"
+                  style={{
+                    border: overdue ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+                    background: overdue ? "#fff7ed" : "#ffffff",
+                    borderRadius: 14,
+                  }}
+                >
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <h3 style={{ margin: 0 }}>{commission.commission_name}</h3>
+                      {overdue ? (
+                        <p style={{ margin: "4px 0 0", color: "#c2410c", fontSize: 13, fontWeight: 800 }}>
+                          Overdue follow-up
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="row" style={{ gap: 6 }}>
+                      <Link href={`/admin/commissions/${commission.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "5px 12px" }}>Open</Link>
+                      {!received && outstanding > 0 ? (
+                        <form action={markCommissionReceivedFromList}>
+                          <input type="hidden" name="commission_id" value={commission.id} />
+                          <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#027a48", borderColor: "#bbf7d0" }}>
+                            Mark Paid
+                          </button>
+                        </form>
+                      ) : null}
+                      <form action={deleteCommissionFromList}>
+                        <input type="hidden" name="commission_id" value={commission.id} />
+                        <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}>
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <div className="row">
+                    <StatusBadge status={commission.commission_status} />
+                    <span className="badge" style={{ background: "#f8fafc", color: "#475467" }}>
+                      Booking # {commission.booking_number ?? "-"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-2" style={{ gap: 10 }}>
+                    <div><span className="label">Client</span><strong>{commission.client_name_snapshot ?? "-"}</strong></div>
+                    <div><span className="label">Trip</span><strong>{commission.trip_name_snapshot ?? "-"}</strong></div>
+                    <div><span className="label">Supplier</span><strong>{commission.supplier_name_snapshot ?? "-"}</strong></div>
+                    <div><span className="label">Expected Date</span><strong style={{ color: overdue ? "#c2410c" : undefined }}>{formatDate(commission.expected_payment_date)}</strong></div>
+                    <div><span className="label">Expected</span><strong>{formatMoney(commission.expected_commission_amount)}</strong></div>
+                    <div><span className="label">Received</span><strong>{formatMoney(commission.received_commission_amount)}</strong></div>
+                    <div><span className="label">Outstanding</span><strong style={{ color: overdue ? "#c2410c" : undefined }}>{formatMoney(outstanding)}</strong></div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -406,12 +406,106 @@ async function uploadPassportDocument(formData: FormData) {
   redirect("/profile/passport-upload?uploaded=true");
 }
 
+async function deletePassportDocument(formData: FormData) {
+  "use server";
+
+  const { clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const documentId = String(formData.get("document_id") ?? "").trim();
+  if (!documentId) throw new Error("Missing document ID.");
+
+  const { data: document, error: documentError } = await supabaseAdmin
+    .from("client_documents")
+    .select("id, client_account_id, document_type, storage_path")
+    .eq("id", documentId)
+    .eq("client_account_id", clientAccount.id)
+    .eq("document_type", "passport")
+    .single();
+
+  if (documentError || !document) {
+    throw new Error(documentError?.message ?? "Passport document not found.");
+  }
+
+  const { error: storageError } = await supabaseAdmin.storage
+    .from("client-documents")
+    .remove([document.storage_path]);
+
+  if (storageError) throw new Error(storageError.message);
+
+  const { error: deleteError } = await supabaseAdmin
+    .from("client_documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("client_account_id", clientAccount.id)
+    .eq("document_type", "passport");
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  revalidatePath("/profile");
+  revalidatePath("/profile/passport-upload");
+  redirect("/profile/passport-upload?deleted=true");
+}
+
+async function clearPassportDetails() {
+  "use server";
+
+  const { clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const { data: primaryTraveler, error: travelerError } = await supabaseAdmin
+    .from("traveler_profiles")
+    .select("id")
+    .eq("client_account_id", clientAccount.id)
+    .eq("is_primary_traveler", true)
+    .maybeSingle();
+
+  if (travelerError) {
+    throw new Error(travelerError.message);
+  }
+
+  if (primaryTraveler?.id) {
+    const { error: updateTravelerError } = await supabaseAdmin
+      .from("traveler_profiles")
+      .update({
+        passport_number: null,
+        passport_country: null,
+        passport_date_issued: null,
+        passport_expiration_date: null,
+      })
+      .eq("id", primaryTraveler.id)
+      .eq("client_account_id", clientAccount.id);
+
+    if (updateTravelerError) {
+      throw new Error(updateTravelerError.message);
+    }
+  }
+
+  const { error: updateClientError } = await supabaseAdmin
+    .from("client_accounts")
+    .update({
+      passport_number: null,
+      passport_date_issued: null,
+      passport_expiration_date: null,
+    })
+    .eq("id", clientAccount.id);
+
+  if (updateClientError) {
+    throw new Error(updateClientError.message);
+  }
+
+  revalidatePath("/profile");
+  revalidatePath("/profile/passport-upload");
+  revalidatePath("/profile/traveler-numbers");
+  redirect("/profile/passport-upload?details=cleared");
+}
+
 export default async function PassportUploadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ uploaded?: string; details?: string }>;
+  searchParams: Promise<{ uploaded?: string; details?: string; deleted?: string }>;
 }) {
-  const { uploaded, details } = await searchParams;
+  const { uploaded, details, deleted } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
@@ -495,6 +589,19 @@ export default async function PassportUploadPage({
         </div>
       ) : null}
 
+      {deleted === "true" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <strong>Passport document deleted successfully.</strong>
+        </div>
+      ) : null}
+
       {details === "saved" ? (
         <div
           className="card"
@@ -505,6 +612,19 @@ export default async function PassportUploadPage({
           }}
         >
           <strong>Passport details saved successfully.</strong>
+        </div>
+      ) : null}
+
+      {details === "cleared" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#ecfdf3",
+            color: "#027a48",
+          }}
+        >
+          <strong>Passport details were cleared successfully.</strong>
         </div>
       ) : null}
 
@@ -654,6 +774,16 @@ export default async function PassportUploadPage({
             Save Passport Details
           </button>
         </form>
+
+        <form action={clearPassportDetails}>
+          <button
+            type="submit"
+            className="btn btn-outline"
+            style={{ color: "#be123c", borderColor: "#fecaca" }}
+          >
+            Clear Saved Passport Details
+          </button>
+        </form>
       </div>
 
       <div className="card stack">
@@ -781,6 +911,7 @@ export default async function PassportUploadPage({
                   <th>Uploaded</th>
                   <th>Notes</th>
                   <th>Open</th>
+                  <th>Delete</th>
                 </tr>
               </thead>
               <tbody>
@@ -803,6 +934,18 @@ export default async function PassportUploadPage({
                       ) : (
                         <span style={{ color: "#64748b" }}>Unavailable</span>
                       )}
+                    </td>
+                    <td>
+                      <form action={deletePassportDocument}>
+                        <input type="hidden" name="document_id" value={document.id} />
+                        <button
+                          type="submit"
+                          className="btn btn-outline"
+                          style={{ color: "#b42318", borderColor: "#fecaca", whiteSpace: "nowrap" }}
+                        >
+                          Delete
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))}

@@ -1,23 +1,26 @@
 "use client";
 
 import { useState, useRef } from "react";
+import type { ReactNode } from "react";
 
 type ClientSuggestion = {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  email: string | null;
+  email_hint: string | null;
 };
 
 type InviteCompanionFormProps = {
   threadId: string;
   tripId: string;
   action: (formData: FormData) => Promise<void>;
+  children?: ReactNode;
 };
 
-export function InviteCompanionForm({ threadId, tripId, action }: InviteCompanionFormProps) {
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
+export function InviteCompanionForm({ threadId, tripId, action, children }: InviteCompanionFormProps) {
+  const [query, setQuery] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [selectedClientName, setSelectedClientName] = useState("");
   const [suggestions, setSuggestions] = useState<ClientSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,43 +48,44 @@ export function InviteCompanionForm({ threadId, tripId, action }: InviteCompanio
     }
   }
 
-  function handleEmailChange(value: string) {
-    setEmail(value);
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setSelectedClientId("");
+    setSelectedClientName("");
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => searchClients(value), 300);
   }
 
   function selectSuggestion(client: ClientSuggestion) {
-    setEmail(client.email ?? "");
     const fullName = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
-    setName(fullName);
+    setQuery(fullName || "Selected client");
+    setSelectedClientId(client.id);
+    setSelectedClientName(fullName || "Selected client");
     setSuggestions([]);
     setShowSuggestions(false);
   }
 
   function getDisplayName(client: ClientSuggestion) {
     const fullName = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
-    return fullName || client.email || "Unknown";
+    return fullName || "Registered client";
   }
 
   return (
     <form action={action} style={{ display: "grid", gap: 10 }}>
       <input type="hidden" name="thread_id" value={threadId} />
       <input type="hidden" name="trip_id" value={tripId} />
+      <input type="hidden" name="invite_client_account_id" value={selectedClientId} />
 
       <div className="grid grid-2">
-        {/* Email with autofill */}
         <label className="stack-sm">
-          <span className="label">Their Email</span>
+          <span className="label">Search Registered Client</span>
           <div style={{ position: "relative" }}>
             <input
               className="input"
-              name="invite_email"
-              type="email"
               required
-              placeholder="traveler@example.com"
-              value={email}
-              onChange={(e) => handleEmailChange(e.target.value)}
+              placeholder="Type their name or email"
+              value={query}
+              onChange={(e) => handleQueryChange(e.target.value)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               autoComplete="off"
             />
@@ -112,7 +116,9 @@ export function InviteCompanionForm({ threadId, tripId, action }: InviteCompanio
                     <span style={{ fontWeight: 700, color: "var(--accent-dark)", fontSize: 14 }}>
                       {getDisplayName(client)}
                     </span>
-                    <span style={{ fontSize: 12, color: "#667085" }}>{client.email}</span>
+                    {client.email_hint ? (
+                      <span style={{ fontSize: 12, color: "#667085" }}>{client.email_hint}</span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -120,26 +126,23 @@ export function InviteCompanionForm({ threadId, tripId, action }: InviteCompanio
           </div>
         </label>
 
-        {/* Name */}
-        <label className="stack-sm">
-          <span className="label">Their Name</span>
-          <input
-            className="input"
-            name="invite_name"
-            placeholder="e.g. Pat Brown"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
+        <div className="stack-sm">
+          <span className="label">Selected Client</span>
+          <div className="input" style={{ background: selectedClientId ? "#f0fdf4" : "#fff7ed", color: selectedClientId ? "#166534" : "#9a3412" }}>
+            {selectedClientId ? selectedClientName : "Choose a registered client from the search results"}
+          </div>
+        </div>
       </div>
 
       <p style={{ margin: 0, fontSize: 12, color: "#667085", lineHeight: 1.5 }}>
-        If they already have a Cozy Concierge account, access connects automatically. Otherwise they will receive an email invitation.
+        For privacy, Travel Circle companions must already have a Cozy Concierge client account.
       </p>
 
+      {children}
+
       <div>
-        <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>
-          Send Invitation
+        <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }} disabled={!selectedClientId}>
+          Add Registered Client
         </button>
       </div>
     </form>
