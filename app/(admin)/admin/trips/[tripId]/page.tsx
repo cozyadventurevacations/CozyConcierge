@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
 import Link from "next/link";
+import OpenAI from "openai";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
@@ -595,6 +596,53 @@ function ComponentCommissionLink({
       >
         Create Commission
       </Link>
+    </div>
+  );
+}
+
+function AiWritingToolButton({
+  componentType,
+  disabled = false,
+}: {
+  componentType: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className="card stack"
+      style={{
+        background: "#f7fbfc",
+        border: "1px solid #d9ecf2",
+      }}
+    >
+      <div>
+        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+          AI Writing Assistant
+        </p>
+        <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 13 }}>
+          Generates client-facing descriptions and supplier terms summaries from the saved component details. Review before relying on supplier policy language.
+        </p>
+      </div>
+      <button
+        type="submit"
+        name="component_type"
+        value={componentType}
+        formAction={generateTripComponentWriting}
+        className="btn btn-outline"
+        disabled={disabled}
+        style={{
+          alignSelf: "flex-start",
+          opacity: disabled ? 0.55 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        Generate & Save AI Copy
+      </button>
+      {disabled ? (
+        <p style={{ margin: 0, color: "#92400e", fontSize: 12 }}>
+          Save this component first, then generate copy.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1364,6 +1412,10 @@ function SectionSaveButton({ label }: { label: string }) {
 
 function getSavedSectionMessage(value: string | undefined) {
   if (!value) return null;
+  if (value === "ai-itinerary") return "AI itinerary summary generated and saved.";
+  if (value.startsWith("ai-")) {
+    return `AI copy generated for ${value.replace("ai-", "")}.`;
+  }
   if (value === "trip") return "Trip saved successfully.";
   return `${value} saved successfully.`;
 }
@@ -1382,8 +1434,130 @@ function getSavedSectionAnchor(value: string | undefined) {
     case "Commission":
     case "Commissions": return "commissions";
     case "trip": return "trip-overview";
-    default: return "trip-overview";
+    default:
+      if (value?.startsWith("ai-")) {
+        return `${value.replace("ai-", "")}-component`;
+      }
+
+      return "trip-overview";
   }
+}
+
+function extractJsonObject(value: string) {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1]?.trim() ?? trimmed;
+  const firstBrace = candidate.indexOf("{");
+  const lastBrace = candidate.lastIndexOf("}");
+
+  if (firstBrace < 0 || lastBrace < firstBrace) {
+    throw new Error("AI response did not include usable JSON.");
+  }
+
+  return JSON.parse(candidate.slice(firstBrace, lastBrace + 1)) as Record<string, unknown>;
+}
+
+function stringifyForPrompt(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function getGeneratedText(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getComponentLabel(componentType: string) {
+  switch (componentType) {
+    case "hotel": return "Hotel";
+    case "air": return "Air";
+    case "cruise": return "Cruise";
+    case "transfer": return "Transfer";
+    case "activity": return "Activity";
+    case "insurance": return "Insurance";
+    default: return componentType;
+  }
+}
+
+async function generateAiJson(prompt: string) {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY. AI writing tools are not configured.");
+  }
+
+  const client = new OpenAI({ apiKey });
+  const response = await client.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "system",
+        content: [
+          "You are an admin-side travel writing assistant for Cozy Adventure Vacations.",
+          "Write polished, client-friendly travel copy in a warm, professional voice.",
+          "Do not invent official supplier rules, legal terms, prices, amenities, or guarantees.",
+          "When writing terms or cancellation language, make it a clear advisor summary and include that official supplier terms, invoices, tickets, vouchers, or confirmations control.",
+          "Return only valid JSON. No markdown.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+  });
+
+  return extractJsonObject(response.output_text || "");
+}
+
+async function loadTripComponentContext(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  tripId: string,
+  componentType: string,
+) {
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, trip_name, destinations, departure_date, return_date, occasion, trip_status")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found or access denied.");
+
+  const { data: component, error: componentError } = await supabase
+    .from("trip_components")
+    .select("*")
+    .eq("trip_id", tripId)
+    .eq("component_type", componentType)
+    .maybeSingle();
+
+  if (componentError) throw new Error(componentError.message);
+  if (!component) {
+    throw new Error(`Save the ${getComponentLabel(componentType)} component before generating AI copy.`);
+  }
+
+  const detailTableByType: Record<string, string> = {
+    hotel: "hotel_components",
+    air: "air_components",
+    cruise: "cruise_components",
+    transfer: "transfer_components",
+    activity: "activity_components",
+    insurance: "insurance_components",
+  };
+
+  const detailTable = detailTableByType[componentType];
+  let details: Record<string, unknown> | null = null;
+
+  if (detailTable) {
+    const { data: detailData, error: detailError } = await supabase
+      .from(detailTable as any)
+      .select("*")
+      .eq("component_id", component.id)
+      .maybeSingle();
+
+    if (detailError) throw new Error(detailError.message);
+    details = (detailData ?? null) as Record<string, unknown> | null;
+  }
+
+  return { trip, component: component as Record<string, unknown>, details };
 }
 
 async function addTripCompanion(formData: FormData) {
@@ -1532,6 +1706,208 @@ async function removeTripCompanion(formData: FormData) {
 
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}`);
+}
+
+async function generateTripComponentWriting(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const componentType = String(formData.get("component_type") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!billableTripComponentTypes.includes(componentType)) {
+    throw new Error("Unknown trip component type.");
+  }
+
+  const { supabase } = await requireAdmin();
+  const { trip, component, details } = await loadTripComponentContext(supabase, tripId, componentType);
+
+  const generated = await generateAiJson([
+    `Generate admin-reviewed client-facing copy for this ${getComponentLabel(componentType)} trip component.`,
+    "",
+    "Return JSON with these exact keys:",
+    "{",
+    '  "summary_description": "short polished component description or null",',
+    '  "room_description": "hotel room description only when relevant, otherwise null",',
+    '  "terms_and_conditions": "plain-language supplier terms summary",',
+    '  "cancellation_policy": "plain-language cancellation/change summary"',
+    "}",
+    "",
+    "Trip context:",
+    stringifyForPrompt(trip),
+    "",
+    "Component context:",
+    stringifyForPrompt(component),
+    "",
+    "Detail context:",
+    stringifyForPrompt(details),
+  ].join("\n"));
+
+  const summaryDescription = getGeneratedText(generated, "summary_description");
+  const roomDescription = getGeneratedText(generated, "room_description");
+  const terms = getGeneratedText(generated, "terms_and_conditions");
+  const cancellation = getGeneratedText(generated, "cancellation_policy");
+
+  const componentUpdates: Record<string, string> = {};
+  if (terms) componentUpdates.terms_and_conditions = terms;
+  if (cancellation) componentUpdates.cancellation_policy = cancellation;
+
+  if (Object.keys(componentUpdates).length > 0) {
+    const { error } = await supabase
+      .from("trip_components")
+      .update(componentUpdates)
+      .eq("id", component.id as string);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "hotel") {
+    const hotelUpdates: Record<string, string> = {};
+    if (summaryDescription) hotelUpdates.hotel_description = summaryDescription;
+    if (roomDescription) hotelUpdates.room_description = roomDescription;
+
+    if (Object.keys(hotelUpdates).length > 0) {
+      const { error } = await supabase
+        .from("hotel_components")
+        .update(hotelUpdates)
+        .eq("component_id", component.id as string);
+
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  if (componentType === "cruise" && summaryDescription) {
+    const { error } = await supabase
+      .from("cruise_components")
+      .update({ cruise_description: summaryDescription })
+      .eq("component_id", component.id as string);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "transfer" && summaryDescription) {
+    const { error } = await supabase
+      .from("transfer_components")
+      .update({ transfer_notes: summaryDescription })
+      .eq("component_id", component.id as string);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "activity" && summaryDescription) {
+    const { error } = await supabase
+      .from("activity_components")
+      .update({ activity_notes: summaryDescription })
+      .eq("component_id", component.id as string);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "insurance" && summaryDescription) {
+    const { error } = await supabase
+      .from("insurance_components")
+      .update({ insurance_notes: summaryDescription })
+      .eq("component_id", component.id as string);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "air") {
+    const airUpdates: Record<string, string> = {};
+    if (terms) airUpdates.flight_terms_and_conditions = terms;
+    if (cancellation) airUpdates.flight_cancellation_policy = cancellation;
+
+    if (Object.keys(airUpdates).length > 0) {
+      const { error } = await supabase
+        .from("air_components")
+        .update(airUpdates)
+        .eq("component_id", component.id as string);
+
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?saved=ai-${componentType}#${componentType}-component`);
+}
+
+async function generateTripItinerarySummary(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { supabase } = await requireAdmin();
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, trip_name, destinations, departure_date, return_date, occasion, trip_status")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found or access denied.");
+
+  const componentTypes = ["hotel", "air", "cruise", "transfer", "activity", "insurance"];
+  const componentContexts = await Promise.all(
+    componentTypes.map(async (componentType) => {
+      const context = await loadTripComponentContext(supabase, tripId, componentType).catch(() => null);
+      return context
+        ? { componentType, component: context.component, details: context.details }
+        : null;
+    }),
+  );
+
+  const generated = await generateAiJson([
+    "Create a polished client-facing itinerary overview for this trip using saved components only.",
+    "Return JSON with exact keys:",
+    "{",
+    '  "client_note_title": "short title",',
+    '  "client_note_content": "warm itinerary overview with bullets or short sections"',
+    "}",
+    "",
+    "Do not invent missing bookings, confirmation numbers, supplier promises, inclusions, or live details.",
+    "Mention that official supplier confirmations and final travel documents control.",
+    "",
+    "Trip context:",
+    stringifyForPrompt(trip),
+    "",
+    "Saved component contexts:",
+    stringifyForPrompt(componentContexts.filter(Boolean)),
+  ].join("\n"));
+
+  const title = getGeneratedText(generated, "client_note_title") || "Your Trip Itinerary Overview";
+  const content = getGeneratedText(generated, "client_note_content");
+
+  if (!content) throw new Error("AI did not return an itinerary summary.");
+
+  const { data: existingNote, error: existingNoteError } = await supabase
+    .from("trip_notes")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("note_type", "client")
+    .maybeSingle();
+
+  if (existingNoteError) throw new Error(existingNoteError.message);
+
+  if (existingNote) {
+    const { error } = await supabase
+      .from("trip_notes")
+      .update({ title, content, updated_at: new Date().toISOString() })
+      .eq("id", existingNote.id);
+
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("trip_notes")
+      .insert({ trip_id: tripId, note_type: "client", title, content });
+
+    if (error) throw new Error(error.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?saved=ai-itinerary#trip-notes`);
 }
 
 async function updateTrip(formData: FormData) {
@@ -4812,6 +5188,7 @@ export default async function AdminTripEditorPage({
             grossBookingAmount={hotel.component?.total_price ?? 0}
             fullCommissionAmount={hotel.component?.commission_admin_only ?? 0}
           />
+          <AiWritingToolButton componentType="hotel" disabled={!hotel.component} />
           <div className="grid grid-2">
             <SupplierSelect
               name="hotel_supplier_id"
@@ -5012,6 +5389,7 @@ export default async function AdminTripEditorPage({
             grossBookingAmount={air.component?.total_price ?? 0}
             fullCommissionAmount={air.component?.commission_admin_only ?? 0}
           />
+          <AiWritingToolButton componentType="air" disabled={!air.component} />
 
           <div className="grid grid-2">
             <SupplierSelect
@@ -5318,6 +5696,7 @@ export default async function AdminTripEditorPage({
             grossBookingAmount={cruise.component?.total_price ?? 0}
             fullCommissionAmount={cruise.component?.commission_admin_only ?? 0}
           />
+          <AiWritingToolButton componentType="cruise" disabled={!cruise.component} />
           <div className="grid grid-2">
             <SupplierSelect
               name="cruise_supplier_id"
@@ -5511,6 +5890,7 @@ export default async function AdminTripEditorPage({
               0
             }
           />
+          <AiWritingToolButton componentType="transfer" disabled={!transfer.component} />
           <div className="grid grid-2">
             <SupplierSelect
               name="transfer_supplier_id"
@@ -5740,6 +6120,7 @@ export default async function AdminTripEditorPage({
               0
             }
           />
+          <AiWritingToolButton componentType="activity" disabled={!activity.component} />
           <div className="grid grid-2">
             <SupplierSelect
               name="activity_supplier_id"
@@ -5965,6 +6346,7 @@ export default async function AdminTripEditorPage({
               0
             }
           />
+          <AiWritingToolButton componentType="insurance" disabled={!insurance.component} />
           <div className="grid grid-2">
             <SupplierSelect
               name="insurance_supplier_id"
@@ -6132,6 +6514,31 @@ export default async function AdminTripEditorPage({
 
         <span id="trip-notes" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Notes" badge={clientReminder ? "Reminder added" : "Needs reminder"} tone={clientReminder ? "good" : "warning"} />}>
+          <div
+            className="card stack"
+            style={{
+              background: "#f7fbfc",
+              border: "1px solid #d9ecf2",
+            }}
+          >
+            <div>
+              <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+                AI Itinerary Summary
+              </p>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 13 }}>
+                Generates a polished client note from saved hotel, air, cruise, transfer, activity, and insurance components.
+              </p>
+            </div>
+            <button
+              type="submit"
+              formAction={generateTripItinerarySummary}
+              className="btn btn-outline"
+              style={{ alignSelf: "flex-start" }}
+            >
+              Generate Client Itinerary Summary
+            </button>
+          </div>
+
           <div className="card stack" style={{ background: "#fffaf0" }}>
             <h3 style={{ margin: 0 }}>Internal Notes</h3>
 
