@@ -3307,7 +3307,83 @@ async function softDeleteTripFromDetail(formData: FormData) {
   revalidatePath("/admin/dashboard");
 }
 
-async function overrideSoftDeleteTripFromDetail(formData: FormData) {
+async function deleteRowsByIds(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  table: string,
+  column: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return;
+
+  const { error } = await supabase
+    .from(table as any)
+    .delete()
+    .in(column, ids);
+
+  if (error) throw new Error(error.message);
+}
+
+async function hardDeleteTripRecords(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  tripId: string,
+) {
+  const tripIds = [tripId];
+
+  const { data: componentRows, error: componentError } = await supabase
+    .from("trip_components" as any)
+    .select("id")
+    .eq("trip_id", tripId);
+
+  if (componentError) throw new Error(componentError.message);
+
+  const componentIds = (componentRows ?? [])
+    .map((component: { id?: string | null }) => component.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (componentIds.length > 0) {
+    await deleteRowsByIds(supabase, "flight_segments", "air_component_id", componentIds);
+    await deleteRowsByIds(supabase, "air_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "hotel_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "cruise_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "transfer_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "activity_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "insurance_components", "component_id", componentIds);
+  }
+
+  const { data: tripDocuments } = await supabase
+    .from("trip_documents" as any)
+    .select("storage_path")
+    .eq("trip_id", tripId);
+
+  const tripDocumentPaths = (tripDocuments ?? [])
+    .map((document: { storage_path?: string | null }) => document.storage_path)
+    .filter((path): path is string => Boolean(path));
+
+  if (tripDocumentPaths.length > 0) {
+    const { error: storageError } = await supabase.storage
+      .from("trip-documents")
+      .remove(tripDocumentPaths);
+
+    if (storageError) throw new Error(storageError.message);
+  }
+
+  await deleteRowsByIds(supabase, "messages", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "message_threads", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_member_invites", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_members", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "payment_requests", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "email_automation_log", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_payment_ledger", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_milestones", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_notes", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_client_documents", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_documents", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "commissions", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trip_components", "trip_id", tripIds);
+  await deleteRowsByIds(supabase, "trips", "id", tripIds);
+}
+
+async function overrideHardDeleteTripFromDetail(formData: FormData) {
   "use server";
 
   const { supabase } = await requireAdmin();
@@ -3321,27 +3397,17 @@ async function overrideSoftDeleteTripFromDetail(formData: FormData) {
 
   const { data: trip, error: tripError } = await supabase
     .from("trips")
-    .select("id, deleted_at")
+    .select("id")
     .eq("id", tripId)
     .single();
 
   if (tripError || !trip) throw new Error("Trip not found.");
-  if (trip.deleted_at) throw new Error("Trip is already deleted.");
 
-  const { error } = await supabase
-    .from("trips")
-    .update({
-      deleted_at: new Date().toISOString(),
-      deletion_requested_at: null,
-      deletion_requested_by: null,
-    })
-    .eq("id", tripId);
+  await hardDeleteTripRecords(supabase, tripId);
 
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath("/admin/trips");
   revalidatePath("/admin/dashboard");
+  redirect("/admin/trips?deleted=permanent");
 }
 
 async function addTripPaymentLedgerEntry(formData: FormData) {
@@ -4063,8 +4129,8 @@ export default async function AdminTripEditorPage({
       </form>
 
       <form
-        id="override-soft-delete-trip-detail-form"
-        action={overrideSoftDeleteTripFromDetail}
+        id="override-hard-delete-trip-detail-form"
+        action={overrideHardDeleteTripFromDetail}
         style={{ display: "none" }}
       >
         <input type="hidden" name="trip_id" value={trip.id} />
@@ -4171,88 +4237,6 @@ export default async function AdminTripEditorPage({
         </div>
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
-
-        {(deletionRequested || tripDeleted) ? (
-          <div
-            className="card"
-            style={{
-              border: tripDeleted ? "1px solid #fecaca" : "1px solid #fed7aa",
-              background: tripDeleted ? "#fef2f2" : "#fff7ed",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <div>
-                <p style={{ margin: 0, fontWeight: 900, color: tripDeleted ? "#b42318" : "#9a3412" }}>
-                  {tripDeleted ? "Trip is soft deleted" : "Client requested trip deletion"}
-                </p>
-                <p style={{ margin: "5px 0 0", color: tripDeleted ? "#b42318" : "#9a3412", fontSize: 13, lineHeight: 1.5 }}>
-                  {tripDeleted
-                    ? `Deleted on ${formatDate(trip.deleted_at, "an unknown date")}. Restore it if this trip should return to active records.`
-                    : `Requested by ${trip.deletion_requested_by ?? "client"} on ${formatDate(trip.deletion_requested_at, "an unknown date")}. ${deletionEligibility.reason}.`}
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {tripDeleted ? (
-                  <button type="submit" form="restore-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>
-                    Restore Trip
-                  </button>
-                ) : (
-                  <>
-                    {deletionEligibility.allowed ? (
-                      <button type="submit" form="soft-delete-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px", background: "#be123c" }}>
-                        Approve Delete
-                      </button>
-                    ) : null}
-                    <button type="submit" form="dismiss-trip-deletion-request-detail-form" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>
-                      Dismiss Request
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {!tripDeleted && !deletionEligibility.allowed ? (
-          <div
-            className="card stack"
-            style={{
-              border: "1px solid #fecaca",
-              background: "#fff1f2",
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0, color: "#be123c" }}>Override Trip Deletion Protection</h3>
-              <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
-                Normal deletion is blocked because this trip has protected activity:
-                {" "}{deletionEligibility.reason}. Use this only for clearing test data
-                before launch. This is still a soft delete, so the trip can be restored
-                from the deleted trips view.
-              </p>
-            </div>
-
-            <label className="stack-sm" style={{ maxWidth: 420 }}>
-              <span className="label" style={{ color: "#9f1239" }}>
-                Type OVERRIDE DELETE TRIP
-              </span>
-              <input
-                className="input"
-                name="override_confirmation"
-                form="override-soft-delete-trip-detail-form"
-                placeholder="OVERRIDE DELETE TRIP"
-              />
-            </label>
-
-            <button
-              type="submit"
-              form="override-soft-delete-trip-detail-form"
-              className="btn btn-outline"
-              style={{ color: "#be123c", borderColor: "#fecaca", alignSelf: "flex-start" }}
-            >
-              Override and Soft Delete Trip
-            </button>
-          </div>
-        ) : null}
 
         <div
           className="card stack"
@@ -7015,6 +6999,122 @@ export default async function AdminTripEditorPage({
 
           <SectionSaveButton label="Notes" />
         </CollapsibleSection>
+
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #fecaca",
+            background: "#fff7f7",
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontWeight: 900, color: "#be123c" }}>
+              Trip Deletion Controls
+            </p>
+            <p style={{ margin: "6px 0 0", color: "#7f1d1d", lineHeight: 1.6 }}>
+              This section is intentionally at the bottom so trip editing stays focused.
+              Normal delete is a recoverable soft delete. Override delete permanently
+              removes the trip and its trip-only records.
+            </p>
+          </div>
+
+          {(deletionRequested || tripDeleted) ? (
+            <div
+              className="card"
+              style={{
+                border: tripDeleted ? "1px solid #fecaca" : "1px solid #fed7aa",
+                background: tripDeleted ? "#fef2f2" : "#fff7ed",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 900, color: tripDeleted ? "#b42318" : "#9a3412" }}>
+                    {tripDeleted ? "Trip is soft deleted" : "Client requested trip deletion"}
+                  </p>
+                  <p style={{ margin: "5px 0 0", color: tripDeleted ? "#b42318" : "#9a3412", fontSize: 13, lineHeight: 1.5 }}>
+                    {tripDeleted
+                      ? `Deleted on ${formatDate(trip.deleted_at, "an unknown date")}. Restore it if this trip should return to active records.`
+                      : `Requested by ${trip.deletion_requested_by ?? "client"} on ${formatDate(trip.deletion_requested_at, "an unknown date")}. ${deletionEligibility.reason}.`}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {tripDeleted ? (
+                    <button type="submit" form="restore-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>
+                      Restore Trip
+                    </button>
+                  ) : (
+                    <>
+                      {deletionEligibility.allowed ? (
+                        <button type="submit" form="soft-delete-trip-detail-form" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px", background: "#be123c" }}>
+                          Approve Soft Delete
+                        </button>
+                      ) : null}
+                      <button type="submit" form="dismiss-trip-deletion-request-detail-form" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>
+                        Dismiss Request
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {!tripDeleted && deletionEligibility.allowed ? (
+            <button
+              type="submit"
+              form="soft-delete-trip-detail-form"
+              className="btn btn-outline"
+              style={{ color: "#be123c", borderColor: "#fecaca", alignSelf: "flex-start" }}
+            >
+              Soft Delete Trip
+            </button>
+          ) : null}
+
+          {(tripDeleted || !deletionEligibility.allowed) ? (
+            <div
+              className="card stack"
+              style={{
+                border: "1px solid #fecaca",
+                background: "#fff1f2",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, color: "#be123c" }}>Override Permanent Delete</h3>
+                <p style={{ margin: "6px 0 0", color: "#9f1239", lineHeight: 1.6 }}>
+                  {tripDeleted
+                    ? "This permanently removes the soft-deleted trip from the database."
+                    : `Normal deletion is blocked because this trip has protected activity: ${deletionEligibility.reason}.`}
+                  {" "}Use this only for clearing test data before launch. It deletes trip messages,
+                  Travel Circle access, trip documents, payment records, components,
+                  commissions, notes, milestones, and the trip record itself. Client
+                  passports and client documents are not deleted; only their trip links
+                  are removed.
+                </p>
+              </div>
+
+              <label className="stack-sm" style={{ maxWidth: 420 }}>
+                <span className="label" style={{ color: "#9f1239" }}>
+                  Type OVERRIDE DELETE TRIP
+                </span>
+                <input
+                  className="input"
+                  name="override_confirmation"
+                  form="override-hard-delete-trip-detail-form"
+                  placeholder="OVERRIDE DELETE TRIP"
+                />
+              </label>
+
+              <button
+                type="submit"
+                form="override-hard-delete-trip-detail-form"
+                className="btn btn-outline"
+                style={{ color: "#be123c", borderColor: "#fecaca", alignSelf: "flex-start" }}
+              >
+                Override and Permanently Delete Trip
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         <div className="row">
           <button type="submit" name="save_section" value="trip" className="btn btn-primary">
