@@ -37,6 +37,26 @@
     return `"${clean(value).replace(/"/g, '""')}"`;
   }
 
+  function rowsToCsv(rows) {
+    return [
+      headers.map(csvCell).join(","),
+      ...rows.map((row) => headers.map((header) => csvCell(row[header] || "")).join(",")),
+    ].join("\n");
+  }
+
+  function downloadCsv(rows, prefix) {
+    const csv = rowsToCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function visibleText(element) {
     return clean(element?.innerText || element?.textContent || "");
   }
@@ -295,30 +315,121 @@
     });
   }
 
-  const table = tableRows();
-  const cards = cardRows();
-  const text = textRows();
-  const rows = [table, cards, text].sort((a, b) => b.length - a.length)[0];
+  const storageKey = "cozyWorldviaSupplierRows";
+
+  function getSavedRows() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function setSavedRows(rows) {
+    localStorage.setItem(storageKey, JSON.stringify(rows));
+  }
+
+  function bestCurrentSupplierRow() {
+    const table = tableRows();
+    const cards = cardRows();
+    const text = textRows();
+    const rows = [table, cards, text].sort((a, b) => b.length - a.length)[0];
+    return { rows, row: rows[0] || rowFromTextBlock(document.body.innerText || "") };
+  }
+
+  function saveCurrentSupplier() {
+    const { row } = bestCurrentSupplierRow();
+    if (!row || !clean(row["Supplier Name"])) {
+      alert("I could not read this supplier page. Try selecting the supplier detail text, then click Save This Supplier again.");
+      return;
+    }
+
+    const savedRows = getSavedRows();
+    const key = clean(row["Supplier Name"]).toLowerCase();
+    const existingIndex = savedRows.findIndex((saved) => clean(saved["Supplier Name"]).toLowerCase() === key);
+
+    if (existingIndex >= 0) {
+      savedRows[existingIndex] = { ...savedRows[existingIndex], ...row };
+    } else {
+      savedRows.push(row);
+    }
+
+    setSavedRows(savedRows);
+    updatePanelCount();
+    alert(`Saved ${row["Supplier Name"]}. Total saved: ${savedRows.length}.`);
+  }
+
+  function exportSavedSuppliers() {
+    const savedRows = getSavedRows();
+    if (savedRows.length === 0) {
+      alert("No suppliers have been saved yet. Open a supplier detail and click Save This Supplier first.");
+      return;
+    }
+
+    downloadCsv(savedRows, "worldvia-suppliers-saved");
+  }
+
+  function clearSavedSuppliers() {
+    if (!confirm("Clear all saved supplier rows from this browser?")) return;
+    setSavedRows([]);
+    updatePanelCount();
+  }
+
+  function updatePanelCount() {
+    const count = getSavedRows().length;
+    const countEl = document.getElementById("cozy-worldvia-supplier-count");
+    if (countEl) countEl.textContent = `${count} saved`;
+  }
+
+  function installCollectorPanel() {
+    document.getElementById("cozy-worldvia-collector")?.remove();
+
+    const panel = document.createElement("div");
+    panel.id = "cozy-worldvia-collector";
+    panel.style.cssText = [
+      "position:fixed",
+      "right:18px",
+      "bottom:18px",
+      "z-index:2147483647",
+      "width:260px",
+      "padding:14px",
+      "border-radius:14px",
+      "background:#ffffff",
+      "border:1px solid #dbeafe",
+      "box-shadow:0 18px 48px rgba(15,23,42,.24)",
+      "font-family:Arial,sans-serif",
+      "color:#123f5b",
+    ].join(";");
+
+    panel.innerHTML = `
+      <div style="font-weight:900;margin-bottom:4px;">Cozy Supplier Collector</div>
+      <div id="cozy-worldvia-supplier-count" style="font-size:12px;color:#64748b;margin-bottom:10px;">0 saved</div>
+      <button id="cozy-save-supplier" style="width:100%;margin-bottom:8px;border:0;border-radius:10px;background:#123f5b;color:white;padding:10px;font-weight:800;cursor:pointer;">Save This Supplier</button>
+      <button id="cozy-export-suppliers" style="width:100%;margin-bottom:8px;border:1px solid #dbeafe;border-radius:10px;background:#f7fbfc;color:#123f5b;padding:10px;font-weight:800;cursor:pointer;">Export CSV</button>
+      <button id="cozy-clear-suppliers" style="width:100%;border:1px solid #fecaca;border-radius:10px;background:#fff;color:#be123c;padding:8px;font-weight:800;cursor:pointer;">Clear Saved</button>
+      <div style="font-size:11px;color:#64748b;line-height:1.4;margin-top:10px;">Open each supplier detail, click save, then export once finished.</div>
+    `;
+
+    document.body.appendChild(panel);
+    document.getElementById("cozy-save-supplier").addEventListener("click", saveCurrentSupplier);
+    document.getElementById("cozy-export-suppliers").addEventListener("click", exportSavedSuppliers);
+    document.getElementById("cozy-clear-suppliers").addEventListener("click", clearSavedSuppliers);
+    updatePanelCount();
+  }
+
+  const { rows } = bestCurrentSupplierRow();
+  installCollectorPanel();
 
   if (rows.length === 0) {
-    alert("No supplier rows were found on this page. Try selecting the supplier list text with your mouse or Ctrl+A, then run the extractor again.");
+    alert("Collector mode is ready. Open a supplier detail page and click Save This Supplier. If it cannot read the detail, select the supplier text first, then click Save This Supplier.");
     return;
   }
 
-  const csv = [
-    headers.map(csvCell).join(","),
-    ...rows.map((row) => headers.map((header) => csvCell(row[header] || "")).join(",")),
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `worldvia-suppliers-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-
-  alert(`Created CSV with ${rows.length} supplier row${rows.length === 1 ? "" : "s"}. Upload it in Cozy Concierge > Admin > Suppliers > Import.`);
+  if (rows.length > 1) {
+    downloadCsv(rows, "worldvia-suppliers");
+    alert(`Created CSV with ${rows.length} supplier row${rows.length === 1 ? "" : "s"}. The collector panel is also ready if you need to click into detail pages.`);
+  } else {
+    alert("Collector mode is ready. Click Save This Supplier on detail pages, then Export CSV when finished.");
+  }
 })();
