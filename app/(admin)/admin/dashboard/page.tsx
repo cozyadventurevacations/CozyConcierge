@@ -579,6 +579,22 @@ export default async function AdminDashboardPage({
   const soonFollowUpsCount = soonClientFollowUpsResult.count ?? 0;
   const deletionRequestCount = deletionRequestsResult.count ?? 0;
   const followUpCardTone: "warning" | "neutral" = soonFollowUpsCount > 0 ? "warning" : "neutral";
+  const finalPaymentsHref =
+    finalPaymentsDue21.length === 1
+      ? `/admin/trips/${finalPaymentsDue21[0].id}`
+      : "/admin/dashboard#final-payments-due";
+  const privateMessagesHref =
+    privateMessageThreads.length === 1
+      ? `/admin/messages?threadId=${privateMessageThreads[0].id}&type=private`
+      : "/admin/dashboard#private-client-messages";
+  const followUpsHref =
+    upcomingClientFollowUps.length === 1 && getClientFromFollowUp(upcomingClientFollowUps[0])?.id
+      ? `/admin/clients/${getClientFromFollowUp(upcomingClientFollowUps[0])!.id}`
+      : "/admin/dashboard#client-follow-ups";
+  const upcomingDeparturesHref =
+    upcomingDepartures.length === 1
+      ? `/admin/trips/${upcomingDepartures[0].id}`
+      : "/admin/dashboard#upcoming-departures";
 
   const urgentOpsItems =
     Number(departuresResult.count ?? 0) +
@@ -646,7 +662,7 @@ export default async function AdminDashboardPage({
             title="Final Payments Due (21 Days)"
             value={finalPaymentsDue21.length}
             helper={`${formatMoney(finalPaymentsDue21Total)} total outstanding`}
-            href="/admin/trips"
+            href={finalPaymentsHref}
             tone={finalPaymentsDue21.length > 0 ? "warning" : "good"}
           />
           <OpsHighlightCard
@@ -672,7 +688,7 @@ export default async function AdminDashboardPage({
           title="Final Payments Due Soon"
           value={finalPaymentsDue21.length}
           subtitle={`${formatMoney(finalPaymentsDue21Total)} due in 21 days`}
-          href="/admin/trips"
+          href={finalPaymentsHref}
           tone={finalPaymentsDue21.length > 0 ? "warning" : "neutral"}
         />
         <SummaryCard
@@ -683,14 +699,14 @@ export default async function AdminDashboardPage({
               ? `${soonFollowUpsCount} due within 3 days`
               : "Client notes still open"
           }
-          href="/admin/clients"
+          href={followUpsHref}
           tone={followUpCardTone}
         />
         <SummaryCard
           title="Private Messages"
           value={unreadPrivateCount}
           subtitle={`${openMessageThreadsResult.count ?? 0} open thread${(openMessageThreadsResult.count ?? 0) === 1 ? "" : "s"} total`}
-          href="/admin/messages?type=private"
+          href={privateMessagesHref}
           tone={unreadPrivateCount > 0 ? "warning" : "neutral"}
         />
         <SummaryCard
@@ -710,7 +726,7 @@ export default async function AdminDashboardPage({
           title="Trips Departing Soon"
           value={departuresResult.count ?? 0}
           subtitle="Next 14 days"
-          href="/admin/trips"
+          href={upcomingDeparturesHref}
         />
         <SummaryCard
           title="Cruise Price Watch"
@@ -840,7 +856,7 @@ export default async function AdminDashboardPage({
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* Final Payments Due in 21 Days */}
-        <div className="card stack">
+        <div id="final-payments-due" className="card stack">
           <SectionTitle title="Final Payments Due in 21 Days" href="/admin/trips" linkLabel="View All Trips" />
           {finalPaymentsDue21Result.error ? (
             <pre>{JSON.stringify(finalPaymentsDue21Result.error, null, 2)}</pre>
@@ -863,7 +879,7 @@ export default async function AdminDashboardPage({
         </div>
 
         {/* Private Messages */}
-        <div className="card stack">
+        <div id="private-client-messages" className="card stack">
           <SectionTitle title="Private Client Messages" href="/admin/messages?type=private" linkLabel="Open Message Inbox" />
           {privateMessageThreadsResult.error ? (
             <pre>{JSON.stringify(privateMessageThreadsResult.error, null, 2)}</pre>
@@ -942,7 +958,7 @@ export default async function AdminDashboardPage({
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* Client Follow-Ups */}
-        <div className="card stack">
+        <div id="client-follow-ups" className="card stack">
           <SectionTitle title="Upcoming Client Follow-Ups" href="/admin/clients" linkLabel="View Clients" />
           {upcomingClientFollowUpsResult.error ? (
             <pre>{JSON.stringify(upcomingClientFollowUpsResult.error, null, 2)}</pre>
@@ -974,7 +990,7 @@ export default async function AdminDashboardPage({
         </div>
 
         {/* Upcoming Departures */}
-        <div className="card stack">
+        <div id="upcoming-departures" className="card stack">
           <SectionTitle title="Upcoming Departures" href="/admin/trips" linkLabel="View Trips" />
           {upcomingDeparturesResult.error ? (
             <pre>{JSON.stringify(upcomingDeparturesResult.error, null, 2)}</pre>

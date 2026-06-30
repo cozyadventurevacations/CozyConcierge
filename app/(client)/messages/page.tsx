@@ -57,6 +57,11 @@ type TripMemberSummary = {
   invite_status: string;
 };
 
+type HiddenThreadState = {
+  thread_id: string;
+  hidden_at: string | null;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
@@ -116,6 +121,18 @@ function groupMessagesByDate(messages: MessageRow[]) {
     }
   }
   return groups;
+}
+
+function clientActorKey(clientAccountId: string) {
+  return `client:${clientAccountId}`;
+}
+
+function isThreadVisibleForActor(thread: MessageThreadRow, hiddenAt: string | null | undefined) {
+  if (!hiddenAt) return true;
+  const lastActivity = new Date(thread.last_message_at ?? thread.created_at ?? 0).getTime();
+  const hiddenTime = new Date(hiddenAt).getTime();
+  if (!Number.isFinite(lastActivity) || !Number.isFinite(hiddenTime)) return false;
+  return lastActivity > hiddenTime;
 }
 
 // ── UI Components ─────────────────────────────────────────────────────────────
@@ -511,6 +528,49 @@ async function replyToClientThread(formData: FormData) {
   redirect(`/messages?threadId=${threadId}&sent=1`);
 }
 
+async function hideThreadForClient(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const threadId = String(formData.get("thread_id") ?? "").trim();
+
+  if (!threadId) throw new Error("Missing thread ID.");
+
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .select("id, client_account_id, trip_id, thread_type")
+    .eq("id", threadId)
+    .maybeSingle();
+
+  if (threadError) throw new Error(threadError.message);
+  if (!thread) throw new Error("Message thread not found.");
+
+  if (thread.thread_type === "trip_group") {
+    if (!thread.trip_id) throw new Error("This group thread is missing a trip.");
+    await assertCanUseTripMessages(supabase, clientAccount.id, thread.trip_id, true);
+  } else if (thread.client_account_id !== clientAccount.id) {
+    throw new Error("Message thread not found.");
+  }
+
+  const { error } = await supabase
+    .from("message_thread_hidden_states" as any)
+    .upsert(
+      {
+        thread_id: threadId,
+        actor_key: clientActorKey(clientAccount.id),
+        hidden_by_role: "client",
+        client_account_id: clientAccount.id,
+        hidden_at: new Date().toISOString(),
+      },
+      { onConflict: "thread_id,actor_key" },
+    );
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/messages");
+  redirect("/messages?hidden=1");
+}
+
 async function inviteAdvisorToThread(formData: FormData) {
   "use server";
 
@@ -666,9 +726,9 @@ async function inviteCompanionToCircle(formData: FormData) {
 export default async function ClientMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ threadId?: string; sent?: string; tripId?: string; subject?: string; scope?: string }>;
+  searchParams: Promise<{ threadId?: string; sent?: string; tripId?: string; subject?: string; scope?: string; hidden?: string }>;
 }) {
-  const { threadId, sent, tripId: requestedTripId, subject: requestedSubject, scope } = await searchParams;
+  const { threadId, sent, tripId: requestedTripId, subject: requestedSubject, scope, hidden } = await searchParams;
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
@@ -724,11 +784,32 @@ export default async function ClientMessagesPage({
     threadMap.set(t.id, t);
   }
 
-  const threadRows = Array.from(threadMap.values()).sort((a, b) => {
+  const allThreadRows = Array.from(threadMap.values()).sort((a, b) => {
     const aTime = new Date(a.last_message_at ?? a.created_at ?? 0).getTime();
     const bTime = new Date(b.last_message_at ?? b.created_at ?? 0).getTime();
     return bTime - aTime;
   });
+
+  const allThreadIds = allThreadRows.map((thread) => thread.id);
+  const { data: hiddenThreadStates } =
+    allThreadIds.length > 0
+      ? await supabase
+          .from("message_thread_hidden_states" as any)
+          .select("thread_id, hidden_at")
+          .eq("actor_key", clientActorKey(clientAccount.id))
+          .in("thread_id", allThreadIds)
+      : { data: [] as HiddenThreadState[] };
+
+  const hiddenThreadMap = new Map(
+    ((hiddenThreadStates ?? []) as HiddenThreadState[]).map((state) => [
+      state.thread_id,
+      state.hidden_at,
+    ]),
+  );
+
+  const threadRows = allThreadRows.filter((thread) =>
+    isThreadVisibleForActor(thread, hiddenThreadMap.get(thread.id)),
+  );
 
   const defaultTripId = requestedTripId && tripRows.some((t) => t.trip_id === requestedTripId) ? requestedTripId : "";
   const defaultSubject = requestedSubject ? decodeURIComponent(requestedSubject) : "";
@@ -850,6 +931,12 @@ export default async function ClientMessagesPage({
       )}
 
       {/* ── Banner ── */}
+      {hidden === "1" && (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", display: "flex", alignItems: "center", gap: 10 }}>
+          <strong>Conversation hidden from your messages.</strong>
+        </div>
+      )}
+
       <div className="card stack" style={{ background: "linear-gradient(135deg, #f7fbfc 0%, #ffffff 72%)", border: "1px solid #e6f0f2" }}>
         <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Cozy Concierge</p>
         <h2 style={{ margin: 0 }}>Message Center</h2>
@@ -1004,6 +1091,16 @@ export default async function ClientMessagesPage({
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <ThreadTypePill threadType={selectedThread.thread_type} />
               <StatusPill label={selectedThread.status} tone={selectedThread.status === "resolved" ? "good" : "neutral"} />
+              <form action={hideThreadForClient}>
+                <input type="hidden" name="thread_id" value={selectedThread.id} />
+                <button
+                  type="submit"
+                  className="btn btn-outline"
+                  style={{ borderColor: "#fecaca", color: "#be123c", padding: "7px 12px", fontSize: 13 }}
+                >
+                  Hide From My Messages
+                </button>
+              </form>
             </div>
           ) : null}
         </div>

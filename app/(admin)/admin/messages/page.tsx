@@ -47,6 +47,11 @@ type TripInfo = {
   departure_date: string | null;
 };
 
+type HiddenThreadState = {
+  thread_id: string;
+  hidden_at: string | null;
+};
+
 function formatDateTime(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
   const date = new Date(value);
@@ -197,6 +202,43 @@ async function updateThreadStatus(formData: FormData) {
   revalidatePath("/admin/messages");
 }
 
+async function hideThreadForAdmin(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const threadId = String(formData.get("thread_id") ?? "").trim();
+
+  if (!threadId) throw new Error("Missing thread ID.");
+
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .select("id")
+    .eq("id", threadId)
+    .maybeSingle();
+
+  if (threadError) throw new Error(threadError.message);
+  if (!thread) throw new Error("Message thread not found.");
+
+  const { error } = await supabase
+    .from("message_thread_hidden_states" as any)
+    .upsert(
+      {
+        thread_id: threadId,
+        actor_key: "admin",
+        hidden_by_role: "admin",
+        client_account_id: null,
+        hidden_at: new Date().toISOString(),
+      },
+      { onConflict: "thread_id,actor_key" },
+    );
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/messages");
+  revalidatePath("/admin/dashboard");
+  redirect("/admin/messages?hidden=1");
+}
+
 async function deleteMessageFromThread(formData: FormData) {
   "use server";
 
@@ -315,9 +357,9 @@ async function deleteOldMessageThreads(formData: FormData) {
 export default async function AdminMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ threadId?: string; status?: string; type?: string; oldMessageCleanup?: string }>;
+  searchParams: Promise<{ threadId?: string; status?: string; type?: string; oldMessageCleanup?: string; hidden?: string }>;
 }) {
-  const { threadId, status, type, oldMessageCleanup } = await searchParams;
+  const { threadId, status, type, oldMessageCleanup, hidden } = await searchParams;
   const { supabase } = await requireAdmin();
 
   let threadQuery = supabase
@@ -346,7 +388,28 @@ export default async function AdminMessagesPage({
     );
   }
 
-  const threadRows = (threads ?? []) as MessageThreadRow[];
+  const allThreadRows = (threads ?? []) as MessageThreadRow[];
+  const allThreadIds = allThreadRows.map((thread) => thread.id);
+
+  const { data: hiddenThreadStates } =
+    allThreadIds.length > 0
+      ? await supabase
+          .from("message_thread_hidden_states" as any)
+          .select("thread_id, hidden_at")
+          .eq("actor_key", "admin")
+          .in("thread_id", allThreadIds)
+      : { data: [] as HiddenThreadState[] };
+
+  const hiddenThreadMap = new Map(
+    ((hiddenThreadStates ?? []) as HiddenThreadState[]).map((state) => [
+      state.thread_id,
+      state.hidden_at,
+    ]),
+  );
+
+  const threadRows = allThreadRows.filter((thread) =>
+    isThreadVisibleForActor(thread, hiddenThreadMap.get(thread.id)),
+  );
   const selectedThread =
     threadRows.find((thread) => thread.id === threadId) ?? threadRows[0] ?? null;
 
@@ -469,6 +532,12 @@ export default async function AdminMessagesPage({
           <Link href="/admin/dashboard" className="btn btn-primary">Admin Dashboard</Link>
         </div>
       </div>
+
+      {hidden === "1" ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Conversation hidden from your inbox.</p>
+        </div>
+      ) : null}
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* ── Thread list ── */}
@@ -703,6 +772,16 @@ export default async function AdminMessagesPage({
                   <input type="hidden" name="status" value="archived" />
                   <button type="submit" className="btn btn-primary">Archive</button>
                 </form>
+                <form action={hideThreadForAdmin}>
+                  <input type="hidden" name="thread_id" value={selectedThread.id} />
+                  <button
+                    type="submit"
+                    className="btn btn-outline"
+                    style={{ borderColor: "#fecaca", color: "#be123c" }}
+                  >
+                    Hide From My Inbox
+                  </button>
+                </form>
               </div>
             </>
           )}
@@ -761,5 +840,13 @@ export default async function AdminMessagesPage({
       </div>
     </PageShell>
   );
+}
+
+function isThreadVisibleForActor(thread: MessageThreadRow, hiddenAt: string | null | undefined) {
+  if (!hiddenAt) return true;
+  const lastActivity = new Date(thread.last_message_at ?? thread.created_at ?? 0).getTime();
+  const hiddenTime = new Date(hiddenAt).getTime();
+  if (!Number.isFinite(lastActivity) || !Number.isFinite(hiddenTime)) return false;
+  return lastActivity > hiddenTime;
 }
 
