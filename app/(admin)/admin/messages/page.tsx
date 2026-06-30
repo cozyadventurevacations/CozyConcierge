@@ -418,58 +418,6 @@ export default async function AdminMessagesPage({
         </div>
       </div>
 
-      {oldMessageCleanup ? (
-        <div
-          className="card"
-          style={{
-            border: oldMessageCleanup === "none" ? "1px solid #bfdbfe" : "1px solid #bbf7d0",
-            background: oldMessageCleanup === "none" ? "#eff6ff" : "#f0fdf4",
-            color: oldMessageCleanup === "none" ? "#1d4ed8" : "#166534",
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 800 }}>
-            {oldMessageCleanup === "none"
-              ? "No old resolved or archived messages matched that cleanup."
-              : `Deleted ${oldMessageCleanup} old message thread${oldMessageCleanup === "1" ? "" : "s"}.`}
-          </p>
-        </div>
-      ) : null}
-
-      <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
-        <div>
-          <h2 style={{ margin: 0, color: "#9a3412" }}>Old Message Cleanup</h2>
-          <p style={{ margin: "6px 0 0", color: "#9a3412", lineHeight: 1.6 }}>
-            Permanently delete old conversations that are already resolved or archived. Open conversations are protected and will not be touched.
-          </p>
-        </div>
-        <form action={deleteOldMessageThreads} className="grid grid-4" style={{ alignItems: "end" }}>
-          <label className="stack-sm">
-            <span className="label" style={{ color: "#9a3412" }}>Older than</span>
-            <select className="select" name="older_than_days" defaultValue="365">
-              <option value="90">90 days</option>
-              <option value="180">180 days</option>
-              <option value="365">1 year</option>
-              <option value="730">2 years</option>
-            </select>
-          </label>
-          <label className="stack-sm">
-            <span className="label" style={{ color: "#9a3412" }}>Message type</span>
-            <select className="select" name="thread_type" defaultValue="all">
-              <option value="all">All types</option>
-              <option value="private">Private only</option>
-              <option value="trip_group">Travel Circle only</option>
-            </select>
-          </label>
-          <label className="stack-sm" style={{ gridColumn: "span 2" }}>
-            <span className="label" style={{ color: "#9a3412" }}>Type DELETE OLD MESSAGES</span>
-            <input className="input" name="delete_old_messages_confirmation" placeholder="DELETE OLD MESSAGES" />
-          </label>
-          <button type="submit" className="btn btn-outline" style={{ color: "#c2410c", borderColor: "#fed7aa" }}>
-            Delete Old Messages
-          </button>
-        </form>
-      </div>
-
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* ── Thread list ── */}
         <div className="card stack">
@@ -671,6 +619,57 @@ export default async function AdminMessagesPage({
             </>
           )}
         </div>
+      </div>
+
+      <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#9a3412" }}>Old Message Cleanup</h2>
+          <p style={{ margin: "6px 0 0", color: "#9a3412", lineHeight: 1.6 }}>
+            This bottom-page tool permanently deletes old resolved or archived conversations. Open conversations are protected.
+          </p>
+        </div>
+        {oldMessageCleanup ? (
+          <div
+            className="card"
+            style={{
+              border: oldMessageCleanup === "none" ? "1px solid #bfdbfe" : "1px solid #bbf7d0",
+              background: oldMessageCleanup === "none" ? "#eff6ff" : "#f0fdf4",
+              color: oldMessageCleanup === "none" ? "#1d4ed8" : "#166534",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 800 }}>
+              {oldMessageCleanup === "none"
+                ? "No old resolved or archived messages matched that cleanup."
+                : `Deleted ${oldMessageCleanup} old message thread${oldMessageCleanup === "1" ? "" : "s"}.`}
+            </p>
+          </div>
+        ) : null}
+        <form action={deleteOldMessageThreads} className="grid grid-4" style={{ alignItems: "end" }}>
+          <label className="stack-sm">
+            <span className="label" style={{ color: "#9a3412" }}>Older than</span>
+            <select className="select" name="older_than_days" defaultValue="365">
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+              <option value="365">1 year</option>
+              <option value="730">2 years</option>
+            </select>
+          </label>
+          <label className="stack-sm">
+            <span className="label" style={{ color: "#9a3412" }}>Message type</span>
+            <select className="select" name="thread_type" defaultValue="all">
+              <option value="all">All types</option>
+              <option value="private">Private only</option>
+              <option value="trip_group">Travel Circle only</option>
+            </select>
+          </label>
+          <label className="stack-sm" style={{ gridColumn: "span 2" }}>
+            <span className="label" style={{ color: "#9a3412" }}>Type DELETE OLD MESSAGES</span>
+            <input className="input" name="delete_old_messages_confirmation" placeholder="DELETE OLD MESSAGES" />
+          </label>
+          <button type="submit" className="btn btn-outline" style={{ color: "#c2410c", borderColor: "#fed7aa" }}>
+            Delete Old Messages
+          </button>
+        </form>
       </div>
     </PageShell>
   );

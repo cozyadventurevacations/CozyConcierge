@@ -329,11 +329,6 @@ export default async function AdminTripsPage({
             Deleted Trips
           </Link>
         </div>
-        {deletionRequestCount > 0 && !showDeleted && (
-          <div style={{ padding: "8px 14px", borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontWeight: 700, fontSize: 13 }}>
-            {deletionRequestCount} deletion request{deletionRequestCount === 1 ? "" : "s"} pending client review
-          </div>
-        )}
       </div>
 
       {!showDeleted && (
@@ -354,47 +349,6 @@ export default async function AdminTripsPage({
           <FilterLink href="/admin/trips?filter=completed" active={activeFilter === "completed"}>Completed</FilterLink>
         </div>
       )}
-      {/* Deletion requests banner */}
-      {!showDeleted && tripRows.some((t) => t.deletion_requested_at) && (
-        <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
-          <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>Client Deletion Requests</p>
-          <p style={{ margin: 0, color: "#9a3412", fontSize: 13, lineHeight: 1.6 }}>
-            The following trips have been flagged by clients for deletion. Review each one and approve or dismiss.
-          </p>
-          {tripRows.filter((t) => t.deletion_requested_at).map((trip) => {
-            const clientName = getTripClientName(trip);
-            const deletable = isDeletable(trip);
-            return (
-              <div key={trip.id} style={{ padding: "12px 14px", borderRadius: 12, background: "#ffffff", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                  <p style={{ margin: 0, fontWeight: 800 }}>{trip.trip_name}</p>
-                  <p style={{ margin: "3px 0 0", fontSize: 13, color: "#667085" }}>
-                    {clientName} · {trip.trip_status}
-                    {trip.deletion_requested_by ? ` · requested by ${trip.deletion_requested_by}` : ""}
-                  </p>
-                  {!deletable.allowed && (
-                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "#be123c" }}>{deletable.reason}</p>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Link href={`/admin/trips/${trip.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Open Trip</Link>
-                  {deletable.allowed && (
-                    <form action={approveDeletionRequest}>
-                      <input type="hidden" name="trip_id" value={trip.id} />
-                      <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "7px 12px", background: "#be123c" }}>Approve Delete</button>
-                    </form>
-                  )}
-                  <form action={dismissDeletionRequest}>
-                    <input type="hidden" name="trip_id" value={trip.id} />
-                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Dismiss Request</button>
-                  </form>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       {tripRows.length === 0 ? (
         <div className="card">
           <p style={{ margin: 0, color: "#64748b" }}>
@@ -474,7 +428,46 @@ export default async function AdminTripsPage({
                   </div>
                   <div><span className="label">Balance Due</span><strong>{formatMoney(trip.balance_due)}</strong></div>
                   <div><span className="label">Final Due</span><strong>{formatDate(trip.final_payment_due_date)}</strong></div>
-                  <div><span className="label">Delete Rule</span><strong>{deletable.reason}</strong></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!showDeleted && tripRows.some((t) => t.deletion_requested_at) && (
+        <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
+          <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>Client Deletion Requests</p>
+          <p style={{ margin: 0, color: "#9a3412", fontSize: 13, lineHeight: 1.6 }}>
+            Review requested trip removals here after you finish scanning the trip list.
+          </p>
+          {tripRows.filter((t) => t.deletion_requested_at).map((trip) => {
+            const clientName = getTripClientName(trip);
+            const deletable = isDeletable(trip);
+            return (
+              <div key={trip.id} style={{ padding: "12px 14px", borderRadius: 12, background: "#ffffff", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 800 }}>{trip.trip_name}</p>
+                  <p style={{ margin: "3px 0 0", fontSize: 13, color: "#667085" }}>
+                    {clientName} - {trip.trip_status}
+                    {trip.deletion_requested_by ? ` - requested by ${trip.deletion_requested_by}` : ""}
+                  </p>
+                  {!deletable.allowed && (
+                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "#be123c" }}>{deletable.reason}</p>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Link href={`/admin/trips/${trip.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Open Trip</Link>
+                  {deletable.allowed && (
+                    <form action={approveDeletionRequest}>
+                      <input type="hidden" name="trip_id" value={trip.id} />
+                      <button type="submit" className="btn btn-primary" style={{ fontSize: 13, padding: "7px 12px", background: "#be123c" }}>Approve Delete</button>
+                    </form>
+                  )}
+                  <form action={dismissDeletionRequest}>
+                    <input type="hidden" name="trip_id" value={trip.id} />
+                    <button type="submit" className="btn btn-outline" style={{ fontSize: 13, padding: "7px 12px" }}>Dismiss Request</button>
+                  </form>
                 </div>
               </div>
             );

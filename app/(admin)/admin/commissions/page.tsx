@@ -258,22 +258,6 @@ export default async function AdminCommissionsPage({
 
   return (
     <PageShell title="Commissions" subtitle="Track expected and received agency commissions.">
-      {deleted === "1" ? (
-        <div
-          className="card"
-          style={{
-            border: "1px solid #bbf7d0",
-            background: "#f0fdf4",
-            color: "#166534",
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 900 }}>Commission deleted.</p>
-          <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
-            The commission record was removed. This is useful for duplicate or test entries.
-          </p>
-        </div>
-      ) : null}
-
       <div
         style={{
           border: "1px solid #dbeafe",
@@ -397,6 +381,22 @@ export default async function AdminCommissionsPage({
           </div>
         )}
       </div>
+
+      {deleted === "1" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#166534",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 900 }}>Commission deleted.</p>
+          <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+            The commission record was removed. This is useful for duplicate or test entries.
+          </p>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

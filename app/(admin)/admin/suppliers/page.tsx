@@ -208,21 +208,6 @@ export default async function AdminSuppliersPage({
         </Link>
       </div>
 
-      {deleteBlocked ? (
-        <div className="card" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
-          <p style={{ margin: 0, fontWeight: 900 }}>Supplier was not deleted.</p>
-          <p style={{ margin: "4px 0 0", lineHeight: 1.5 }}>
-            That supplier is linked to trip components or commissions. Open the supplier record to review what is connected before removing it.
-          </p>
-        </div>
-      ) : null}
-
-      {deleted ? (
-        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#ecfdf3", color: "#027a48" }}>
-          <p style={{ margin: 0, fontWeight: 900 }}>Supplier deleted.</p>
-        </div>
-      ) : null}
-
       <div className="card stack">
         <SearchBox defaultValue={searchTerm} />
 
@@ -307,6 +292,21 @@ export default async function AdminSuppliersPage({
           </div>
         )}
       </div>
+
+      {deleteBlocked ? (
+        <div className="card" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+          <p style={{ margin: 0, fontWeight: 900 }}>Supplier was not deleted.</p>
+          <p style={{ margin: "4px 0 0", lineHeight: 1.5 }}>
+            That supplier is linked to trip components or commissions. Open the supplier record to review what is connected before removing it.
+          </p>
+        </div>
+      ) : null}
+
+      {deleted ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#ecfdf3", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 900 }}>Supplier deleted.</p>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

@@ -208,12 +208,6 @@ export default async function AdminHotelsPage({
         </div>
       ) : null}
 
-      {deleted ? (
-        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#ecfdf3", color: "#027a48" }}>
-          <p style={{ margin: 0, fontWeight: 900 }}>Hotel deleted.</p>
-        </div>
-      ) : null}
-
       <div className="card stack">
         <div>
           <h2 style={{ margin: 0 }}>Add Hotel</h2>
@@ -371,6 +365,12 @@ export default async function AdminHotelsPage({
           </div>
         )}
       </div>
+
+      {deleted ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#ecfdf3", color: "#027a48" }}>
+          <p style={{ margin: 0, fontWeight: 900 }}>Hotel deleted.</p>
+        </div>
+      ) : null}
     </PageShell>
   );
 }
