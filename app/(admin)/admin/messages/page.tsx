@@ -197,6 +197,58 @@ async function updateThreadStatus(formData: FormData) {
   revalidatePath("/admin/messages");
 }
 
+async function deleteMessageFromThread(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const messageId = String(formData.get("message_id") ?? "").trim();
+  const threadId = String(formData.get("thread_id") ?? "").trim();
+
+  if (!messageId) throw new Error("Missing message ID.");
+  if (!threadId) throw new Error("Missing thread ID.");
+
+  const { data: message, error: messageError } = await supabase
+    .from("messages" as any)
+    .select("id, thread_id")
+    .eq("id", messageId)
+    .eq("thread_id", threadId)
+    .maybeSingle();
+
+  if (messageError) throw new Error(messageError.message);
+  if (!message) throw new Error("Message not found.");
+
+  const { error: deleteError } = await supabase
+    .from("messages" as any)
+    .delete()
+    .eq("id", messageId)
+    .eq("thread_id", threadId);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  const { data: latestMessages, error: latestError } = await supabase
+    .from("messages" as any)
+    .select("created_at")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (latestError) throw new Error(latestError.message);
+
+  const { error: threadError } = await supabase
+    .from("message_threads" as any)
+    .update({
+      last_message_at: latestMessages?.[0]?.created_at ?? new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", threadId);
+
+  if (threadError) throw new Error(threadError.message);
+
+  revalidatePath("/admin/messages");
+  redirect(`/admin/messages?threadId=${threadId}`);
+}
+
 async function deleteOldMessageThreads(formData: FormData) {
   "use server";
 
@@ -420,7 +472,13 @@ export default async function AdminMessagesPage({
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* ── Thread list ── */}
-        <div className="card stack">
+        <div
+          className="card stack"
+          style={{
+            border: selectedThread ? "2px solid #d9ecf2" : undefined,
+            boxShadow: selectedThread ? "0 18px 44px rgba(18, 63, 91, 0.12)" : undefined,
+          }}
+        >
           <h2 style={{ margin: 0 }}>Threads</h2>
           {threadRows.length === 0 ? (
             <p style={{ margin: 0, color: "#667085" }}>No message threads yet.</p>
@@ -429,6 +487,7 @@ export default async function AdminMessagesPage({
               {threadRows.map((thread) => {
                 const client = clientMap.get(thread.client_account_id);
                 const trip = thread.trip_id ? tripMap.get(thread.trip_id) : null;
+                const isSelected = selectedThread?.id === thread.id;
                 const params = new URLSearchParams();
                 params.set("threadId", thread.id);
                 if (status) params.set("status", status);
@@ -442,10 +501,12 @@ export default async function AdminMessagesPage({
                       display: "block",
                       padding: "12px",
                       borderRadius: 12,
-                      border: selectedThread?.id === thread.id ? "2px solid var(--accent-dark)" : "1px solid #e6f0f2",
+                      border: isSelected ? "2px solid var(--accent-dark)" : "1px solid #e6f0f2",
+                      boxShadow: isSelected ? "0 14px 32px rgba(18, 63, 91, 0.18)" : undefined,
+                      transform: isSelected ? "translateY(-1px)" : undefined,
                       textDecoration: "none",
                       color: "inherit",
-                      background: selectedThread?.id === thread.id ? "#f7fbfc" : "#ffffff",
+                      background: isSelected ? "linear-gradient(135deg, #f7fbfc 0%, #ffffff 100%)" : "#ffffff",
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -543,15 +604,42 @@ export default async function AdminMessagesPage({
                         background: isAdmin ? "#f0f7f8" : hasMention ? "#fefce8" : "#ffffff",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
-                          {senderLabel}
-                        </p>
-                        {hasMention && !isAdmin && (
-                          <span style={{ fontSize: 11, fontWeight: 800, background: "#fef9c3", color: "#854d0e", borderRadius: 999, padding: "2px 8px", border: "1px solid #fef08a" }}>
-                            @advisor mention
-                          </span>
-                        )}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+                            {senderLabel}
+                          </p>
+                          {hasMention && !isAdmin && (
+                            <span style={{ fontSize: 11, fontWeight: 800, background: "#fef9c3", color: "#854d0e", borderRadius: 999, padding: "2px 8px", border: "1px solid #fef08a" }}>
+                              @advisor mention
+                            </span>
+                          )}
+                        </div>
+                        <form action={deleteMessageFromThread}>
+                          <input type="hidden" name="thread_id" value={message.thread_id} />
+                          <input type="hidden" name="message_id" value={message.id} />
+                          <button
+                            type="submit"
+                            aria-label="Delete message"
+                            title="Delete message"
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 999,
+                              border: "1px solid #fecaca",
+                              background: "#ffffff",
+                              color: "#be123c",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 900,
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </form>
                       </div>
                       <p
                         style={{ margin: "6px 0 0", lineHeight: 1.55 }}

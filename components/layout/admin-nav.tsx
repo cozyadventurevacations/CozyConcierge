@@ -3,7 +3,6 @@ export const adminNav = [
   { href: "/admin/trips", label: "Trips" },
   { href: "/admin/groups", label: "Groups" },
   { href: "/admin/clients", label: "Clients" },
-  { href: "/admin/hotels", label: "Hotels" },
   { href: "/admin/suppliers", label: "Suppliers" },
   { href: "/admin/commissions", label: "Commissions" },
   { href: "/admin/email-automations", label: "Email Automations" },

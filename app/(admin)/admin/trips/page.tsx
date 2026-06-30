@@ -345,7 +345,7 @@ export default async function AdminTripsPage({
           <FilterLink href="/admin/trips" active={activeFilter === "all"}>All</FilterLink>
           <FilterLink href="/admin/trips?filter=upcoming" active={activeFilter === "upcoming"}>Upcoming</FilterLink>
           <FilterLink href="/admin/trips?filter=payment-due" active={activeFilter === "payment-due"}>Payment Due</FilterLink>
-          <FilterLink href="/admin/trips?filter=deletion-requested" active={activeFilter === "deletion-requested"}>Deletion Requested</FilterLink>
+          <FilterLink href="/admin/trips?filter=deletion-requested#deletion-requests" active={activeFilter === "deletion-requested"}>Deletion Requested</FilterLink>
           <FilterLink href="/admin/trips?filter=completed" active={activeFilter === "completed"}>Completed</FilterLink>
         </div>
       )}
@@ -436,7 +436,7 @@ export default async function AdminTripsPage({
       )}
 
       {!showDeleted && tripRows.some((t) => t.deletion_requested_at) && (
-        <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
+        <div id="deletion-requests" className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed", boxShadow: "0 18px 44px rgba(154, 52, 18, 0.12)" }}>
           <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>Client Deletion Requests</p>
           <p style={{ margin: 0, color: "#9a3412", fontSize: 13, lineHeight: 1.6 }}>
             Review requested trip removals here after you finish scanning the trip list.

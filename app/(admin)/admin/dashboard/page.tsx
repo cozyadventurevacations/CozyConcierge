@@ -585,7 +585,7 @@ export default async function AdminDashboardPage({
           </div>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/admin/trips" className="btn btn-primary">Final Payments</Link>
-            <Link href="/admin/trips?filter=deletion-requested" className="btn btn-outline">Deletion Requests</Link>
+            <Link href="/admin/trips?filter=deletion-requested#deletion-requests" className="btn btn-outline">Deletion Requests</Link>
             <Link href="/admin/messages?type=private" className="btn btn-primary">Private Messages</Link>
           </div>
         </div>
@@ -595,7 +595,7 @@ export default async function AdminDashboardPage({
             title="Priority Items"
             value={urgentOpsItems}
             helper="Final payments, deletion requests, new requests, payment requests, and upcoming departures"
-            href="/admin/trips?filter=deletion-requested"
+            href="/admin/trips?filter=deletion-requested#deletion-requests"
             tone={urgentOpsItems > 0 ? "warning" : "good"}
           />
           <OpsHighlightCard
@@ -609,7 +609,7 @@ export default async function AdminDashboardPage({
             title="Deletion Requests"
             value={deletionRequestCount}
             helper="Client requested trip removal"
-            href="/admin/trips?filter=deletion-requested"
+            href="/admin/trips?filter=deletion-requested#deletion-requests"
             tone={deletionRequestCount > 0 ? "warning" : "good"}
           />
         </div>
@@ -665,7 +665,7 @@ export default async function AdminDashboardPage({
           title="Deletion Requests"
           value={deletionRequestCount}
           subtitle="Waiting for admin review"
-          href="/admin/trips?filter=deletion-requested"
+          href="/admin/trips?filter=deletion-requested#deletion-requests"
           tone={deletionRequestCount > 0 ? "warning" : "neutral"}
         />
       </div>

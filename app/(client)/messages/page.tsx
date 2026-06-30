@@ -956,7 +956,9 @@ export default async function ClientMessagesPage({
                       border: isSelected ? "2px solid var(--accent-dark)" : hasUnread ? "1px solid #fed7aa" : "1px solid #e6f0f2",
                       borderLeft: hasUnread && !isSelected ? "4px solid #f97316" : undefined,
                       textDecoration: "none", color: "inherit",
-                      background: isSelected ? "#f7fbfc" : hasUnread ? "#fffbf7" : "#ffffff",
+                      background: isSelected ? "linear-gradient(135deg, #f7fbfc 0%, #ffffff 100%)" : hasUnread ? "#fffbf7" : "#ffffff",
+                      boxShadow: isSelected ? "0 14px 32px rgba(18, 63, 91, 0.18)" : undefined,
+                      transform: isSelected ? "translateY(-1px)" : undefined,
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -979,7 +981,13 @@ export default async function ClientMessagesPage({
       </div>
 
       {/* ── Conversation ── */}
-      <div className="card stack">
+      <div
+        className="card stack"
+        style={{
+          border: selectedThread ? "2px solid #d9ecf2" : undefined,
+          boxShadow: selectedThread ? "0 18px 44px rgba(18, 63, 91, 0.12)" : undefined,
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
             <h2 style={{ margin: 0 }}>{selectedThread ? selectedThread.subject : "Conversation"}</h2>
