@@ -212,10 +212,96 @@
     });
   }
 
-  const rows = tableRows().length >= cardRows().length ? tableRows() : cardRows();
+  function rowFromTextBlock(block) {
+    const text = clean(block);
+    if (!text || text.length < 2) return null;
+
+    const lines = block
+      .split(/\n+/)
+      .map(clean)
+      .filter(Boolean);
+
+    const firstUsefulLine = lines.find((line) => {
+      if (line.length < 2 || line.length > 140) return false;
+      if (/@|https?:|www\.|\d{3}|\bphone\b|\bemail\b|\bwebsite\b/i.test(line)) return false;
+      if (/supplier|vendor|partner|search|filter|sort|page|next|previous|view|details|learn more/i.test(line) && lines.length > 1) return false;
+      return true;
+    });
+
+    const supplierName = firstUsefulLine || lines[0] || "";
+    if (!supplierName || supplierName.length > 160) return null;
+
+    return {
+      "Supplier Name": supplierName,
+      "Supplier Type": guessSupplierType(text),
+      "Website URL": firstMatch(text, [/(https?:\/\/[^\s]+)/i, /\b(www\.[^\s]+)/i]),
+      "Booking Portal URL": "",
+      "Contact Name": "",
+      "Contact Email": extractEmail(text),
+      "Contact Phone": extractPhone(text),
+      "Preferred Supplier": /preferred|preferred partner|preferred supplier/i.test(text) ? "Yes" : "",
+      "BDM Phone": extractLabeledPhone(text, ["BDM", "Business Development", "Sales Manager"]),
+      "BDM Contact": "",
+      "BDM Notes": "",
+      "Travel Agent Support Phone": extractLabeledPhone(text, ["Travel Agent Support", "Advisor Support", "Agent Support", "Reservations"]),
+      "Travel Agent Support Contact": "",
+      "Travel Agent Support Notes": "",
+      "Groups Phone": extractLabeledPhone(text, ["Groups", "Group Sales", "Group Department"]),
+      "Groups Contact": "",
+      "Groups Notes": "",
+      "Customer Service Phone": extractLabeledPhone(text, ["Customer Service", "Service", "Support"]),
+      "Customer Service Contact": "",
+      "Customer Service Notes": "",
+      "Emergency / In Travel Phone": extractLabeledPhone(text, ["Emergency", "In Travel", "After Hours", "After-Hours"]),
+      "Emergency / In Travel Contact": "",
+      "Emergency / In Travel Notes": "",
+      "Commission Notes": firstMatch(text, [/(commission[^.\n]*(?:\.|$))/i]),
+      "Internal Notes": text.slice(0, 900),
+    };
+  }
+
+  function textRows() {
+    const selectedText = clean(window.getSelection && window.getSelection().toString());
+    const sourceText = selectedText || clean(document.body.innerText || "");
+    if (!sourceText) return [];
+
+    const paragraphBlocks = sourceText
+      .split(/\n\s*\n+/)
+      .map((block) => block.trim())
+      .filter((block) => block.length >= 2);
+
+    let rows = paragraphBlocks.map(rowFromTextBlock).filter(Boolean);
+
+    if (rows.length <= 1) {
+      const lines = sourceText
+        .split(/\n+/)
+        .map(clean)
+        .filter((line) => {
+          if (line.length < 2 || line.length > 120) return false;
+          if (/@|https?:|www\.|\d{3}|\bphone\b|\bemail\b|\bwebsite\b/i.test(line)) return false;
+          if (/supplier|vendor|partner|search|filter|sort|page|next|previous|view|details|learn more|home|logout/i.test(line)) return false;
+          return true;
+        });
+
+      rows = lines.map((line) => rowFromTextBlock(line)).filter(Boolean);
+    }
+
+    const seen = new Set();
+    return rows.filter((row) => {
+      const key = clean(row["Supplier Name"]).toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  const table = tableRows();
+  const cards = cardRows();
+  const text = textRows();
+  const rows = [table, cards, text].sort((a, b) => b.length - a.length)[0];
 
   if (rows.length === 0) {
-    alert("No supplier rows were found on this page. Try expanding the list or selecting all supplier text, then run the extractor again.");
+    alert("No supplier rows were found on this page. Try selecting the supplier list text with your mouse or Ctrl+A, then run the extractor again.");
     return;
   }
 
