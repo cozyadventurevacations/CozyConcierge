@@ -287,7 +287,7 @@ async function recordInsuranceDecision(formData: FormData) {
 
   const { data: trip, error: tripError } = await supabase
     .from("trips")
-    .select("id, client_account_id")
+    .select("id, client_account_id, trip_name, destinations, departure_date")
     .eq("id", tripId)
     .single();
 
@@ -297,19 +297,81 @@ async function recordInsuranceDecision(formData: FormData) {
     throw new Error("Only the primary traveler can answer the insurance question.");
   }
 
+  const decisionAt = new Date().toISOString();
   const { error } = await supabase
     .from("trips")
     .update({
       insurance_decision: decision,
-      insurance_decision_at: new Date().toISOString(),
+      insurance_decision_at: decisionAt,
       insurance_decision_by_client_account_id: clientAccount.id,
     })
     .eq("id", tripId);
 
   if (error) throw new Error(error.message);
 
+  const decisionLabel =
+    decision === "accepted"
+      ? "accepted travel insurance coverage review"
+      : "declined travel insurance coverage review";
+  const clientName =
+    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
+    clientAccount.email ||
+    "Client";
+  const waiverContent = [
+    "Travel Insurance Waiver Record",
+    "",
+    `Client: ${clientName}`,
+    clientAccount.email ? `Client email: ${clientAccount.email}` : null,
+    `Trip: ${trip.trip_name ?? "Trip"}`,
+    trip.destinations ? `Destination(s): ${trip.destinations}` : null,
+    trip.departure_date ? `Departure date: ${fmtDate(trip.departure_date) ?? trip.departure_date}` : null,
+    `Decision: Client ${decisionLabel}.`,
+    `Recorded at: ${fmtDateTime(decisionAt) ?? decisionAt}`,
+    "",
+    decision === "accepted"
+      ? "Client requested that Cozy Adventure Vacations review travel insurance coverage options for this trip."
+      : "Client confirmed they do not want Cozy Adventure Vacations to review travel insurance coverage options for this trip at this time.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data: existingWaiver, error: existingWaiverError } = await supabaseAdmin
+    .from("trip_notes")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("note_type", "insurance_waiver")
+    .maybeSingle();
+
+  if (existingWaiverError) throw new Error(existingWaiverError.message);
+
+  if (existingWaiver) {
+    const { error: waiverUpdateError } = await supabaseAdmin
+      .from("trip_notes")
+      .update({
+        title: "Travel Insurance Waiver",
+        content: waiverContent,
+        updated_at: decisionAt,
+      })
+      .eq("id", existingWaiver.id);
+
+    if (waiverUpdateError) throw new Error(waiverUpdateError.message);
+  } else {
+    const { error: waiverInsertError } = await supabaseAdmin
+      .from("trip_notes")
+      .insert({
+        trip_id: tripId,
+        note_type: "insurance_waiver",
+        title: "Travel Insurance Waiver",
+        content: waiverContent,
+      });
+
+    if (waiverInsertError) throw new Error(waiverInsertError.message);
+  }
+
   revalidatePath(`/trips/${tripId}`);
-  redirect(`/trips/${tripId}?insurance=${decision}`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  redirect(`/trips/${tripId}`);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -319,10 +381,10 @@ export default async function TripDetailPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ deletion?: string; insurance?: string }>;
+  searchParams: Promise<{ deletion?: string }>;
 }) {
   const { tripId } = await params;
-  const { deletion, insurance: insuranceNotice } = await searchParams;
+  const { deletion } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
@@ -609,33 +671,6 @@ export default async function TripDetailPage({
       title={trip.trip_name ?? "Trip Detail"}
       subtitle="Your travel details, all in one place."
     >
-      {deletion === "requested" && (
-        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
-          <p style={{ margin: 0, fontWeight: 800 }}>Deletion request sent.</p>
-          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
-            Your advisor will review this request before anything is removed.
-          </p>
-        </div>
-      )}
-
-      {deletion === "cancelled" && (
-        <div className="card" style={{ border: "1px solid #e6f0f2", background: "#f7fbfc", color: "#475569" }}>
-          <p style={{ margin: 0, fontWeight: 800 }}>Deletion request cancelled.</p>
-          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
-            This trip will remain active in your portal.
-          </p>
-        </div>
-      )}
-      {/* Deletion request status banner — primary client only */}
-      {(insuranceNotice === "accepted" || insuranceNotice === "declined") && (
-        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#027a48" }}>
-          <p style={{ margin: 0, fontWeight: 800 }}>Insurance waiver saved.</p>
-          <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.5 }}>
-            Your advisor can now see that you {insuranceNotice === "accepted" ? "want travel insurance coverage reviewed" : "declined travel insurance coverage for this trip"}.
-          </p>
-        </div>
-      )}
-
       {shouldAskInsurance && (
         <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
           <div>
@@ -669,43 +704,6 @@ export default async function TripDetailPage({
         </div>
       )}
 
-      {isPrimaryClient && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, border: deletionRequested ? "1px solid #fed7aa" : "1px solid #e6f0f2", background: deletionRequested ? "#fff7ed" : "#f7fbfc" }}>
-          <div>
-            {deletionRequested ? (
-              <>
-                <p style={{ margin: 0, fontWeight: 800, color: "#9a3412" }}>⏳ Deletion Request Pending</p>
-                <p style={{ margin: "3px 0 0", fontSize: 13, color: "#9a3412", lineHeight: 1.5 }}>
-                  Your advisor has been notified. You can cancel this request if you change your mind.
-                </p>
-              </>
-            ) : (
-              <>
-                <p style={{ margin: 0, fontWeight: 700, color: "#667085", fontSize: 13 }}>Need to remove this trip?</p>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8", lineHeight: 1.4 }}>
-                  Submitting a request will notify your advisor who will review and confirm the deletion.
-                </p>
-              </>
-            )}
-          </div>
-          <form action={requestTripDeletion}>
-            <input type="hidden" name="trip_id" value={trip.id} />
-            <button
-              type="submit"
-              className="btn btn-outline"
-              style={{
-                fontSize: 13,
-                padding: "8px 14px",
-                color: deletionRequested ? "#9a3412" : "#667085",
-                borderColor: deletionRequested ? "#fed7aa" : "#e6f0f2",
-              }}
-            >
-              {deletionRequested ? "Cancel Deletion Request" : "Request Trip Deletion"}
-            </button>
-          </form>
-        </div>
-      )}
-
       <TripDetailClient
         trip={tripForClient}
         proposal={proposalForClient}
@@ -728,6 +726,43 @@ export default async function TripDetailPage({
         onInviteCompanion={inviteTravelCompanion}
         onRemoveCompanion={removeTravelCompanion}
       />
+
+      {isPrimaryClient && (
+        <div className="card" style={{ border: deletionRequested ? "1px solid #fed7aa" : "1px solid #e6f0f2", background: deletionRequested ? "#fff7ed" : "#f7fbfc" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 800, color: deletionRequested ? "#9a3412" : "#667085" }}>
+                {deletionRequested ? "Deletion request pending" : "Trip options"}
+              </p>
+              {deletion === "requested" ? (
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#027a48", lineHeight: 1.5 }}>
+                  Deletion request sent.
+                </p>
+              ) : null}
+              {deletion === "cancelled" ? (
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                  Deletion request cancelled.
+                </p>
+              ) : null}
+            </div>
+            <form action={requestTripDeletion}>
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <button
+                type="submit"
+                className="btn btn-outline"
+                style={{
+                  fontSize: 13,
+                  padding: "8px 14px",
+                  color: deletionRequested ? "#9a3412" : "#667085",
+                  borderColor: deletionRequested ? "#fed7aa" : "#e6f0f2",
+                }}
+              >
+                {deletionRequested ? "Cancel Deletion Request" : "Request Trip Deletion"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

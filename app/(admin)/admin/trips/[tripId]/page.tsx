@@ -3687,6 +3687,8 @@ export default async function AdminTripEditorPage({
   const clientNote = tripNotes?.find((note) => note.note_type === "client") ?? null;
   const clientReminder =
     tripNotes?.find((note) => note.note_type === "client_reminder") ?? null;
+  const insuranceWaiverNote =
+    tripNotes?.find((note) => note.note_type === "insurance_waiver") ?? null;
 
   const { data: tripCommissions, error: tripCommissionsError } = await supabase
     .from("commissions")
@@ -4205,36 +4207,34 @@ export default async function AdminTripEditorPage({
           </div>
         ) : null}
 
-        <div
-          className="card"
-          style={{
-            border: trip.insurance_decision ? "1px solid #dbeafe" : "1px solid #fed7aa",
-            background: trip.insurance_decision ? "#eff6ff" : "#fff7ed",
-            color: trip.insurance_decision ? "#1e3a8a" : "#9a3412",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <div>
-              <p style={{ margin: 0, fontWeight: 900 }}>
-                {trip.insurance_decision ? "Client Insurance Waiver" : "Insurance Waiver Needed"}
-              </p>
-              <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
-                {trip.insurance_decision
-                  ? `Client ${trip.insurance_decision === "accepted" ? "wants travel insurance coverage reviewed" : "declined travel insurance coverage for this trip"}${trip.insurance_decision_at ? ` on ${formatDate(trip.insurance_decision_at)}.` : "."}`
-                  : "The primary client has not accepted or declined the travel insurance waiver yet. Ask them to open this trip in their portal and answer the Travel Insurance Waiver box near the top of the page."}
-              </p>
+        {!trip.insurance_decision ? (
+          <div
+            className="card"
+            style={{
+              border: "1px solid #fed7aa",
+              background: "#fff7ed",
+              color: "#9a3412",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: 900 }}>Insurance Waiver Needed</p>
+                <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+                  The primary client has not accepted or declined the travel insurance waiver yet. Ask them to open this trip in their portal and answer the Travel Insurance Waiver box near the top of the page.
+                </p>
+              </div>
+              {clientInfo?.id ? (
+                <Link
+                  href={`/admin/clients/${clientInfo.id}#private-message`}
+                  className="btn btn-primary"
+                  style={{ fontSize: 13, padding: "8px 14px" }}
+                >
+                  Message Client
+                </Link>
+              ) : null}
             </div>
-            {!trip.insurance_decision && clientInfo?.id ? (
-              <Link
-                href={`/admin/clients/${clientInfo.id}#private-message`}
-                className="btn btn-primary"
-                style={{ fontSize: 13, padding: "8px 14px" }}
-              >
-                Message Client
-              </Link>
-            ) : null}
           </div>
-        </div>
+        ) : null}
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 
@@ -6920,6 +6920,27 @@ export default async function AdminTripEditorPage({
               Generate Client Itinerary Summary
             </button>
           </div>
+
+          {insuranceWaiverNote ? (
+            <div
+              className="card stack"
+              style={{
+                background: "#eff6ff",
+                border: "1px solid #dbeafe",
+                color: "#1e3a8a",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0 }}>{insuranceWaiverNote.title ?? "Travel Insurance Waiver"}</h3>
+                <p style={{ margin: "6px 0 0", color: "#1e40af", fontSize: 13 }}>
+                  Saved when the client answered the travel insurance question.
+                </p>
+              </div>
+              <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                {insuranceWaiverNote.content}
+              </p>
+            </div>
+          ) : null}
 
           <div className="card stack" style={{ background: "#fffaf0" }}>
             <h3 style={{ margin: 0 }}>Internal Notes</h3>
