@@ -122,13 +122,13 @@ export async function sendTravelCircleInviteEmail({
       }
 
       <p>
-        To accept the invitation, log in or create your Cozy Concierge account using
-        this same email address: <strong>${escapeHtml(to)}</strong>.
+        To review your Travel Circle access, log in or create your Cozy Concierge
+        account using this same email address: <strong>${escapeHtml(to)}</strong>.
       </p>
 
       <p style="margin: 22px 0;">
         <a href="${invitesUrl}" style="display: inline-block; background: #1f4f59; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">
-          Review Travel Invitation
+          Review Travel Circle Access
         </a>
       </p>
 
@@ -143,8 +143,9 @@ export async function sendTravelCircleInviteEmail({
       </p>
 
       <p>
-        Once accepted, you'll be able to view shared trip details, approved Travel Circle documents,
-        and group messages based on your access level.
+        If an acceptance step is needed, Cozy Concierge will show it on your
+        invitations page. If your advisor has already activated access, the trip
+        will appear under your shared trips.
       </p>
 
       <p style="color: #667085; font-size: 14px;">
@@ -162,9 +163,9 @@ You've been invited to join the Travel Circle for ${tripName} in Cozy Concierge.
 
 ${destinations ? `Destination: ${destinations}\n` : ""}${formattedDeparture ? `Departure: ${formattedDeparture}\n` : ""}Access level: ${roleLabel}
 
-To accept the invitation, log in or create your Cozy Concierge account using this same email address: ${to}
+To review your Travel Circle access, log in or create your Cozy Concierge account using this same email address: ${to}
 
-Review your invitation:
+Review your Travel Circle access:
 ${invitesUrl}
 
 New to Cozy Concierge? Create your account:
@@ -173,7 +174,7 @@ ${registerUrl}
 Already have an account? Sign in:
 ${loginUrl}
 
-Once accepted, you'll be able to view shared trip details, approved Travel Circle documents, and group messages based on your access level.
+If an acceptance step is needed, Cozy Concierge will show it on your invitations page. If your advisor has already activated access, the trip will appear under your shared trips.
 
 Privacy note: personal traveler details, passport uploads, and private advisor messages remain protected unless separately shared.
 

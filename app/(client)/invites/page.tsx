@@ -184,16 +184,55 @@ async function acceptTravelCompanionInvite(formData: FormData) {
 
   const { data: invite, error: inviteError } = await supabase
     .from("trip_members" as any)
-    .select("id, trip_id, invite_email, invite_status, role")
+    .select("id, trip_id, client_account_id, invite_email, invite_status, role")
     .eq("id", inviteId)
-    .eq("invite_status", "invited")
-    .ilike("invite_email", clientEmail)
     .maybeSingle();
 
   if (inviteError) throw new Error(inviteError.message);
 
   if (!invite) {
-    throw new Error("Invitation not found or already accepted.");
+    throw new Error("Invitation not found. It may have been removed or replaced.");
+  }
+
+  const inviteEmail = invite.invite_email?.trim().toLowerCase();
+  const belongsToCurrentClient =
+    invite.client_account_id === clientAccount.id || inviteEmail === clientEmail;
+
+  if (!belongsToCurrentClient) {
+    throw new Error(
+      "This invitation belongs to a different email address. Please sign in with the invited email or ask your advisor to resend it.",
+    );
+  }
+
+  if (invite.invite_status === "active") {
+    if (!invite.client_account_id) {
+      const displayName =
+        `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
+        clientAccount.email ||
+        null;
+
+      const { error: linkActiveError } = await supabase
+        .from("trip_members" as any)
+        .update({
+          client_account_id: clientAccount.id,
+          invite_name: displayName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invite.id);
+
+      if (linkActiveError) throw new Error(linkActiveError.message);
+    }
+
+    revalidatePath("/invites");
+    revalidatePath("/trips");
+    revalidatePath(`/trips/${invite.trip_id}`);
+    redirect(`/trips/${invite.trip_id}?invite=already-active`);
+  }
+
+  if (invite.invite_status !== "invited") {
+    throw new Error(
+      "This invitation is no longer pending. Please refresh your invitations page or ask your advisor to resend it.",
+    );
   }
 
   const { data: existingActiveMember, error: existingError } = await supabase
@@ -269,16 +308,29 @@ async function declineTravelCompanionInvite(formData: FormData) {
 
   const { data: invite, error: inviteError } = await supabase
     .from("trip_members" as any)
-    .select("id")
+    .select("id, client_account_id, invite_email, invite_status")
     .eq("id", inviteId)
-    .eq("invite_status", "invited")
-    .ilike("invite_email", clientEmail)
     .maybeSingle();
 
   if (inviteError) throw new Error(inviteError.message);
 
   if (!invite) {
-    throw new Error("Invitation not found or already handled.");
+    throw new Error("Invitation not found. It may have been removed or replaced.");
+  }
+
+  const inviteEmail = invite.invite_email?.trim().toLowerCase();
+  const belongsToCurrentClient =
+    invite.client_account_id === clientAccount.id || inviteEmail === clientEmail;
+
+  if (!belongsToCurrentClient) {
+    throw new Error(
+      "This invitation belongs to a different email address. Please sign in with the invited email or ask your advisor to resend it.",
+    );
+  }
+
+  if (invite.invite_status !== "invited") {
+    revalidatePath("/invites");
+    redirect("/invites?invite=already-handled");
   }
 
   const { error: updateError } = await supabase
@@ -294,7 +346,12 @@ async function declineTravelCompanionInvite(formData: FormData) {
   revalidatePath("/invites");
 }
 
-export default async function ClientInvitationsPage() {
+export default async function ClientInvitationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ invite?: string }>;
+}) {
+  const { invite: inviteStatus } = await searchParams;
   let clientContext: Awaited<ReturnType<typeof getCurrentClientAccount>>;
 
   try {
@@ -334,7 +391,7 @@ export default async function ClientInvitationsPage() {
     .select(
       "id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
     )
-    .ilike("invite_email", clientEmail)
+    .or(`invite_email.ilike.${clientEmail},client_account_id.eq.${clientAccount.id}`)
     .eq("invite_status", "invited")
     .order("created_at", { ascending: false });
 
@@ -343,7 +400,7 @@ export default async function ClientInvitationsPage() {
     .select(
       "id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, created_at, trips(id, trip_name, destinations, departure_date, return_date)",
     )
-    .eq("client_account_id", clientAccount.id)
+    .or(`client_account_id.eq.${clientAccount.id},invite_email.ilike.${clientEmail}`)
     .eq("invite_status", "active")
     .neq("role", "owner")
     .order("created_at", { ascending: false });
@@ -424,6 +481,21 @@ export default async function ClientInvitationsPage() {
           </div>
         </div>
       </div>
+
+      {inviteStatus === "already-handled" ? (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #bfdbfe",
+            background: "#eff6ff",
+            color: "#1e3a8a",
+            fontWeight: 800,
+          }}
+        >
+          This Travel Circle invitation was already handled. Your current shared
+          trips are listed below.
+        </div>
+      ) : null}
 
       <div className="card stack">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>

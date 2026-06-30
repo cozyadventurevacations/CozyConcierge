@@ -107,7 +107,9 @@ export default async function ClientLayout({
       const { count } = await supabase
         .from("trip_members" as any)
         .select("id", { count: "exact", head: true })
-        .ilike("invite_email", user.email.trim().toLowerCase())
+        .or(
+          `invite_email.ilike.${user.email.trim().toLowerCase()},client_account_id.eq.${clientAccountId}`,
+        )
         .eq("invite_status", "invited");
 
       pendingInviteCount = count ?? 0;
