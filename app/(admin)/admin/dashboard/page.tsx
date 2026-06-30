@@ -63,6 +63,27 @@ type QuoteRequestRow = {
   created_at: string | null;
 };
 
+type CruisePriceWatchResultRow = {
+  id: string;
+  trip_id: string;
+  component_id: string;
+  cruise_line: string | null;
+  ship_name: string | null;
+  cabin_match_code: string | null;
+  booked_total: number | null;
+  found_total: number | null;
+  savings_amount: number | null;
+  promo_codes: string | null;
+  status: string | null;
+  public_url: string | null;
+  checked_at: string | null;
+  message: string | null;
+  trips:
+    | { id: string; trip_name: string | null }
+    | { id: string; trip_name: string | null }[]
+    | null;
+};
+
 function startOfToday() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -135,6 +156,11 @@ function getClientFromMessageThread(row: MessageThreadRow) {
 }
 
 function getTripFromMessageThread(row: MessageThreadRow) {
+  if (Array.isArray(row.trips)) return row.trips[0] ?? null;
+  return row.trips ?? null;
+}
+
+function getTripFromCruisePriceWatch(row: CruisePriceWatchResultRow) {
   if (Array.isArray(row.trips)) return row.trips[0] ?? null;
   return row.trips ?? null;
 }
@@ -443,6 +469,7 @@ export default async function AdminDashboardPage({
     unreadPrivateMessageThreadsResult,
     privateMessageThreadsResult,
     deletionRequestsResult,
+    cruisePriceWatchResultsResult,
     newQuoteRequestsListResult,
   ] = await Promise.all([
     supabase
@@ -514,6 +541,12 @@ export default async function AdminDashboardPage({
       .not("deletion_requested_at", "is", null)
       .is("deleted_at", null),
     supabase
+      .from("cruise_price_watch_results" as any)
+      .select("id, trip_id, component_id, cruise_line, ship_name, cabin_match_code, booked_total, found_total, savings_amount, promo_codes, status, public_url, checked_at, message, trips(id, trip_name)")
+      .in("status", ["lower_price_found", "manual_review", "error"])
+      .order("checked_at", { ascending: false })
+      .limit(6),
+    supabase
       .from("quote_requests")
       .select("id, full_name, email, destinations, departure_date, travel_types_requested, status, created_at")
       .eq("status", "new")
@@ -526,6 +559,15 @@ export default async function AdminDashboardPage({
   const upcomingClientFollowUps = (upcomingClientFollowUpsResult.data ?? []) as ClientFollowUpRow[];
   const privateMessageThreads = (privateMessageThreadsResult.data ?? []) as MessageThreadRow[];
   const newQuoteRequestsList = (newQuoteRequestsListResult.data ?? []) as QuoteRequestRow[];
+  const cruisePriceWatchResults =
+    (cruisePriceWatchResultsResult.data ?? []) as CruisePriceWatchResultRow[];
+  const cruiseLowerPriceCount = cruisePriceWatchResults.filter(
+    (row) => row.status === "lower_price_found",
+  ).length;
+  const cruiseReviewCount = cruisePriceWatchResults.filter(
+    (row) => row.status === "manual_review" || row.status === "error",
+  ).length;
+  const cruiseWatchAttentionCount = cruiseLowerPriceCount + cruiseReviewCount;
 
   const finalPaymentsDue21Total = finalPaymentsDue21.reduce(
     (sum, trip) => sum + Number(trip.balance_due ?? 0),
@@ -543,7 +585,8 @@ export default async function AdminDashboardPage({
     Number(newQuoteRequestsResult.count ?? 0) +
     Number(paymentRequestsResult.count ?? 0) +
     finalPaymentsDue21.length +
-    deletionRequestCount;
+    deletionRequestCount +
+    cruiseWatchAttentionCount;
 
   return (
     <PageShell
@@ -580,11 +623,12 @@ export default async function AdminDashboardPage({
             </p>
             <h2 style={{ margin: "6px 0 0", fontSize: 28, lineHeight: 1.15 }}>Today&apos;s Priority Work</h2>
             <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6, maxWidth: 660 }}>
-              Start with final payments due soon, deletion requests, unread private messages, and upcoming departures.
+              Start with final payments due soon, cruise price alerts, deletion requests, unread private messages, and upcoming departures.
             </p>
           </div>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/admin/trips" className="btn btn-primary">Final Payments</Link>
+            <Link href="/admin/dashboard#cruise-price-watch" className="btn btn-outline">Cruise Price Watch</Link>
             <Link href="/admin/trips?filter=deletion-requested#deletion-requests" className="btn btn-outline">Deletion Requests</Link>
             <Link href="/admin/messages?type=private" className="btn btn-primary">Private Messages</Link>
           </div>
@@ -594,8 +638,8 @@ export default async function AdminDashboardPage({
           <OpsHighlightCard
             title="Priority Items"
             value={urgentOpsItems}
-            helper="Final payments, deletion requests, new requests, payment requests, and upcoming departures"
-            href="/admin/trips?filter=deletion-requested#deletion-requests"
+            helper="Final payments, cruise alerts, deletion requests, new requests, payment requests, and upcoming departures"
+            href="/admin/dashboard#cruise-price-watch"
             tone={urgentOpsItems > 0 ? "warning" : "good"}
           />
           <OpsHighlightCard
@@ -611,6 +655,13 @@ export default async function AdminDashboardPage({
             helper="Client requested trip removal"
             href="/admin/trips?filter=deletion-requested#deletion-requests"
             tone={deletionRequestCount > 0 ? "warning" : "good"}
+          />
+          <OpsHighlightCard
+            title="Cruise Price Watch"
+            value={cruiseWatchAttentionCount}
+            helper={`${cruiseLowerPriceCount} lower price${cruiseLowerPriceCount === 1 ? "" : "s"}, ${cruiseReviewCount} review item${cruiseReviewCount === 1 ? "" : "s"}`}
+            href="/admin/dashboard#cruise-price-watch"
+            tone={cruiseLowerPriceCount > 0 ? "warning" : cruiseReviewCount > 0 ? "danger" : "good"}
           />
         </div>
       </div>
@@ -662,12 +713,83 @@ export default async function AdminDashboardPage({
           href="/admin/trips"
         />
         <SummaryCard
+          title="Cruise Price Watch"
+          value={cruiseWatchAttentionCount}
+          subtitle={`${cruiseLowerPriceCount} price drop${cruiseLowerPriceCount === 1 ? "" : "s"} found`}
+          href="/admin/dashboard#cruise-price-watch"
+          tone={cruiseWatchAttentionCount > 0 ? "warning" : "neutral"}
+        />
+        <SummaryCard
           title="Deletion Requests"
           value={deletionRequestCount}
           subtitle="Waiting for admin review"
           href="/admin/trips?filter=deletion-requested#deletion-requests"
           tone={deletionRequestCount > 0 ? "warning" : "neutral"}
         />
+      </div>
+
+      <div id="cruise-price-watch" className="card stack">
+        <SectionTitle
+          title="Cruise Price Watch"
+          href="/admin/trips"
+          linkLabel="Open Trips"
+        />
+        {cruisePriceWatchResultsResult.error ? (
+          <p style={{ margin: 0, color: "#64748b" }}>
+            Run scripts/setup-cruise-price-watch.sql in Supabase to enable cruise price alerts.
+          </p>
+        ) : cruisePriceWatchResults.length === 0 ? (
+          <p style={{ margin: 0, color: "#64748b" }}>No cruise price alerts or review items.</p>
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {cruisePriceWatchResults.map((result) => {
+              const trip = getTripFromCruisePriceWatch(result);
+              const tripName = trip?.trip_name ?? "Trip";
+              const isLowerPrice = result.status === "lower_price_found";
+              const savings = Number(result.savings_amount ?? 0);
+              const bookedTotal = Number(result.booked_total ?? 0);
+              const foundTotal = Number(result.found_total ?? 0);
+
+              return (
+                <CompactListItem
+                  key={result.id}
+                  title={isLowerPrice ? `${tripName}: lower cruise price found` : `${tripName}: cruise price needs review`}
+                  subtitle={`${result.cruise_line ?? "Cruise"}${result.ship_name ? ` - ${result.ship_name}` : ""} · Cabin ${result.cabin_match_code ?? "not set"} · Checked ${formatDateTime(result.checked_at)}`}
+                  href={`/admin/trips/${result.trip_id}#cruise-component`}
+                  cta="Open Cruise"
+                  tone={isLowerPrice ? "warning" : "neutral"}
+                >
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    <div className="row" style={{ gap: 8 }}>
+                      <StatusBadge status={String(result.status ?? "review").replace(/_/g, " ")} />
+                      {isLowerPrice ? (
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            padding: "5px 10px",
+                            background: "#dcfce7",
+                            color: "#166534",
+                            fontSize: 13,
+                            fontWeight: 800,
+                          }}
+                        >
+                          Save {formatMoney(savings)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
+                      Booked: {bookedTotal > 0 ? formatMoney(bookedTotal) : "not saved"} · Found: {foundTotal > 0 ? formatMoney(foundTotal) : "not confirmed"}
+                      {result.promo_codes ? ` · Promo codes: ${result.promo_codes}` : ""}
+                    </p>
+                    {result.message ? (
+                      <p style={{ margin: 0, color: "#64748b", lineHeight: 1.5 }}>{result.message}</p>
+                    ) : null}
+                  </div>
+                </CompactListItem>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* New Travel Requests work queue */}

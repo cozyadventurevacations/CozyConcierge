@@ -2717,6 +2717,12 @@ async function updateTrip(formData: FormData) {
     String(formData.get("cruise_terms_and_conditions") ?? "").trim() || null;
   const cruiseCancellation =
     String(formData.get("cruise_cancellation_policy") ?? "").trim() || null;
+  const cruisePriceWatchEnabled =
+    formData.get("cruise_price_watch_enabled") === "on";
+  const cruisePriceWatchPublicUrl =
+    String(formData.get("cruise_price_watch_public_url") ?? "").trim() || null;
+  const cruisePriceWatchMatchCode =
+    String(formData.get("cruise_price_watch_match_code") ?? "").trim() || null;
 
   const cruiseDetailPayload = {
     cruise_line: cruiseLine || null,
@@ -2740,7 +2746,10 @@ async function updateTrip(formData: FormData) {
     cruiseDetailPayload.sailing_date ||
     cruiseDetailPayload.return_date ||
     cruiseDetailPayload.departure_port ||
-    cruiseConfirmationNumber;
+    cruiseConfirmationNumber ||
+    cruisePriceWatchEnabled ||
+    cruisePriceWatchPublicUrl ||
+    cruisePriceWatchMatchCode;
 
   await upsertTripComponent(
     "cruise",
@@ -2757,6 +2766,10 @@ async function updateTrip(formData: FormData) {
       confirmation_number: cruiseConfirmationNumber,
       terms_and_conditions: cruiseTerms,
       cancellation_policy: cruiseCancellation,
+      price_watch_enabled: cruisePriceWatchEnabled,
+      price_watch_public_url: cruisePriceWatchPublicUrl,
+      price_watch_match_code:
+        cruisePriceWatchMatchCode || cruiseDetailPayload.cabin_category,
     },
     "cruise_components",
     cruiseDetailPayload,
@@ -6214,6 +6227,109 @@ export default async function AdminTripEditorPage({
                 defaultValue={cruise.component?.final_payment_due_date ?? ""}
               />
             </label>
+          </div>
+
+          <div
+            className="card stack"
+            style={{
+              border: cruise.component?.price_watch_last_status === "lower_price_found"
+                ? "1px solid #fdba74"
+                : "1px solid #dbeafe",
+              background: cruise.component?.price_watch_last_status === "lower_price_found"
+                ? "#fff7ed"
+                : "#f7fbfc",
+              borderRadius: 14,
+            }}
+          >
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Cruise Price Watch</h3>
+                <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
+                  Track Royal Caribbean, Celebrity, Norwegian, and Disney public prices for the exact saved cabin code.
+                </p>
+              </div>
+              {cruise.component?.price_watch_last_status ? (
+                <span
+                  style={{
+                    borderRadius: 999,
+                    padding: "6px 10px",
+                    background: cruise.component.price_watch_last_status === "lower_price_found" ? "#fed7aa" : "#e0f2fe",
+                    color: cruise.component.price_watch_last_status === "lower_price_found" ? "#9a3412" : "#075985",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {String(cruise.component.price_watch_last_status).replace(/_/g, " ")}
+                </span>
+              ) : null}
+            </div>
+
+            <label
+              className="row"
+              style={{
+                alignItems: "center",
+                gap: 10,
+                padding: 12,
+                borderRadius: 12,
+                background: "#ffffff",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <input
+                type="checkbox"
+                name="cruise_price_watch_enabled"
+                defaultChecked={Boolean(cruise.component?.price_watch_enabled)}
+                style={{ width: 18, height: 18 }}
+              />
+              <span style={{ fontWeight: 800 }}>Watch this cruise for public price drops of $100 or more</span>
+            </label>
+
+            <div className="grid grid-2">
+              <label>
+                <span className="label">Public Pricing URL</span>
+                <input
+                  className="input"
+                  type="url"
+                  name="cruise_price_watch_public_url"
+                  placeholder="https://www.cruiseline.com/..."
+                  defaultValue={cruise.component?.price_watch_public_url ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Exact Cabin Category Code</span>
+                <input
+                  className="input"
+                  name="cruise_price_watch_match_code"
+                  placeholder="N4"
+                  defaultValue={
+                    cruise.component?.price_watch_match_code ??
+                    cruise.details?.cabin_category ??
+                    ""
+                  }
+                />
+              </label>
+            </div>
+
+            {cruise.component?.price_watch_last_checked_at ? (
+              <p style={{ margin: 0, color: "#64748b", lineHeight: 1.5 }}>
+                Last checked {formatDate(cruise.component.price_watch_last_checked_at)}.
+                {Number(cruise.component?.price_watch_last_found_price ?? 0) > 0
+                  ? ` Last visible price: ${formatMoney(Number(cruise.component.price_watch_last_found_price))}.`
+                  : ""}
+                {cruise.component?.price_watch_last_promo_codes
+                  ? ` Promo codes: ${cruise.component.price_watch_last_promo_codes}.`
+                  : ""}
+                {cruise.component?.price_watch_last_error
+                  ? ` ${cruise.component.price_watch_last_error}`
+                  : ""}
+              </p>
+            ) : (
+              <p style={{ margin: 0, color: "#64748b", lineHeight: 1.5 }}>
+                Save this cruise with a public pricing URL and cabin code, then the weekly check can compare it.
+              </p>
+            )}
           </div>
 
           <label>
