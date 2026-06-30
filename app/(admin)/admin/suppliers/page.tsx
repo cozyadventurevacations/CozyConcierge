@@ -203,9 +203,14 @@ export default async function AdminSuppliersPage({
         <p style={{ margin: 0, color: "#64748b" }}>
           Showing {rows.length} of {allRows.length} supplier record{allRows.length === 1 ? "" : "s"}.
         </p>
-        <Link href="/admin/suppliers/new" className="btn btn-primary">
-          Add New Supplier
-        </Link>
+        <div className="row" style={{ gap: 10 }}>
+          <Link href="/admin/suppliers/import" className="btn btn-outline">
+            Import Suppliers
+          </Link>
+          <Link href="/admin/suppliers/new" className="btn btn-primary">
+            Add New Supplier
+          </Link>
+        </div>
       </div>
 
       <div className="card stack">
