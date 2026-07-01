@@ -13,6 +13,7 @@ import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
+import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
 const allowedTripStatuses = [
   "draft",
@@ -793,6 +794,7 @@ function ComponentDocumentUploadCard({
             type="file"
             name="file"
             form={formId}
+            required
             accept=".pdf,.jpg,.jpeg,.png,.webp"
           />
         </label>
@@ -822,9 +824,7 @@ function ComponentDocumentUploadCard({
           Attach this document to the component commission
         </label>
 
-        <button type="submit" className="btn btn-outline" form={formId} style={{ alignSelf: "flex-start" }}>
-          Upload & Extract to {componentLabel}
-        </button>
+        <ComponentDocumentUploadSubmitButton formId={formId} componentLabel={componentLabel} />
       </>
     </div>
   );
@@ -2579,17 +2579,24 @@ async function uploadComponentDocument(formData: FormData) {
 
       if (extractionUpdateError) throw new Error(extractionUpdateError.message);
     } catch (error) {
+      const extractionError =
+        error instanceof Error ? error.message : "Booking extraction failed.";
+
       await supabase
         .from("trip_documents")
         .update({
           booking_extraction_status: "failed",
-          booking_extraction_summary:
-            error instanceof Error ? error.message : "Booking extraction failed.",
+          booking_extraction_summary: extractionError,
         })
         .eq("id", insertedDocument.id)
         .eq("trip_id", tripId);
 
-      throw error;
+      revalidatePath(`/admin/trips/${tripId}`);
+      revalidatePath(`/admin/trips/${tripId}/documents`);
+      revalidatePath(`/trips/${tripId}`);
+      redirect(
+        `/admin/trips/${tripId}?documentUploaded=1&extracted=failed&extractionError=${encodeURIComponent(extractionError)}#${component.component_type}-component`,
+      );
     }
   }
 
@@ -4002,10 +4009,15 @@ export default async function AdminTripEditorPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ saved?: string; documentUploaded?: string; extracted?: string }>;
+  searchParams: Promise<{
+    saved?: string;
+    documentUploaded?: string;
+    extracted?: string;
+    extractionError?: string;
+  }>;
 }) {
   const { tripId } = await params;
-  const { saved, documentUploaded, extracted } = await searchParams;
+  const { saved, documentUploaded, extracted, extractionError } = await searchParams;
   const savedMessage = getSavedSectionMessage(saved);
   const { supabase } = await requireAdmin();
 
@@ -4683,12 +4695,18 @@ export default async function AdminTripEditorPage({
             }}
           >
             <p style={{ margin: 0, fontWeight: 900 }}>
-              {extracted === "1" ? "Document uploaded and extracted." : "Document uploaded."}
+              {extracted === "1"
+                ? "Document uploaded and extracted."
+                : extracted === "failed"
+                  ? "Document uploaded, but extraction failed."
+                  : "Document uploaded."}
             </p>
             <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
               {extracted === "1"
                 ? "The component fields were updated from the uploaded document. Review the details below before saving any manual edits."
-                : "The file is saved to this component and will appear on the commission only if you checked that option."}
+                : extracted === "failed"
+                  ? extractionError || "The file was saved to the component. Try Extract Booking Details from Trip Documents or upload a clearer PDF or image."
+                  : "The file is saved to this component and will appear on the commission only if you checked that option."}
             </p>
           </div>
         ) : null}
