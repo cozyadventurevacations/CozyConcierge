@@ -1059,10 +1059,10 @@ function StickyTripActionBar({
             </Link>
           ) : null}
           <Link href={`/admin/trips/${tripId}/client-documents`} className="btn btn-primary">
-            Attach Client Docs
+            Client Docs
           </Link>
           <Link href={`/admin/trips/${tripId}/documents`} className="btn btn-primary">
-            View Trip Docs
+            Trip Docs
           </Link>
         </div>
 
@@ -1370,7 +1370,8 @@ function WorkflowActionCard({
   cta?: string;
 }) {
   return (
-    <div
+    <a
+      href={href}
       style={{
         padding: "14px",
         borderRadius: 14,
@@ -1380,6 +1381,9 @@ function WorkflowActionCard({
         flexDirection: "column",
         gap: 10,
         minHeight: 150,
+        textDecoration: "none",
+        color: "inherit",
+        cursor: "pointer",
       }}
     >
       <div>
@@ -1391,8 +1395,7 @@ function WorkflowActionCard({
         </p>
       </div>
 
-      <a
-        href={href}
+      <span
         style={{
           marginTop: "auto",
           display: "inline-flex",
@@ -1408,8 +1411,8 @@ function WorkflowActionCard({
         }}
       >
         {cta}
-      </a>
-    </div>
+      </span>
+    </a>
   );
 }
 
@@ -1510,7 +1513,8 @@ function DocumentReadinessCard({
   cta?: string;
 }) {
   return (
-    <div
+    <a
+      href={href}
       style={{
         padding: "14px",
         borderRadius: 14,
@@ -1520,6 +1524,9 @@ function DocumentReadinessCard({
         flexDirection: "column",
         gap: 10,
         minHeight: 150,
+        textDecoration: "none",
+        color: "inherit",
+        cursor: "pointer",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
@@ -1529,8 +1536,7 @@ function DocumentReadinessCard({
 
       <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>{helper}</p>
 
-      <a
-        href={href}
+      <span
         style={{
           marginTop: "auto",
           display: "inline-flex",
@@ -1546,8 +1552,8 @@ function DocumentReadinessCard({
         }}
       >
         {cta}
-      </a>
-    </div>
+      </span>
+    </a>
   );
 }
 
@@ -3965,6 +3971,18 @@ export default async function AdminTripEditorPage({
       tone: clientDocumentsError ? "warning" : clientDocumentRows.length > 0 ? "good" : "warning",
       href: clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#trip-snapshot",
       cta: "View Client Docs",
+    },
+    {
+      title: "Trip document files",
+      status: tripDocumentsError ? "Review" : `${tripDocumentRows.length} file${tripDocumentRows.length === 1 ? "" : "s"}`,
+      helper: tripDocumentsError
+        ? "Trip documents could not be checked from this page."
+        : tripDocumentRows.length > 0
+          ? "Supplier confirmations, vouchers, waivers, and uploaded trip files are available."
+          : "No trip-level documents have been uploaded yet.",
+      tone: tripDocumentsError ? "warning" : tripDocumentRows.length > 0 ? "good" : "warning",
+      href: `/admin/trips/${trip.id}/documents`,
+      cta: "Open Trip Docs",
     },
     {
       title: "Attached to this trip",

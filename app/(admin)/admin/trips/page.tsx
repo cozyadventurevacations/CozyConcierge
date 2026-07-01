@@ -138,9 +138,16 @@ function FilterLink({ href, active, children }: { href: string; active: boolean;
   return <Link href={href} className={active ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "8px 12px", fontSize: 13 }}>{children}</Link>;
 }
 
-function SummaryCard({ label, value, helper, tone = "neutral" }: { label: string; value: string | number; helper: string; tone?: "neutral" | "warning" | "good" }) {
+function SummaryCard({ label, value, helper, tone = "neutral", href }: { label: string; value: string | number; helper: string; tone?: "neutral" | "warning" | "good"; href?: string }) {
   const colors = tone === "warning" ? { border: "#fed7aa", background: "#fff7ed", color: "#c2410c" } : tone === "good" ? { border: "#bbf7d0", background: "#ecfdf3", color: "#027a48" } : { border: "#e6f0f2", background: "#ffffff", color: "var(--accent-dark)" };
-  return <div className="card" style={{ border: `1px solid ${colors.border}`, background: colors.background }}><span className="label">{label}</span><p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: colors.color }}>{value}</p><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>{helper}</p></div>;
+  const content = <><span className="label">{label}</span><p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: colors.color }}>{value}</p><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>{helper}</p></>;
+  const style = { border: `1px solid ${colors.border}`, background: colors.background, textDecoration: "none", display: "block", color: "inherit", transition: "border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease" } as const;
+
+  if (href) {
+    return <Link href={href} className="card" style={style}>{content}</Link>;
+  }
+
+  return <div className="card" style={style}>{content}</div>;
 }
 
 type TripRow = {
@@ -333,10 +340,10 @@ export default async function AdminTripsPage({
 
       {!showDeleted && (
         <div className="grid grid-4">
-          <SummaryCard label="Upcoming" value={upcomingCount} helper="Departure date ahead" />
-          <SummaryCard label="Payment Due" value={paymentDueCount} helper="Past due or due within 21 days" tone={paymentDueCount > 0 ? "warning" : "good"} />
-          <SummaryCard label="Deletion Requests" value={deletionRequestCount} helper="Client requested deletion" tone={deletionRequestCount > 0 ? "warning" : "good"} />
-          <SummaryCard label="Completed" value={completedCount} helper="Completed trip records" />
+          <SummaryCard label="Upcoming" value={upcomingCount} helper="Departure date ahead" href="/admin/trips?filter=upcoming" />
+          <SummaryCard label="Payment Due" value={paymentDueCount} helper="Past due or due within 21 days" tone={paymentDueCount > 0 ? "warning" : "good"} href="/admin/trips?filter=payment-due" />
+          <SummaryCard label="Deletion Requests" value={deletionRequestCount} helper="Client requested deletion" tone={deletionRequestCount > 0 ? "warning" : "good"} href="/admin/trips?filter=deletion-requested#deletion-requests" />
+          <SummaryCard label="Completed" value={completedCount} helper="Completed trip records" href="/admin/trips?filter=completed" />
         </div>
       )}
 
@@ -392,7 +399,7 @@ export default async function AdminTripsPage({
 
                   <div className="row" style={{ gap: 6 }}>
                     {!showDeleted ? (
-                      <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
+                      <Link href={`/admin/trips/${trip.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open Trip</Link>
                     ) : null}
                     {showDeleted ? (
                       <form action={restoreTrip}>
@@ -414,6 +421,26 @@ export default async function AdminTripsPage({
                   <StatusBadge status={trip.trip_status} />
                   <PaymentBadge trip={trip} />
                 </div>
+
+                {!showDeleted ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 8,
+                    }}
+                  >
+                    <Link href={`/admin/trips/${trip.id}`} className="btn btn-outline" style={{ justifyContent: "center", fontSize: 13, padding: "8px 10px" }}>
+                      Overview
+                    </Link>
+                    <Link href={`/admin/trips/${trip.id}/documents`} className="btn btn-outline" style={{ justifyContent: "center", fontSize: 13, padding: "8px 10px" }}>
+                      Trip Docs
+                    </Link>
+                    <Link href={`/admin/trips/${trip.id}/client-documents`} className="btn btn-outline" style={{ justifyContent: "center", fontSize: 13, padding: "8px 10px" }}>
+                      Client Docs
+                    </Link>
+                  </div>
+                ) : null}
 
                 <div className="grid grid-2" style={{ gap: 10 }}>
                   <div><span className="label">Departure</span><strong>{formatDate(trip.departure_date)}</strong></div>
