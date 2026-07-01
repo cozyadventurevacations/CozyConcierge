@@ -69,6 +69,8 @@ type ClientDocumentRow = {
   uploaded_at: string | null;
   notes: string | null;
   signedUrl: string | null;
+  isAttachedToTrip: boolean;
+  linkedVisibility: string | null;
 };
 
 type TimelineGroup = {
@@ -185,6 +187,7 @@ type TripDetailClientProps = {
   canManageTravelCircle: boolean;
   documents: DocumentRow[];
   clientDocuments: ClientDocumentRow[];
+  canAttachClientDocuments: boolean;
   timelineGroups: TimelineGroup[];
   hotel: HotelData;
   flight: FlightData;
@@ -196,6 +199,7 @@ type TripDetailClientProps = {
   agencyWebsite: string;
   onInviteCompanion: (formData: FormData) => Promise<void>;
   onRemoveCompanion: (formData: FormData) => Promise<void>;
+  onAttachClientDocument: (formData: FormData) => Promise<void>;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -961,7 +965,19 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, activit
   );
 }
 
-function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[] }) {
+function DocumentsTab({
+  tripId,
+  documents,
+  clientDocuments,
+  canAttachClientDocuments,
+  onAttachClientDocument,
+}: {
+  tripId: string;
+  documents: DocumentRow[];
+  clientDocuments: ClientDocumentRow[];
+  canAttachClientDocuments: boolean;
+  onAttachClientDocument: (formData: FormData) => Promise<void>;
+}) {
   return (
     <div className="stack">
       <SectionCard eyebrow="Documents" title="Passport & Trip Document Checklist" subtitle="Review these before your departure date.">
@@ -1015,14 +1031,15 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
       )}
 
       {clientDocuments.length > 0 && (
-        <SectionCard eyebrow="Your Uploads" title="Documents You've Uploaded">
+        <SectionCard eyebrow="Client Documentation" title="Your Uploaded Documents">
           <div style={{ width: "100%", overflowX: "auto" }}>
-            <table className="table" style={{ minWidth: 500 }}>
+            <table className="table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
                   <th>Type</th>
                   <th>Title</th>
                   <th>Uploaded</th>
+                  <th>Trip</th>
                   <th>Open</th>
                 </tr>
               </thead>
@@ -1036,6 +1053,23 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
                     </td>
                     <td>{doc.title ?? doc.file_name ?? "—"}</td>
                     <td style={{ fontSize: 13, color: "#667085" }}>{fmtDateTime(doc.uploaded_at, "")}</td>
+                    <td>
+                      {doc.isAttachedToTrip ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 10px", background: "#ecfdf3", color: "#027a48", fontWeight: 800, fontSize: 12 }}>
+                          Attached
+                        </span>
+                      ) : canAttachClientDocuments ? (
+                        <form action={onAttachClientDocument}>
+                          <input type="hidden" name="trip_id" value={tripId} />
+                          <input type="hidden" name="client_document_id" value={doc.id} />
+                          <button type="submit" className="btn btn-outline" style={{ fontSize: 12, padding: "6px 10px" }}>
+                            Add to Trip
+                          </button>
+                        </form>
+                      ) : (
+                        <span style={{ color: "#667085", fontSize: 13 }}>Not attached</span>
+                      )}
+                    </td>
                     <td>
                       {doc.signedUrl ? (
                         <a href={doc.signedUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-dark)", fontWeight: 700 }}>Open</a>
@@ -1195,6 +1229,7 @@ export function TripDetailClient({
   canManageTravelCircle,
   documents,
   clientDocuments,
+  canAttachClientDocuments,
   timelineGroups,
   hotel,
   flight,
@@ -1206,6 +1241,7 @@ export function TripDetailClient({
   agencyWebsite,
   onInviteCompanion,
   onRemoveCompanion,
+  onAttachClientDocument,
 }: TripDetailClientProps) {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1300,7 +1336,13 @@ export function TripDetailClient({
         <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} activity={activity} insurance={insurance} />
       )}
       {activeTab === "documents" && (
-        <DocumentsTab tripId={trip.id} documents={documents} clientDocuments={clientDocuments} />
+        <DocumentsTab
+          tripId={trip.id}
+          documents={documents}
+          clientDocuments={clientDocuments}
+          canAttachClientDocuments={canAttachClientDocuments}
+          onAttachClientDocument={onAttachClientDocument}
+        />
       )}
       {activeTab === "travel-circle" && (
         <TravelCircleTab tripId={trip.id} tripMembers={tripMembers} isPrimaryClient={isPrimaryClient} canManageTravelCircle={canManageTravelCircle} onInviteCompanion={onInviteCompanion} onRemoveCompanion={onRemoveCompanion} />

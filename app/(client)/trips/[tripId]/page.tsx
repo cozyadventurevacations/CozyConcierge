@@ -218,6 +218,83 @@ async function removeTravelCompanion(formData: FormData) {
   revalidatePath(`/trips/${tripId}`);
 }
 
+async function attachClientUploadToTrip(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const clientDocumentId = String(formData.get("client_document_id") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!clientDocumentId) throw new Error("Missing document ID.");
+
+  const { data: trip, error: tripError } = await supabaseAdmin
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) {
+    throw new Error(tripError?.message ?? "Trip not found.");
+  }
+
+  const isPrimaryClient = trip.client_account_id === clientAccount.id;
+  if (!isPrimaryClient) {
+    const { data: memberAccess, error: memberAccessError } = await supabase
+      .from("trip_members" as any)
+      .select("id, can_view_trip, can_upload_own_documents, invite_status")
+      .eq("trip_id", tripId)
+      .eq("client_account_id", clientAccount.id)
+      .eq("invite_status", "active")
+      .maybeSingle();
+
+    if (memberAccessError) throw new Error(memberAccessError.message);
+    if (
+      !memberAccess ||
+      memberAccess.can_view_trip === false ||
+      memberAccess.can_upload_own_documents !== true
+    ) {
+      throw new Error("You do not have permission to attach documents to this trip.");
+    }
+  }
+
+  const { data: document, error: documentError } = await supabaseAdmin
+    .from("client_documents")
+    .select("id, client_account_id, document_title")
+    .eq("id", clientDocumentId)
+    .single();
+
+  if (documentError || !document) {
+    throw new Error(documentError?.message ?? "Document not found.");
+  }
+
+  if (document.client_account_id !== clientAccount.id) {
+    throw new Error("You can only attach your own uploaded documents.");
+  }
+
+  const { error: attachError } = await supabaseAdmin
+    .from("trip_client_documents")
+    .upsert(
+      {
+        trip_id: tripId,
+        client_document_id: clientDocumentId,
+        visibility: "client",
+        display_title: document.document_title,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "trip_id,client_document_id" },
+    );
+
+  if (attachError) throw new Error(attachError.message);
+
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}/documents`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/client-documents`);
+}
+
 async function requestTripDeletion(formData: FormData) {
   "use server";
 
@@ -471,11 +548,12 @@ export default async function TripDetailPage({
   const isPrimaryClient = trip.client_account_id === clientAccount.id;
   let canManageTravelCircle = isPrimaryClient;
   let canViewSharedDocuments = isPrimaryClient;
+  let canAttachClientDocuments = isPrimaryClient;
 
   if (!isPrimaryClient) {
     const { data: memberAccess } = await supabase
       .from("trip_members" as any)
-      .select("id, can_view_trip, can_view_shared_documents, can_manage_companions, invite_status")
+      .select("id, can_view_trip, can_view_shared_documents, can_upload_own_documents, can_manage_companions, invite_status")
       .eq("trip_id", tripId)
       .eq("client_account_id", clientAccount.id)
       .eq("invite_status", "active")
@@ -491,6 +569,7 @@ export default async function TripDetailPage({
 
     canManageTravelCircle = memberAccess.can_manage_companions === true;
     canViewSharedDocuments = memberAccess.can_view_shared_documents === true;
+    canAttachClientDocuments = memberAccess.can_upload_own_documents === true;
   }
 
   const allowedDocumentVisibility = isPrimaryClient
@@ -548,30 +627,20 @@ export default async function TripDetailPage({
     returnSegment = segments?.find((s: any) => s.direction === "return") ?? null;
   }
 
-  const clientDocumentsResult = allowedDocumentVisibility.includes("client")
-    ? await supabaseAdmin
-        .from("trip_client_documents")
-        .select(
-          `
-          id,
-          visibility,
-          display_title,
-          notes,
-          client_documents (
-            id,
-            document_type,
-            document_title,
-            file_name,
-            storage_path,
-            notes,
-            created_at
-          )
-          `,
-        )
-        .eq("trip_id", tripId)
-        .eq("visibility", "client")
-        .order("created_at", { ascending: false })
-    : { data: [] };
+  const [clientDocumentsResult, linkedClientDocumentsResult] = await Promise.all([
+    supabaseAdmin
+      .from("client_documents")
+      .select("id, document_type, document_title, file_name, storage_path, notes, created_at")
+      .eq("client_account_id", clientAccount.id)
+      .order("created_at", { ascending: false }),
+    supabaseAdmin
+      .from("trip_client_documents")
+      .select("id, client_document_id, visibility, display_title, notes")
+      .eq("trip_id", tripId),
+  ]);
+
+  if (clientDocumentsResult.error) throw new Error(clientDocumentsResult.error.message);
+  if (linkedClientDocumentsResult.error) throw new Error(linkedClientDocumentsResult.error.message);
 
   const tripDocs = (tripDocumentsResult.data ?? []) as any[];
   const documentsWithUrls = await Promise.all(
@@ -581,22 +650,26 @@ export default async function TripDetailPage({
     }),
   );
 
+  const linkedClientDocumentsById = new Map(
+    ((linkedClientDocumentsResult.data ?? []) as any[]).map((linkedDocument) => [
+      linkedDocument.client_document_id,
+      linkedDocument,
+    ]),
+  );
+
   const clientDocs = ((clientDocumentsResult.data ?? []) as any[])
-    .map((linkedDocument: any) => {
-      const clientDocument = Array.isArray(linkedDocument.client_documents)
-        ? linkedDocument.client_documents[0]
-        : linkedDocument.client_documents;
-
-      if (!clientDocument) return null;
-
+    .map((clientDocument: any) => {
+      const linkedDocument = linkedClientDocumentsById.get(clientDocument.id);
       return {
         id: clientDocument.id,
         document_type: clientDocument.document_type ?? null,
-        title: linkedDocument.display_title || clientDocument.document_title || null,
+        title: linkedDocument?.display_title || clientDocument.document_title || null,
         file_name: clientDocument.file_name ?? null,
         uploaded_at: clientDocument.created_at ?? null,
-        notes: linkedDocument.notes ?? clientDocument.notes ?? null,
+        notes: linkedDocument?.notes ?? clientDocument.notes ?? null,
         storage_path: clientDocument.storage_path ?? null,
+        isAttachedToTrip: Boolean(linkedDocument),
+        linkedVisibility: linkedDocument?.visibility ?? null,
       };
     })
     .filter(Boolean);
@@ -813,6 +886,7 @@ export default async function TripDetailPage({
         canManageTravelCircle={canManageTravelCircle}
         documents={documentsWithUrls}
         clientDocuments={clientDocsWithUrls}
+        canAttachClientDocuments={canAttachClientDocuments}
         timelineGroups={timelineGroups}
         hotel={hotel}
         flight={flight}
@@ -824,6 +898,7 @@ export default async function TripDetailPage({
         agencyWebsite={agencyWebsite}
         onInviteCompanion={inviteTravelCompanion}
         onRemoveCompanion={removeTravelCompanion}
+        onAttachClientDocument={attachClientUploadToTrip}
       />
 
       {isPrimaryClient && (
