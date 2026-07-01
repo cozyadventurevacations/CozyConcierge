@@ -1231,6 +1231,8 @@ async function applyExtractedBookingDetailsToComponent(
     });
   } else if (componentType === "air") {
     await upsertComponentDetail(supabase, "air_components", document.component_id, {
+      flight_type: "round_trip",
+      traveler_count: 1,
       airline_locator: confirmationNumber,
       rate_class: roomOrService,
       flight_terms_and_conditions: paymentTerms,
