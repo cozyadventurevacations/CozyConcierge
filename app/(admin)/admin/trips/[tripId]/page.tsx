@@ -47,6 +47,32 @@ const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 
 const MAX_COMPONENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
 
+const answeredInsuranceDecisionValues = new Set([
+  "accepted",
+  "accept",
+  "yes",
+  "declined",
+  "decline",
+  "no",
+  "waived",
+  "coverage_accepted",
+  "coverage_declined",
+]);
+
+function normalizeInsuranceDecision(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function hasInsuranceDecisionBeenAnswered(decision: unknown, decidedAt: unknown) {
+  return (
+    answeredInsuranceDecisionValues.has(normalizeInsuranceDecision(decision)) ||
+    String(decidedAt ?? "").trim().length > 0
+  );
+}
+
 const allowedComponentDocumentMimeTypes = [
   "application/pdf",
   "image/jpeg",
@@ -4233,8 +4259,8 @@ export default async function AdminTripEditorPage({
     (document) => document.component_type === "insurance",
   );
   const hasAnsweredInsurance =
-    trip.insurance_decision === "accepted" ||
-    trip.insurance_decision === "declined";
+    hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at) ||
+    Boolean(insuranceWaiverNote);
   const hasMinorTravelDocument = clientDocumentRows.some(
     (document) =>
       document.document_type === "minor_permission" ||

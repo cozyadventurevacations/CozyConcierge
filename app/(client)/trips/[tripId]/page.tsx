@@ -38,6 +38,32 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+const answeredInsuranceDecisionValues = new Set([
+  "accepted",
+  "accept",
+  "yes",
+  "declined",
+  "decline",
+  "no",
+  "waived",
+  "coverage_accepted",
+  "coverage_declined",
+]);
+
+function normalizeInsuranceDecision(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function hasInsuranceDecisionBeenAnswered(decision: unknown, decidedAt: unknown) {
+  return (
+    answeredInsuranceDecisionValues.has(normalizeInsuranceDecision(decision)) ||
+    String(decidedAt ?? "").trim().length > 0
+  );
+}
+
 function createSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -832,11 +858,9 @@ export default async function TripDetailPage({
   };
 
   const deletionRequested = Boolean(trip.deletion_requested_at);
-  const insuranceDecision = String(trip.insurance_decision ?? "");
   const shouldAskInsurance =
     isPrimaryClient &&
-    insuranceDecision !== "accepted" &&
-    insuranceDecision !== "declined";
+    !hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at);
 
   return (
     <PageShell
