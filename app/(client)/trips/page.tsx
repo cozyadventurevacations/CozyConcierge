@@ -531,7 +531,7 @@ export default async function TripsPage() {
         <h2 style={{ margin: 0 }}>Your Trip Library</h2>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Review trips booked for you directly, plus any trips shared with you through a Travel Circle invitation.
+          Review trips booked for you directly, plus any trips shared with you through Travel Circle.
         </p>
 
         <div className="grid grid-3">
@@ -546,7 +546,7 @@ export default async function TripsPage() {
           </Link>
 
           <Link href="/invites" className="btn btn-primary">
-            Review Travel Invitations
+            Review Shared Trips
           </Link>
 
           <Link href="/travel-request" className="btn btn-primary">
@@ -608,7 +608,7 @@ export default async function TripsPage() {
         {sharedTrips.length === 0 ? (
           <div className="card">
             <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
-              No shared Travel Circle trips yet. If someone invites you to a trip, you can accept the invitation from your Travel Invitations page.
+              No shared Travel Circle trips yet. Once someone adds you to a trip, it will appear here automatically.
             </p>
           </div>
         ) : (

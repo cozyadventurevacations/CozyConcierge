@@ -31,16 +31,6 @@ type TripRow = {
   final_payment_due_date: string | null;
 };
 
-type TripInviteRow = {
-  id: string;
-  trip_id: string;
-  invite_email: string | null;
-  invite_name: string | null;
-  role: string | null;
-  invite_status: string | null;
-  created_at: string | null;
-};
-
 type MessageThreadRow = {
   id: string;
   status: string | null;
@@ -762,7 +752,7 @@ export default async function ClientDashboardPage() {
 
   const { supabase, clientAccount } = clientContext;
 
-  const [tripsResult, threadsResult, invitesResult] = await Promise.all([
+  const [tripsResult, threadsResult] = await Promise.all([
     supabase
       .from("client_trip_summaries")
       .select("trip_id, client_account_id, trip_name, departure_date, return_date, destinations, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid")
@@ -775,19 +765,10 @@ export default async function ClientDashboardPage() {
       .eq("client_account_id", clientAccount.id)
       .order("last_message_at", { ascending: false }),
 
-    clientAccount.email
-      ? supabase
-          .from("trip_members")
-          .select("id, trip_id, invite_email, invite_name, role, invite_status, created_at")
-          .ilike("invite_email", clientAccount.email)
-          .eq("invite_status", "invited")
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as TripInviteRow[] }),
   ]);
 
   const rows = (tripsResult.data ?? []) as TripRow[];
   const messageThreads = (threadsResult.data ?? []) as MessageThreadRow[];
-  const pendingInvites = (invitesResult.data ?? []) as TripInviteRow[];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -910,23 +891,6 @@ export default async function ClientDashboardPage() {
           </div>
         )}
       </div>
-
-      {pendingInvites.length > 0 && (
-        <div
-          className="card"
-          style={{ background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}
-        >
-          <div>
-            <p style={{ margin: 0, fontWeight: 800, color: "#854f0b" }}>
-              {pendingInvites.length} Pending Travel Invitation{pendingInvites.length === 1 ? "" : "s"}
-            </p>
-            <p style={{ margin: "3px 0 0", fontSize: 13, color: "#92400e" }}>You have been invited to join a shared trip.</p>
-          </div>
-          <Link href="/messages" className="btn btn-primary" style={{ background: "#854f0b", padding: "8px 16px", fontSize: 13 }}>
-            Review in Messages
-          </Link>
-        </div>
-      )}
 
       <div className="grid grid-2">
         <AskCozyCompact />

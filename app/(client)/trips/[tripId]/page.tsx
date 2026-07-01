@@ -712,7 +712,7 @@ export default async function TripDetailPage({
 
   const rawMembers = (tripMembersResult.data ?? []) as any[];
   const tripMembers = rawMembers
-    .filter((m) => m.invite_status === "active" || m.invite_status === "invited")
+    .filter((m) => m.invite_status === "active")
     .map((m) => {
       const account = Array.isArray(m.client_accounts) ? m.client_accounts[0] : m.client_accounts;
       const name = account

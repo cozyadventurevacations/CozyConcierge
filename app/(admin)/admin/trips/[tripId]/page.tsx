@@ -1183,9 +1183,9 @@ function getTripMemberStatusLabel(status: string | null | undefined) {
     case "active":
       return "Active Companion";
     case "invited":
-      return "Pending Invitation";
+      return "Legacy Pending Access";
     case "declined":
-      return "Declined Invitation";
+      return "Declined Access";
     case "removed":
       return "Removed";
     default:
@@ -1213,7 +1213,7 @@ function getTripMemberHelperText(member: TripMemberRow) {
   }
 
   if (member.invite_status === "invited") {
-    return `Invite pending. Ask them to create or log into Cozy Concierge using ${getTripMemberEmail(member)}, then open Travel Invitations to accept shared trip access.`;
+    return `Access will activate when they log into Cozy Concierge using ${getTripMemberEmail(member)}. New Travel Circle additions are active immediately.`;
   }
 
   if (member.invite_status === "active") {
@@ -1221,7 +1221,7 @@ function getTripMemberHelperText(member: TripMemberRow) {
   }
 
   if (member.invite_status === "declined") {
-    return "This invitation was declined. Add them again if they need access later.";
+    return "This access was declined. Add them again if they need access later.";
   }
 
   return "Travel Circle access is managed from this section.";
@@ -1297,7 +1297,7 @@ function TripCompanionCard({ member }: { member: TripMemberRow }) {
             fontSize: 13,
           }}
         >
-          {isPendingInvite ? "Cancel Invitation" : "Remove Companion"}
+          {isPendingInvite ? "Remove Pending Access" : "Remove Companion"}
         </button>
       ) : null}
     </div>
@@ -4833,7 +4833,7 @@ export default async function AdminTripEditorPage({
                         lineHeight: 1.6,
                       }}
                     >
-                      <strong>Pending invitation next step:</strong> Ask invited companions to create or log into Cozy Concierge with the invited email address, then open <strong>Travel Invitations</strong> from their client dashboard or navigation.
+                      <strong>Legacy pending access:</strong> Ask companions to create or log into Cozy Concierge with the invited email address. Their shared trip access will activate automatically.
                     </div>
                   ) : null}
 

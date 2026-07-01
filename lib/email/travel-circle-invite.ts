@@ -86,20 +86,20 @@ export async function sendTravelCircleInviteEmail({
   const safeDestinations = destinations ? escapeHtml(destinations) : null;
   const safeDeparture = formattedDeparture ? escapeHtml(formattedDeparture) : null;
 
-  const invitesUrl = `${appUrl}/invites`;
+  const sharedTripsUrl = `${appUrl}/invites`;
   const registerUrl = `${appUrl}/register`;
   const loginUrl = `${appUrl}/login`;
 
-  const subject = `You're invited to join ${tripName} in Cozy Concierge`;
+  const subject = `You've been added to ${tripName} in Cozy Concierge`;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 640px; margin: 0 auto;">
-      <h1 style="color: #1f4f59; margin-bottom: 8px;">You're invited to a Travel Circle</h1>
+      <h1 style="color: #1f4f59; margin-bottom: 8px;">You've been added to a Travel Circle</h1>
 
       <p>Hi ${safeGreetingName},</p>
 
       <p>
-        You've been invited to join the Travel Circle for
+        You've been added to the Travel Circle for
         <strong>${safeTripName}</strong> in Cozy Concierge.
       </p>
 
@@ -122,13 +122,13 @@ export async function sendTravelCircleInviteEmail({
       }
 
       <p>
-        To review your Travel Circle access, log in or create your Cozy Concierge
+        Your access is active now. To review the shared trip, log in or create your Cozy Concierge
         account using this same email address: <strong>${escapeHtml(to)}</strong>.
       </p>
 
       <p style="margin: 22px 0;">
-        <a href="${invitesUrl}" style="display: inline-block; background: #1f4f59; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">
-          Review Travel Circle Access
+        <a href="${sharedTripsUrl}" style="display: inline-block; background: #1f4f59; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">
+          Open Shared Trips
         </a>
       </p>
 
@@ -142,12 +142,6 @@ export async function sendTravelCircleInviteEmail({
         <a href="${loginUrl}" style="color: #1f4f59;">${loginUrl}</a>
       </p>
 
-      <p>
-        If an acceptance step is needed, Cozy Concierge will show it on your
-        invitations page. If your advisor has already activated access, the trip
-        will appear under your shared trips.
-      </p>
-
       <p style="color: #667085; font-size: 14px;">
         Privacy note: personal traveler details, passport uploads, and private advisor messages
         remain protected unless separately shared.
@@ -159,22 +153,20 @@ export async function sendTravelCircleInviteEmail({
 
   const text = `Hi ${greetingName},
 
-You've been invited to join the Travel Circle for ${tripName} in Cozy Concierge.
+You've been added to the Travel Circle for ${tripName} in Cozy Concierge.
 
 ${destinations ? `Destination: ${destinations}\n` : ""}${formattedDeparture ? `Departure: ${formattedDeparture}\n` : ""}Access level: ${roleLabel}
 
-To review your Travel Circle access, log in or create your Cozy Concierge account using this same email address: ${to}
+Your access is active now. To review the shared trip, log in or create your Cozy Concierge account using this same email address: ${to}
 
-Review your Travel Circle access:
-${invitesUrl}
+Open shared trips:
+${sharedTripsUrl}
 
 New to Cozy Concierge? Create your account:
 ${registerUrl}
 
 Already have an account? Sign in:
 ${loginUrl}
-
-If an acceptance step is needed, Cozy Concierge will show it on your invitations page. If your advisor has already activated access, the trip will appear under your shared trips.
 
 Privacy note: personal traveler details, passport uploads, and private advisor messages remain protected unless separately shared.
 

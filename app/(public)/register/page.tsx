@@ -30,7 +30,7 @@ function BrandPanel() {
         <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Cozy Concierge</p>
         <h1 style={{ margin: 0, fontSize: 30 }}>Create your private travel hub.</h1>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Set up secure access for trip details, documents, Travel Circle messages, invitations, and advisor updates.
+          Set up secure access for trip details, documents, Travel Circle messages, shared trips, and advisor updates.
         </p>
       </div>
       <div style={{ display: "grid", gap: 10 }}>
@@ -185,7 +185,7 @@ export default function RegisterPage() {
           <div>
             <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Client account</p>
             <h1 style={{ margin: "6px 0 0" }}>Create your Cozy Concierge login</h1>
-            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations so trips, invitations, and documents can connect automatically.</p>
+            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations so trips, shared access, and documents can connect automatically.</p>
           </div>
 
           {successMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}

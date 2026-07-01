@@ -1124,14 +1124,14 @@ export default async function AdminClientDetailPage({
                 <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>{sharedTravelCircleRows.length}</p>
               </div>
               <div className="card">
-                <span className="label">Pending / Declined Invites</span>
+                <span className="label">Legacy Pending / Declined</span>
                 <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>{pendingTravelCircleRows.length} / {declinedTravelCircleRows.length}</p>
               </div>
             </div>
 
             {sharedTravelCircleRows.length === 0 && pendingTravelCircleRows.length === 0 ? (
               <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#667085", lineHeight: 1.6 }}>
-                <p style={{ margin: 0 }}>This client does not currently have shared Travel Circle access or pending invitations.</p>
+                <p style={{ margin: 0 }}>This client does not currently have shared Travel Circle access.</p>
               </div>
             ) : null}
 
@@ -1165,9 +1165,9 @@ export default async function AdminClientDetailPage({
 
             {pendingTravelCircleRows.length > 0 ? (
               <div className="card stack" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
-                <h3 style={{ margin: 0 }}>Pending Travel Circle Invitations</h3>
+                <h3 style={{ margin: 0 }}>Legacy Pending Travel Circle Access</h3>
                 <p style={{ margin: 0, color: "#9a3412", lineHeight: 1.6 }}>
-                  Ask the traveler to create or log into Cozy Concierge using the invited email, then open Travel Invitations to accept shared trip access.
+                  Ask the traveler to create or log into Cozy Concierge using the invited email. Shared trip access activates automatically when they open their account.
                 </p>
                 <div style={{ width: "100%", overflowX: "auto" }}>
                   <table className="table" style={{ minWidth: 860 }}>

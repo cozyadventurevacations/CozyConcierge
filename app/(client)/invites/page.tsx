@@ -167,185 +167,6 @@ async function getCurrentClientAccount() {
   };
 }
 
-async function acceptTravelCompanionInvite(formData: FormData) {
-  "use server";
-
-  const { supabase, clientAccount } = await getCurrentClientAccount();
-
-  const inviteId = String(formData.get("invite_id") ?? "").trim();
-
-  if (!inviteId) throw new Error("Missing invitation ID.");
-
-  const clientEmail = clientAccount.email?.trim().toLowerCase();
-
-  if (!clientEmail) {
-    throw new Error("Your client account does not have an email address.");
-  }
-
-  const { data: invite, error: inviteError } = await supabase
-    .from("trip_members" as any)
-    .select("id, trip_id, client_account_id, invite_email, invite_status, role")
-    .eq("id", inviteId)
-    .maybeSingle();
-
-  if (inviteError) throw new Error(inviteError.message);
-
-  if (!invite) {
-    throw new Error("Invitation not found. It may have been removed or replaced.");
-  }
-
-  const inviteEmail = invite.invite_email?.trim().toLowerCase();
-  const belongsToCurrentClient =
-    invite.client_account_id === clientAccount.id || inviteEmail === clientEmail;
-
-  if (!belongsToCurrentClient) {
-    throw new Error(
-      "This invitation belongs to a different email address. Please sign in with the invited email or ask your advisor to resend it.",
-    );
-  }
-
-  if (invite.invite_status === "active") {
-    if (!invite.client_account_id) {
-      const displayName =
-        `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-        clientAccount.email ||
-        null;
-
-      const { error: linkActiveError } = await supabase
-        .from("trip_members" as any)
-        .update({
-          client_account_id: clientAccount.id,
-          invite_name: displayName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invite.id);
-
-      if (linkActiveError) throw new Error(linkActiveError.message);
-    }
-
-    revalidatePath("/invites");
-    revalidatePath("/trips");
-    revalidatePath(`/trips/${invite.trip_id}`);
-    redirect(`/trips/${invite.trip_id}?invite=already-active`);
-  }
-
-  if (invite.invite_status !== "invited") {
-    throw new Error(
-      "This invitation is no longer pending. Please refresh your invitations page or ask your advisor to resend it.",
-    );
-  }
-
-  const { data: existingActiveMember, error: existingError } = await supabase
-    .from("trip_members" as any)
-    .select("id")
-    .eq("trip_id", invite.trip_id)
-    .eq("client_account_id", clientAccount.id)
-    .eq("invite_status", "active")
-    .maybeSingle();
-
-  if (existingError) throw new Error(existingError.message);
-
-  if (existingActiveMember) {
-    const { error: removeDuplicateError } = await supabase
-      .from("trip_members" as any)
-      .update({
-        invite_status: "removed",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", invite.id);
-
-    if (removeDuplicateError) throw new Error(removeDuplicateError.message);
-
-    revalidatePath("/invites");
-    revalidatePath("/trips");
-    revalidatePath(`/trips/${invite.trip_id}`);
-    redirect(`/trips/${invite.trip_id}`);
-  }
-
-  const displayName =
-    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-    clientAccount.email ||
-    null;
-
-  const { error: updateError } = await supabase
-    .from("trip_members" as any)
-    .update({
-      client_account_id: clientAccount.id,
-      invite_name: displayName,
-      invite_status: "active",
-      can_view_trip: true,
-      can_view_shared_documents: true,
-      can_join_group_messages: true,
-      can_upload_own_documents: invite.role === "contributor",
-      can_manage_companions: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", invite.id)
-    .eq("invite_status", "invited");
-
-  if (updateError) throw new Error(updateError.message);
-
-  revalidatePath("/invites");
-  revalidatePath("/trips");
-  revalidatePath(`/trips/${invite.trip_id}`);
-  redirect(`/trips/${invite.trip_id}`);
-}
-
-async function declineTravelCompanionInvite(formData: FormData) {
-  "use server";
-
-  const { supabase, clientAccount } = await getCurrentClientAccount();
-
-  const inviteId = String(formData.get("invite_id") ?? "").trim();
-
-  if (!inviteId) throw new Error("Missing invitation ID.");
-
-  const clientEmail = clientAccount.email?.trim().toLowerCase();
-
-  if (!clientEmail) {
-    throw new Error("Your client account does not have an email address.");
-  }
-
-  const { data: invite, error: inviteError } = await supabase
-    .from("trip_members" as any)
-    .select("id, client_account_id, invite_email, invite_status")
-    .eq("id", inviteId)
-    .maybeSingle();
-
-  if (inviteError) throw new Error(inviteError.message);
-
-  if (!invite) {
-    throw new Error("Invitation not found. It may have been removed or replaced.");
-  }
-
-  const inviteEmail = invite.invite_email?.trim().toLowerCase();
-  const belongsToCurrentClient =
-    invite.client_account_id === clientAccount.id || inviteEmail === clientEmail;
-
-  if (!belongsToCurrentClient) {
-    throw new Error(
-      "This invitation belongs to a different email address. Please sign in with the invited email or ask your advisor to resend it.",
-    );
-  }
-
-  if (invite.invite_status !== "invited") {
-    revalidatePath("/invites");
-    redirect("/invites?invite=already-handled");
-  }
-
-  const { error: updateError } = await supabase
-    .from("trip_members" as any)
-    .update({
-      invite_status: "declined",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", invite.id);
-
-  if (updateError) throw new Error(updateError.message);
-
-  revalidatePath("/invites");
-}
-
 export default async function ClientInvitationsPage({
   searchParams,
 }: {
@@ -358,7 +179,7 @@ export default async function ClientInvitationsPage({
     clientContext = await getCurrentClientAccount();
   } catch (error) {
     return (
-      <PageShell title="Travel Invitations" subtitle="We could not load your account.">
+      <PageShell title="Shared Trips" subtitle="We could not load your account.">
         <div className="card">
           <p>
             <strong>Error:</strong>
@@ -376,8 +197,8 @@ export default async function ClientInvitationsPage({
   if (!clientEmail) {
     return (
       <PageShell
-        title="Travel Invitations"
-        subtitle="Your invitations are matched by email address."
+        title="Shared Trips"
+        subtitle="Shared trip access is matched by email address."
       >
         <div className="card">
           <p>Your client account does not have an email address.</p>
@@ -395,6 +216,79 @@ export default async function ClientInvitationsPage({
     .eq("invite_status", "invited")
     .order("created_at", { ascending: false });
 
+  if (pendingError) {
+    return (
+      <PageShell
+        title="Shared Trips"
+        subtitle="Review trips shared with you through Travel Circle."
+      >
+        <div className="card">
+          <p>
+            <strong>Error loading shared trips:</strong>
+          </p>
+          <pre>{JSON.stringify(pendingError, null, 2)}</pre>
+        </div>
+      </PageShell>
+    );
+  }
+
+  const pendingRows = (pendingInvites ?? []) as TripInviteRow[];
+
+  if (pendingRows.length > 0) {
+    const displayName =
+      `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
+      clientAccount.email ||
+      null;
+
+    for (const invite of pendingRows) {
+      const { data: existingActiveMember, error: existingError } = await supabase
+        .from("trip_members" as any)
+        .select("id")
+        .eq("trip_id", invite.trip_id)
+        .eq("client_account_id", clientAccount.id)
+        .eq("invite_status", "active")
+        .maybeSingle();
+
+      if (existingError) throw new Error(existingError.message);
+
+      if (existingActiveMember) {
+        const { error: removeDuplicateError } = await supabase
+          .from("trip_members" as any)
+          .update({
+            invite_status: "removed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", invite.id);
+
+        if (removeDuplicateError) throw new Error(removeDuplicateError.message);
+      } else {
+        const { error: activateError } = await supabase
+          .from("trip_members" as any)
+          .update({
+            client_account_id: clientAccount.id,
+            invite_name: displayName,
+            invite_status: "active",
+            can_view_trip: true,
+            can_view_shared_documents: true,
+            can_join_group_messages: true,
+            can_upload_own_documents: invite.role === "contributor",
+            can_manage_companions: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", invite.id)
+          .eq("invite_status", "invited");
+
+        if (activateError) throw new Error(activateError.message);
+      }
+
+      revalidatePath(`/trips/${invite.trip_id}`);
+    }
+
+    revalidatePath("/invites");
+    revalidatePath("/trips");
+    redirect("/invites?invite=activated");
+  }
+
   const { data: activeMemberships, error: activeError } = await supabase
     .from("trip_members" as any)
     .select(
@@ -405,29 +299,28 @@ export default async function ClientInvitationsPage({
     .neq("role", "owner")
     .order("created_at", { ascending: false });
 
-  if (pendingError || activeError) {
+  if (activeError) {
     return (
       <PageShell
-        title="Travel Invitations"
-        subtitle="Accept shared trip access from your Travel Circle."
+        title="Shared Trips"
+        subtitle="Review trips shared with you through Travel Circle."
       >
         <div className="card">
           <p>
-            <strong>Error loading invitations:</strong>
+            <strong>Error loading shared trips:</strong>
           </p>
-          <pre>{JSON.stringify(pendingError ?? activeError, null, 2)}</pre>
+          <pre>{JSON.stringify(activeError, null, 2)}</pre>
         </div>
       </PageShell>
     );
   }
 
-  const pendingRows = (pendingInvites ?? []) as TripInviteRow[];
   const activeRows = (activeMemberships ?? []) as TripInviteRow[];
 
   return (
     <PageShell
-      title="Travel Invitations"
-      subtitle="Review shared trip invitations and accepted Travel Circle access."
+      title="Shared Trips"
+      subtitle="Review trips shared with you through Travel Circle."
     >
       <div
         className="card stack"
@@ -448,22 +341,22 @@ export default async function ClientInvitationsPage({
         >
           Cozy Concierge
         </p>
-        <h2 style={{ margin: 0 }}>Travel Circle Invitations</h2>
+        <h2 style={{ margin: 0 }}>Travel Circle Access</h2>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Invitations are matched to the email address on your Cozy Concierge account:
+          Shared trip access is matched to the email address on your Cozy Concierge account:
           <strong> {clientEmail}</strong>
         </p>
         <div className="grid grid-2">
           <div
             className="card"
             style={{
-              border: "1px solid #fed7aa",
-              background: pendingRows.length > 0 ? "#fff7ed" : "#ffffff",
+              border: "1px solid #e6f0f2",
+              background: "#ffffff",
             }}
           >
-            <span className="label">Pending Invitations</span>
+            <span className="label">Shared Trips</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
-              {pendingRows.length}
+              {activeRows.length}
             </p>
           </div>
 
@@ -474,15 +367,15 @@ export default async function ClientInvitationsPage({
               background: "#ffffff",
             }}
           >
-            <span className="label">Shared Trips Accepted</span>
+            <span className="label">Access Status</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>
-              {activeRows.length}
+              Active
             </p>
           </div>
         </div>
       </div>
 
-      {inviteStatus === "already-handled" ? (
+      {inviteStatus === "activated" ? (
         <div
           className="card"
           style={{
@@ -492,20 +385,19 @@ export default async function ClientInvitationsPage({
             fontWeight: 800,
           }}
         >
-          This Travel Circle invitation was already handled. Your current shared
-          trips are listed below.
+          Your Travel Circle access is active. Your shared trips are listed below.
         </div>
       ) : null}
 
       <div className="card stack">
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>Pending Invitations</h2>
-          <StatusPill label={`${pendingRows.length} pending`} tone={pendingRows.length > 0 ? "warning" : "good"} />
+          <h2 style={{ margin: 0 }}>Shared Access Updates</h2>
+          <StatusPill label={`${pendingRows.length} activating`} tone={pendingRows.length > 0 ? "warning" : "good"} />
         </div>
 
         {pendingRows.length === 0 ? (
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            You do not have any pending Travel Circle invitations right now.
+            Any Travel Circle access shared with you will appear below automatically.
           </p>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
@@ -538,34 +430,16 @@ export default async function ClientInvitationsPage({
                   </div>
 
                   <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                    Accepting this invitation will add this trip to your Cozy Concierge
-                    account. You will be able to view shared trip details, shared
-                    documents, and Travel Circle messages based on your access level.
+                    This shared trip access is active automatically. You can open the
+                    trip to view shared details, documents, and Travel Circle messages
+                    based on your access level.
                   </p>
 
-                  <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                    <form action={acceptTravelCompanionInvite}>
-                      <input type="hidden" name="invite_id" value={invite.id} />
-                      <button type="submit" className="btn btn-primary">
-                        Accept Invitation
-                      </button>
-                    </form>
-
-                    <form action={declineTravelCompanionInvite}>
-                      <input type="hidden" name="invite_id" value={invite.id} />
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        style={{
-                          background: "#ffffff",
-                          color: "#9a3412",
-                          border: "1px solid #fed7aa",
-                        }}
-                      >
-                        Decline
-                      </button>
-                    </form>
-                  </div>
+                  {trip?.id ? (
+                    <Link href={`/trips/${trip.id}`} className="btn btn-primary">
+                      Open Trip
+                    </Link>
+                  ) : null}
                 </div>
               );
             })}
@@ -581,7 +455,7 @@ export default async function ClientInvitationsPage({
 
         {activeRows.length === 0 ? (
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            You have not accepted any shared trip invitations yet.
+            No trips have been shared with you yet. Once someone adds you to a Travel Circle, the trip will appear here automatically.
           </p>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>

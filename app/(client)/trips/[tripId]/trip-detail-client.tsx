@@ -1109,7 +1109,6 @@ function TravelCircleTab({ tripId, tripMembers, canManageTravelCircle, onInviteC
                   <p style={{ margin: 0, fontWeight: 800 }}>{member.display_name}</p>
                   <p style={{ margin: "3px 0 0", color: "#667085", fontSize: 13 }}>
                     {member.email ?? "Email not provided"}
-                    {member.invite_status === "invited" ? " · Invitation pending" : ""}
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
