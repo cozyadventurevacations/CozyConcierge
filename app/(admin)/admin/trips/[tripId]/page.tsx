@@ -31,6 +31,7 @@ const billableTripComponentTypes = [
   "air",
   "cruise",
   "transfer",
+  "rental_car",
   "activity",
   "insurance",
 ];
@@ -40,6 +41,7 @@ const tripComponentTypeLabels: Record<string, string> = {
   air: "Air",
   cruise: "Cruise",
   transfer: "Transfer",
+  rental_car: "Rental Car",
   activity: "Activity",
   insurance: "Insurance",
 };
@@ -1617,6 +1619,7 @@ function getSavedSectionAnchor(value: string | undefined) {
     case "Air Component": return "air-component";
     case "Cruise Component": return "cruise-component";
     case "Transfer Component": return "transfer-component";
+    case "Rental Car Component": return "rental_car-component";
     case "Activity Component": return "activity-component";
     case "Insurance Component": return "insurance-component";
     case "Notes": return "trip-notes";
@@ -2092,6 +2095,16 @@ async function applyExtractedBookingDetailsToTripComponent(
       vehicle_type: roomOrService,
       transfer_notes: notesText,
     });
+  } else if (componentType === "rental_car") {
+    await upsertExtractedComponentDetail(supabase, "rental_car_components", component.id, {
+      rental_company: supplierName,
+      pickup_datetime: combineExtractedDateAndTime(startDate, startTime),
+      return_datetime: combineExtractedDateAndTime(endDate, cleanExtractedText(payload.end_time)),
+      pickup_location: locationOrRoute,
+      return_location: cleanExtractedText(payload.return_location) || locationOrRoute,
+      vehicle_class: roomOrService,
+      rental_notes: notesText,
+    });
   } else if (componentType === "activity") {
     await upsertExtractedComponentDetail(supabase, "activity_components", component.id, {
       activity_name: roomOrService || displayName,
@@ -2175,7 +2188,7 @@ async function extractBookingDetailsFromUploadedComponentDocument({
                 "Extract booking details from this travel document.",
                 "Return this JSON shape:",
                 "{",
-                '  "component_type": "hotel | air | cruise | transfer | activity | insurance | unknown",',
+                '  "component_type": "hotel | air | cruise | transfer | rental_car | activity | insurance | unknown",',
                 '  "supplier_name": string | null,',
                 '  "confirmation_number": string | null,',
                 '  "traveler_names": string[],',
@@ -2300,6 +2313,7 @@ async function loadTripComponentContext(
     air: "air_components",
     cruise: "cruise_components",
     transfer: "transfer_components",
+    rental_car: "rental_car_components",
     activity: "activity_components",
     insurance: "insurance_components",
   };
@@ -2606,7 +2620,7 @@ async function generateTripItinerarySummary(formData: FormData) {
 
   if (tripError || !trip) throw new Error("Trip not found or access denied.");
 
-  const componentTypes = ["hotel", "air", "cruise", "transfer", "activity", "insurance"];
+  const componentTypes = ["hotel", "air", "cruise", "transfer", "rental_car", "activity", "insurance"];
   const componentContexts = await Promise.all(
     componentTypes.map(async (componentType) => {
       const context = await loadTripComponentContext(supabase, tripId, componentType).catch(() => null);
@@ -3577,6 +3591,97 @@ async function updateTrip(formData: FormData) {
     transferDetailPayload,
   );
 
+  // RENTAL CAR
+  const rentalCarSupplierId = cleanText(formData, "rental_car_supplier_id");
+  const savedRentalCarSupplierName = await getSupplierName(rentalCarSupplierId);
+  const rentalCompany = String(formData.get("rental_car_company") ?? "").trim();
+  const rentalCarPickupDatetime =
+    String(formData.get("rental_car_pickup_datetime") ?? "").trim() || null;
+  const rentalCarReturnDatetime =
+    String(formData.get("rental_car_return_datetime") ?? "").trim() || null;
+  const rentalCarPickupLocation =
+    String(formData.get("rental_car_pickup_location") ?? "").trim() || null;
+  const rentalCarReturnLocation =
+    String(formData.get("rental_car_return_location") ?? "").trim() || null;
+  const rentalCarVehicleClass =
+    String(formData.get("rental_car_vehicle_class") ?? "").trim() || null;
+  const rentalCarDriverCountRaw = String(
+    formData.get("rental_car_driver_count") ?? "",
+  ).trim();
+  const rentalCarBookingStatus = requireAllowedValue(
+    String(formData.get("rental_car_booking_status") ?? "").trim(),
+    allowedBookingStatuses,
+    "quoted",
+  );
+  const rentalCarTotalPrice = toMoneyNumber(formData.get("rental_car_total_price"));
+  const rentalCarDepositDueDate =
+    String(formData.get("rental_car_deposit_due_date") ?? "").trim() || null;
+  const rentalCarFinalPaymentDueDate =
+    String(formData.get("rental_car_final_payment_due_date") ?? "").trim() || null;
+  const rentalCarConfirmationNumber =
+    String(formData.get("rental_car_confirmation_number") ?? "").trim() || null;
+  const rentalCarNotes =
+    String(formData.get("rental_car_notes") ?? "").trim() || null;
+  const rentalCarTerms =
+    String(formData.get("rental_car_terms_and_conditions") ?? "").trim() || null;
+  const rentalCarCancellation =
+    String(formData.get("rental_car_cancellation_policy") ?? "").trim() || null;
+  const rentalCarCommissionAmountRaw = String(
+    formData.get("rental_car_commission_amount") ?? "",
+  ).trim();
+  const rentalCarCommissionStatus =
+    String(formData.get("rental_car_commission_status") ?? "").trim() || null;
+  const rentalCarCommissionNotes =
+    String(formData.get("rental_car_commission_notes") ?? "").trim() || null;
+
+  const rentalCarCommissionAmount = rentalCarCommissionAmountRaw
+    ? toMoneyNumber(formData.get("rental_car_commission_amount"))
+    : null;
+
+  const rentalCarDetailPayload = {
+    rental_company: rentalCompany || savedRentalCarSupplierName || null,
+    pickup_datetime: rentalCarPickupDatetime,
+    return_datetime: rentalCarReturnDatetime,
+    pickup_location: rentalCarPickupLocation,
+    return_location: rentalCarReturnLocation,
+    vehicle_class: rentalCarVehicleClass,
+    driver_count: rentalCarDriverCountRaw ? Number(rentalCarDriverCountRaw) : null,
+    rental_notes: rentalCarNotes,
+    commission_amount: rentalCarCommissionAmount,
+    commission_status: rentalCarCommissionStatus,
+    commission_notes: rentalCarCommissionNotes,
+  };
+
+  const hasAnyRentalCarValue =
+    rentalCarSupplierId ||
+    rentalCompany ||
+    rentalCarTotalPrice > 0 ||
+    rentalCarPickupDatetime ||
+    rentalCarReturnDatetime ||
+    rentalCarPickupLocation ||
+    rentalCarReturnLocation ||
+    rentalCarConfirmationNumber;
+
+  await upsertTripComponent(
+    "rental_car",
+    hasAnyRentalCarValue,
+    {
+      supplier_id: rentalCarSupplierId,
+      display_name: rentalCompany || savedRentalCarSupplierName || "Rental Car",
+      supplier_name: savedRentalCarSupplierName || rentalCompany || null,
+      booking_status: rentalCarBookingStatus,
+      total_price: rentalCarTotalPrice,
+      commission_admin_only: rentalCarCommissionAmount ?? 0,
+      deposit_due_date: rentalCarDepositDueDate,
+      final_payment_due_date: rentalCarFinalPaymentDueDate,
+      confirmation_number: rentalCarConfirmationNumber,
+      terms_and_conditions: rentalCarTerms,
+      cancellation_policy: rentalCarCancellation,
+    },
+    "rental_car_components",
+    rentalCarDetailPayload,
+  );
+
   // ACTIVITY
   const activitySupplierId = cleanText(formData, "activity_supplier_id");
   const savedActivitySupplierName = await getSupplierName(activitySupplierId);
@@ -4061,6 +4166,7 @@ async function hardDeleteTripRecords(
     await deleteRowsByIds(supabase, "hotel_components", "component_id", componentIds);
     await deleteRowsByIds(supabase, "cruise_components", "component_id", componentIds);
     await deleteRowsByIds(supabase, "transfer_components", "component_id", componentIds);
+    await deleteRowsByIds(supabase, "rental_car_components", "component_id", componentIds);
     await deleteRowsByIds(supabase, "activity_components", "component_id", componentIds);
     await deleteRowsByIds(supabase, "insurance_components", "component_id", componentIds);
   }
@@ -4378,6 +4484,7 @@ export default async function AdminTripEditorPage({
   const air = await loadComponent("air", "air_components");
   const cruise = await loadComponent("cruise", "cruise_components");
   const transfer = await loadComponent("transfer", "transfer_components");
+  const rentalCar = await loadComponent("rental_car", "rental_car_components");
   const activity = await loadComponent("activity", "activity_components");
   const insurance = await loadComponent("insurance", "insurance_components");
 
@@ -4914,6 +5021,7 @@ export default async function AdminTripEditorPage({
         "air",
         "cruise",
         "transfer",
+        "rental_car",
         "activity",
         "insurance",
       ].map((componentType) => (
@@ -7359,6 +7467,238 @@ export default async function AdminTripEditorPage({
         
 
           <SectionSaveButton label="Transfer Component" />
+        </CollapsibleSection>
+
+        <span id="rental_car-component" />
+        <CollapsibleSection title={<SectionTitleWithBadge title="Rental Car Component" badge={rentalCar.component ? "Added" : "Missing"} tone={rentalCar.component ? "good" : "neutral"} />}>
+          <ComponentCommissionLink
+            tripId={trip.id}
+            componentId={rentalCar.component?.id ?? ""}
+            supplierId={rentalCar.component?.supplier_id ?? ""}
+            bookingNumber={rentalCar.component?.confirmation_number ?? ""}
+            commissionName={`${
+              rentalCar.details?.rental_company ??
+              rentalCar.component?.supplier_name ??
+              "Rental Car"
+            } Commission`}
+            grossBookingAmount={rentalCar.component?.total_price ?? 0}
+            fullCommissionAmount={
+              rentalCar.details?.commission_amount ??
+              rentalCar.component?.commission_admin_only ??
+              0
+            }
+          />
+          <AiWritingToolButton componentType="rental_car" disabled={!rentalCar.component} />
+          <ComponentDocumentUploadCard
+            formId="upload-rental_car-document-form"
+            componentLabel="Rental Car"
+            componentType="rental_car"
+            componentId={rentalCar.component?.id}
+          />
+          <div className="grid grid-2">
+            <SupplierSelect
+              name="rental_car_supplier_id"
+              suppliers={supplierRows}
+              defaultValue={rentalCar.component?.supplier_id ?? ""}
+            />
+
+            <label>
+              <span className="label">Rental Company / Manual Name</span>
+              <input
+                className="input"
+                name="rental_car_company"
+                defaultValue={rentalCar.details?.rental_company ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Booking Status</span>
+              <select
+                className="select"
+                name="rental_car_booking_status"
+                defaultValue={rentalCar.component?.booking_status ?? "quoted"}
+              >
+                <option value="on_hold">on_hold</option>
+                <option value="reserved">reserved</option>
+                <option value="quoted">quoted</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="label">Confirmation Number</span>
+              <input
+                className="input"
+                name="rental_car_confirmation_number"
+                defaultValue={rentalCar.component?.confirmation_number ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Pickup Date & Time</span>
+              <input
+                className="input"
+                type="datetime-local"
+                name="rental_car_pickup_datetime"
+                defaultValue={
+                  rentalCar.details?.pickup_datetime
+                    ? new Date(rentalCar.details.pickup_datetime)
+                        .toISOString()
+                        .slice(0, 16)
+                    : ""
+                }
+              />
+            </label>
+
+            <label>
+              <span className="label">Return Date & Time</span>
+              <input
+                className="input"
+                type="datetime-local"
+                name="rental_car_return_datetime"
+                defaultValue={
+                  rentalCar.details?.return_datetime
+                    ? new Date(rentalCar.details.return_datetime)
+                        .toISOString()
+                        .slice(0, 16)
+                    : ""
+                }
+              />
+            </label>
+
+            <label>
+              <span className="label">Pickup Location</span>
+              <input
+                className="input"
+                name="rental_car_pickup_location"
+                defaultValue={rentalCar.details?.pickup_location ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Return Location</span>
+              <input
+                className="input"
+                name="rental_car_return_location"
+                defaultValue={rentalCar.details?.return_location ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Vehicle Class</span>
+              <input
+                className="input"
+                name="rental_car_vehicle_class"
+                defaultValue={rentalCar.details?.vehicle_class ?? ""}
+                placeholder="Intermediate, SUV, minivan..."
+              />
+            </label>
+
+            <label>
+              <span className="label">Driver Count</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                name="rental_car_driver_count"
+                defaultValue={rentalCar.details?.driver_count ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Total Price</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="rental_car_total_price"
+                defaultValue={rentalCar.component?.total_price ?? 0}
+              />
+            </label>
+
+            <label>
+              <span className="label">Deposit Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="rental_car_deposit_due_date"
+                defaultValue={rentalCar.component?.deposit_due_date ?? ""}
+              />
+            </label>
+
+            <label>
+              <span className="label">Final Payment Due Date</span>
+              <input
+                className="input"
+                type="date"
+                name="rental_car_final_payment_due_date"
+                defaultValue={rentalCar.component?.final_payment_due_date ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Rental Notes</span>
+            <textarea
+              className="textarea"
+              name="rental_car_notes"
+              defaultValue={rentalCar.details?.rental_notes ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Terms and Conditions</span>
+            <textarea
+              className="textarea"
+              name="rental_car_terms_and_conditions"
+              defaultValue={rentalCar.component?.terms_and_conditions ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Cancellation Policy</span>
+            <textarea
+              className="textarea"
+              name="rental_car_cancellation_policy"
+              defaultValue={rentalCar.component?.cancellation_policy ?? ""}
+            />
+          </label>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Commissions</h3>
+
+            <div className="grid grid-2">
+              <label>
+                <span className="label">Commission Amount</span>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  name="rental_car_commission_amount"
+                  defaultValue={rentalCar.details?.commission_amount ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Commission Status</span>
+                <input
+                  className="input"
+                  name="rental_car_commission_status"
+                  defaultValue={rentalCar.details?.commission_status ?? ""}
+                />
+              </label>
+            </div>
+
+            <label>
+              <span className="label">Commission Notes</span>
+              <textarea
+                className="textarea"
+                name="rental_car_commission_notes"
+                defaultValue={rentalCar.details?.commission_notes ?? ""}
+              />
+            </label>
+          </div>
+
+          <SectionSaveButton label="Rental Car Component" />
         </CollapsibleSection>
 
         <span id="activity-component" />

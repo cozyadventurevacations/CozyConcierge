@@ -38,6 +38,7 @@ const billableTripComponentTypes = [
   "air",
   "cruise",
   "transfer",
+  "rental_car",
   "activity",
   "insurance",
 ];

@@ -146,6 +146,7 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
     air: "Air",
     cruise: "Cruise",
     transfer: "Transfer",
+    rental_car: "Rental Car",
     activity: "Activity",
     insurance: "Insurance",
   };

@@ -34,6 +34,7 @@ DECLARE
     'hotel_components',
     'cruise_components',
     'transfer_components',
+    'rental_car_components',
     'activity_components',
     'insurance_components',
     'trip_components',

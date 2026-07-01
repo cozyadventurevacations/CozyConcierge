@@ -135,21 +135,23 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
     if (memberError || !memberAccess?.can_view_trip) redirect("/trips");
   }
 
-  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
+  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, rentalCarResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
     supabase.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
+    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
     supabase.from("trip_proposals").select("planning_fee").eq("trip_id", tripId).maybeSingle(),
   ]);
 
-  const [hotelDetails, cruiseDetails, transferDetails, activityDetails] = await Promise.all([
+  const [hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails] = await Promise.all([
     hotelResult.data ? supabase.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     cruiseResult.data ? supabase.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     transferResult.data ? supabase.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    rentalCarResult.data ? supabase.from("rental_car_components").select("*").eq("component_id", rentalCarResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     activityResult.data ? supabase.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
@@ -183,6 +185,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
     cruiseResult.data?.total_price,
     airResult.data?.total_price,
     transferResult.data?.total_price,
+    rentalCarResult.data?.total_price,
     activityResult.data?.total_price,
     insuranceResult.data?.total_price,
   ].reduce((sum, value) => sum + Number(value ?? 0), 0);
@@ -240,12 +243,13 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
           </Section>
         ) : null}
 
-        {hotelDetails.data || cruiseDetails.data || flightSegments.length > 0 || transferDetails.data || activityDetails.data ? (
+        {hotelDetails.data || cruiseDetails.data || flightSegments.length > 0 || transferDetails.data || rentalCarDetails.data || activityDetails.data ? (
           <Section title="Travel Details" subtitle="Supplier and component details shared for review.">
             {hotelDetails.data ? <><DetailRow label="Hotel" value={hotelDetails.data.hotel_name} /><DetailRow label="Check-in" value={fmtDate(hotelDetails.data.check_in_date)} /><DetailRow label="Check-out" value={fmtDate(hotelDetails.data.check_out_date)} /><DetailRow label="Confirmation" value={hotelResult.data?.confirmation_number} /></> : null}
             {cruiseDetails.data ? <><DetailRow label="Cruise" value={`${cruiseDetails.data.cruise_line ?? ""} ${cruiseDetails.data.ship_name ?? ""}`.trim()} /><DetailRow label="Sailing" value={fmtDate(cruiseDetails.data.sailing_date)} /><DetailRow label="Return" value={fmtDate(cruiseDetails.data.return_date)} /><DetailRow label="Cabin" value={cruiseDetails.data.cabin_number || cruiseDetails.data.cabin_category} /></> : null}
             {flightSegments.map((segment, index) => <DetailRow key={segment.id ?? index} label={`Flight ${index + 1}`} value={`${segment.carrier ?? ""} ${segment.flight_number ?? ""} - ${segment.departure_airport_code ?? "?"} to ${segment.destination_airport_code ?? "?"} - ${fmtDateTime(segment.departure_datetime)}`} />)}
             {transferDetails.data ? <DetailRow label="Transfer" value={`${transferDetails.data.pickup_location ?? "Pickup"} to ${transferDetails.data.dropoff_location ?? "Dropoff"} - ${fmtDateTime(transferDetails.data.pickup_datetime)}`} /> : null}
+            {rentalCarDetails.data ? <DetailRow label="Rental Car" value={`${rentalCarDetails.data.rental_company ?? "Rental car"} - ${rentalCarDetails.data.pickup_location ?? "Pickup"} to ${rentalCarDetails.data.return_location ?? "Return"} - ${fmtDateTime(rentalCarDetails.data.pickup_datetime)}`} /> : null}
             {activityDetails.data ? <DetailRow label="Activity" value={`${activityDetails.data.activity_name ?? "Activity"} - ${fmtDateTime(activityDetails.data.activity_datetime)}`} /> : null}
           </Section>
         ) : null}

@@ -614,6 +614,7 @@ export default async function TripDetailPage({
     hotelResult,
     cruiseResult,
     transferResult,
+    rentalCarResult,
     activityResult,
     insuranceResult,
   ] = await Promise.all([
@@ -628,15 +629,17 @@ export default async function TripDetailPage({
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
   ]);
 
-  const [airDetails, hotelDetails, cruiseDetails, transferDetails, activityDetails, insuranceDetails] = await Promise.all([
+  const [airDetails, hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails, insuranceDetails] = await Promise.all([
     airResult.data ? supabaseAdmin.from("air_components").select("*").eq("component_id", airResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     hotelResult.data ? supabaseAdmin.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     cruiseResult.data ? supabaseAdmin.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     transferResult.data ? supabaseAdmin.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    rentalCarResult.data ? supabaseAdmin.from("rental_car_components").select("*").eq("component_id", rentalCarResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     activityResult.data ? supabaseAdmin.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
     insuranceResult.data ? supabaseAdmin.from("insurance_components").select("*").eq("component_id", insuranceResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
@@ -806,6 +809,21 @@ export default async function TripDetailPage({
     bookingStatus: transferResult.data.booking_status ?? null,
   } : null;
 
+  const rentalCar = rentalCarResult.data && rentalCarDetails.data ? {
+    supplier: rentalCarResult.data.supplier_name ?? null,
+    company: rentalCarDetails.data.rental_company ?? null,
+    pickupDatetime: rentalCarDetails.data.pickup_datetime ?? null,
+    returnDatetime: rentalCarDetails.data.return_datetime ?? null,
+    pickupLocation: rentalCarDetails.data.pickup_location ?? null,
+    returnLocation: rentalCarDetails.data.return_location ?? null,
+    vehicleClass: rentalCarDetails.data.vehicle_class ?? null,
+    driverCount: rentalCarDetails.data.driver_count ?? null,
+    notes: rentalCarDetails.data.rental_notes ?? null,
+    confirmationNumber: rentalCarResult.data.confirmation_number ?? null,
+    totalPrice: rentalCarResult.data.total_price ?? null,
+    bookingStatus: rentalCarResult.data.booking_status ?? null,
+  } : null;
+
   const activity = activityResult.data && activityDetails.data ? {
     name: activityDetails.data.activity_name ?? null, supplier: activityResult.data.supplier_name ?? null,
     datetime: activityDetails.data.activity_datetime ?? null, location: activityDetails.data.location ?? null,
@@ -831,6 +849,7 @@ export default async function TripDetailPage({
     airResult.data?.total_price,
     cruiseResult.data?.total_price,
     transferResult.data?.total_price,
+    rentalCarResult.data?.total_price,
     activityResult.data?.total_price,
     insuranceResult.data?.total_price,
   ].reduce((sum, value) => sum + Number(value ?? 0), 0);
@@ -916,6 +935,7 @@ export default async function TripDetailPage({
         flight={flight}
         cruise={cruise}
         transfer={transfer}
+        rentalCar={rentalCar}
         activity={activity}
         insurance={insurance}
         advisorEmail={advisorEmail}

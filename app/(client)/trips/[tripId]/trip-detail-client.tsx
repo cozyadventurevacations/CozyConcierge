@@ -152,6 +152,21 @@ type TransferData = {
   bookingStatus: string | null;
 } | null;
 
+type RentalCarData = {
+  supplier: string | null;
+  company: string | null;
+  pickupDatetime: string | null;
+  returnDatetime: string | null;
+  pickupLocation: string | null;
+  returnLocation: string | null;
+  vehicleClass: string | null;
+  driverCount: number | null;
+  notes: string | null;
+  confirmationNumber: string | null;
+  totalPrice: number | null;
+  bookingStatus: string | null;
+} | null;
+
 type ActivityData = {
   name: string | null;
   supplier: string | null;
@@ -193,6 +208,7 @@ type TripDetailClientProps = {
   flight: FlightData;
   cruise: CruiseData;
   transfer: TransferData;
+  rentalCar: RentalCarData;
   activity: ActivityData;
   insurance: InsuranceData;
   advisorEmail: string;
@@ -409,6 +425,7 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
     air: "Air",
     cruise: "Cruise",
     transfer: "Transfer",
+    rental_car: "Rental Car",
     activity: "Activity",
     insurance: "Insurance",
   };
@@ -789,8 +806,8 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
   );
 }
 
-function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, activity, insurance }: { timelineGroups: TimelineGroup[]; hotel: HotelData; flight: FlightData; cruise: CruiseData; transfer: TransferData; activity: ActivityData; insurance: InsuranceData }) {
-  const hasAnyComponent = hotel || flight || cruise || transfer || activity || insurance;
+function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalCar, activity, insurance }: { timelineGroups: TimelineGroup[]; hotel: HotelData; flight: FlightData; cruise: CruiseData; transfer: TransferData; rentalCar: RentalCarData; activity: ActivityData; insurance: InsuranceData }) {
+  const hasAnyComponent = hotel || flight || cruise || transfer || rentalCar || activity || insurance;
 
   return (
     <div className="stack">
@@ -923,6 +940,24 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, activit
                   <PriceItem label="Total" value={transfer.totalPrice} />
                 </div>
                 {transfer.notes && <InfoItem label="Notes" value={transfer.notes} />}
+              </Collapsible>
+            )}
+
+            {rentalCar && (
+              <Collapsible eyebrow="Ground" title="Rental Car" subtitle={rentalCar.company ?? rentalCar.supplier ?? undefined}>
+                <div className="grid grid-2">
+                  <InfoItem label="Rental Company" value={rentalCar.company ?? rentalCar.supplier} />
+                  <InfoItem label="Status" value={rentalCar.bookingStatus} />
+                  <InfoItem label="Pickup" value={fmtDateTime(rentalCar.pickupDatetime)} />
+                  <InfoItem label="Return" value={fmtDateTime(rentalCar.returnDatetime)} />
+                  <InfoItem label="Pickup Location" value={rentalCar.pickupLocation} />
+                  <InfoItem label="Return Location" value={rentalCar.returnLocation} />
+                  <InfoItem label="Vehicle Class" value={rentalCar.vehicleClass} />
+                  <InfoItem label="Drivers" value={rentalCar.driverCount} />
+                  <InfoItem label="Confirmation" value={rentalCar.confirmationNumber} />
+                  <PriceItem label="Total" value={rentalCar.totalPrice} />
+                </div>
+                {rentalCar.notes && <InfoItem label="Notes" value={rentalCar.notes} />}
               </Collapsible>
             )}
 
@@ -1234,6 +1269,7 @@ export function TripDetailClient({
   flight,
   cruise,
   transfer,
+  rentalCar,
   activity,
   insurance,
   advisorEmail,
@@ -1332,7 +1368,7 @@ export function TripDetailClient({
         <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} />
       )}
       {activeTab === "itinerary" && (
-        <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} activity={activity} insurance={insurance} />
+        <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} rentalCar={rentalCar} activity={activity} insurance={insurance} />
       )}
       {activeTab === "documents" && (
         <DocumentsTab

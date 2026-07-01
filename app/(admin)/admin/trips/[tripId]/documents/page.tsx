@@ -35,6 +35,7 @@ const tripComponentTypeLabels: Record<string, string> = {
   air: "Air",
   cruise: "Cruise",
   transfer: "Transfer",
+  rental_car: "Rental Car",
   activity: "Activity",
   insurance: "Insurance",
 };
@@ -1498,6 +1499,16 @@ async function applyExtractedBookingDetailsToComponent(
       vehicle_type: roomOrService,
       transfer_notes: notesText,
     });
+  } else if (componentType === "rental_car") {
+    await upsertComponentDetail(supabase, "rental_car_components", document.component_id, {
+      rental_company: supplierName,
+      pickup_datetime: combineDateAndTime(startDate, startTime),
+      return_datetime: combineDateAndTime(endDate, cleanExtractedText(payload.end_time)),
+      pickup_location: locationOrRoute,
+      return_location: cleanExtractedText(payload.return_location) || locationOrRoute,
+      vehicle_class: roomOrService,
+      rental_notes: notesText,
+    });
   } else if (componentType === "activity") {
     await upsertComponentDetail(supabase, "activity_components", document.component_id, {
       activity_name: roomOrService || displayName,
@@ -1581,7 +1592,7 @@ async function extractBookingDetailsFromDocument({
                 "Extract booking details from this travel document.",
                 "Return this JSON shape:",
                 "{",
-                '  "component_type": "hotel | air | cruise | transfer | activity | insurance | unknown",',
+                '  "component_type": "hotel | air | cruise | transfer | rental_car | activity | insurance | unknown",',
                 '  "supplier_name": string | null,',
                 '  "confirmation_number": string | null,',
                 '  "traveler_names": string[],',
