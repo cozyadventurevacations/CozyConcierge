@@ -1312,7 +1312,6 @@ async function extractBookingDetailsFromDocument({
         : {
             type: "input_file" as const,
             file_id: uploadedFile.id,
-            filename: fileName,
             detail: "high" as const,
           };
 
