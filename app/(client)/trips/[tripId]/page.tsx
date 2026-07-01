@@ -394,7 +394,6 @@ async function recordInsuranceDecision(formData: FormData) {
 
   const waiverDocumentPayload = {
     trip_id: tripId,
-    title: "Travel Insurance Waiver",
     file_name: waiverFileName,
     storage_path: waiverStoragePath,
     mime_type: "text/plain; charset=utf-8",

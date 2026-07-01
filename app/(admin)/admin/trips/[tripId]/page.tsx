@@ -3732,7 +3732,7 @@ export default async function AdminTripEditorPage({
 
   const { data: tripDocuments, error: tripDocumentsError } = await supabase
     .from("trip_documents")
-    .select("id, title, file_name, component_type, visibility, created_at")
+    .select("id, file_name, component_type, visibility, created_at")
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 

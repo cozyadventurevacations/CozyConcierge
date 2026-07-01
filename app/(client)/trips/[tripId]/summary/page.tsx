@@ -136,7 +136,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
   }
 
   const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
-    supabase.from("trip_documents").select("id, title, file_name, document_type, created_at").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
+    supabase.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
@@ -263,7 +263,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
         <Section title="Documents Shared By Your Advisor" subtitle="Files listed here are available in your Cozy Concierge trip documents area.">
           {sharedDocs.length > 0 ? (
             <div style={{ display: "grid", gap: 8 }}>
-              {sharedDocs.map((doc: any) => <DetailRow key={doc.id} label={doc.document_type ?? "Document"} value={doc.title ?? doc.file_name ?? "Shared document"} />)}
+              {sharedDocs.map((doc: any) => <DetailRow key={doc.id} label={doc.component_type ?? "Document"} value={doc.file_name ?? "Shared document"} />)}
             </div>
           ) : (
             <p style={{ margin: 0, color: "#64748b" }}>No shared documents are listed yet.</p>
