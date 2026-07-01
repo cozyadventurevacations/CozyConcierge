@@ -39,9 +39,19 @@ const tripComponentTypeLabels: Record<string, string> = {
   insurance: "Insurance",
 };
 
+const tripComponentTypes = Object.keys(tripComponentTypeLabels);
+
 function getComponentTypeLabel(componentType: string | null | undefined) {
   if (!componentType) return "General Trip Document";
   return tripComponentTypeLabels[componentType] ?? componentType;
+}
+
+function validateComponentType(value: string) {
+  if (!tripComponentTypes.includes(value)) {
+    throw new Error("Invalid travel component type.");
+  }
+
+  return value;
 }
 
 function getComponentSelectLabel(component: any) {
@@ -198,6 +208,7 @@ async function uploadTripDocument(formData: FormData) {
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
   const componentId = String(formData.get("component_id") ?? "").trim();
+  const newComponentType = String(formData.get("new_component_type") ?? "").trim();
   const visibility = validateVisibility(
     String(formData.get("visibility") ?? "internal").trim(),
   );
@@ -243,6 +254,45 @@ async function uploadTripDocument(formData: FormData) {
     }
 
     componentLink = component as { id: string; component_type: string };
+  } else if (newComponentType) {
+    const componentType = validateComponentType(newComponentType);
+    const { data: existingComponent, error: existingComponentError } =
+      await supabase
+        .from("trip_components")
+        .select("id, component_type")
+        .eq("trip_id", tripId)
+        .eq("component_type", componentType)
+        .maybeSingle();
+
+    if (existingComponentError) {
+      throw new Error(existingComponentError.message);
+    }
+
+    if (existingComponent) {
+      componentLink = existingComponent as { id: string; component_type: string };
+    } else {
+      const componentLabel = getComponentTypeLabel(componentType);
+      const { data: insertedComponent, error: insertComponentError } =
+        await supabase
+          .from("trip_components")
+          .insert({
+            trip_id: tripId,
+            component_type: componentType,
+            display_name: `${componentLabel} from uploaded document`,
+            booking_status: "quoted",
+            commission_admin_only: 0,
+          })
+          .select("id, component_type")
+          .single();
+
+      if (insertComponentError || !insertedComponent) {
+        throw new Error(
+          insertComponentError?.message ?? `Failed to create ${componentLabel} component.`,
+        );
+      }
+
+      componentLink = insertedComponent as { id: string; component_type: string };
+    }
   }
 
   const safeFileName =
@@ -472,6 +522,7 @@ async function extractBookingDetails(formData: FormData) {
     });
 
     const summary = formatExtractedSummary(extracted);
+    await applyExtractedBookingDetailsToComponent(supabase, document, extracted);
 
     const { error: updateError } = await supabase
       .from("trip_documents")
@@ -511,10 +562,10 @@ export default async function AdminTripDocumentsPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ extracted?: string }>;
+  searchParams: Promise<{ extracted?: string; uploaded?: string }>;
 }) {
   const { tripId } = await params;
-  const { extracted } = await searchParams;
+  const { extracted, uploaded } = await searchParams;
   const { supabase } = await requireAdmin();
 
   const { data: trip, error: tripError } = await supabase
@@ -707,6 +758,18 @@ export default async function AdminTripDocumentsPage({
         </label>
 
         <label className="stack-sm">
+          <span className="label">Or Create Component From Upload</span>
+          <select className="select" name="new_component_type" defaultValue="">
+            <option value="">Do not create a component</option>
+            {tripComponentTypes.map((componentType) => (
+              <option key={componentType} value={componentType}>
+                {getComponentTypeLabel(componentType)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="stack-sm">
           <span className="label">File</span>
           <input
             className="input"
@@ -756,6 +819,8 @@ export default async function AdminTripDocumentsPage({
           <strong>Upload limits:</strong> PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, or XLSX.
           Maximum file size is 15MB.
           <br />
+          <strong>Extraction:</strong> Select an existing component or choose a component type above, then upload a PDF or image and use Extract Booking Details below.
+          <br />
           <strong>Visibility:</strong> Use Agent Only for advisor-only files,
           Client & Agent for the primary traveler, and Travel Circle & Agent
           for itineraries, vouchers, confirmations, or travel packets approved for companions.
@@ -779,6 +844,20 @@ export default async function AdminTripDocumentsPage({
           }}
         >
           Booking details were extracted and saved for review.
+        </div>
+      ) : null}
+
+      {uploaded ? (
+        <div
+          className="card"
+          style={{
+            background: "#ecfdf3",
+            border: "1px solid #bbf7d0",
+            color: "#027a48",
+            fontWeight: 800,
+          }}
+        >
+          Document uploaded. If it is a PDF or image attached to a component, use Extract Booking Details below to fill the component details.
         </div>
       ) : null}
 
@@ -1024,6 +1103,175 @@ function formatExtractedSummary(value: unknown) {
   ].filter(Boolean);
 
   return parts.length ? parts.join(" | ") : "Booking details extracted for review.";
+}
+
+function cleanExtractedText(value: unknown) {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim();
+  return cleaned ? cleaned : null;
+}
+
+function cleanExtractedArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => cleanExtractedText(item))
+    .filter(Boolean) as string[];
+}
+
+function compactPayload(payload: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => {
+      if (value === null || value === undefined || value === "") return false;
+      if (Array.isArray(value) && value.length === 0) return false;
+      return true;
+    }),
+  );
+}
+
+function parseExtractedAmount(value: unknown) {
+  const text = cleanExtractedText(value);
+  if (!text) return null;
+
+  const numeric = Number(text.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function combineDateAndTime(date: string | null, time: string | null) {
+  if (!date) return null;
+  return time ? `${date} ${time}` : date;
+}
+
+async function upsertComponentDetail(
+  supabase: any,
+  tableName: string,
+  componentId: string,
+  payload: Record<string, unknown>,
+) {
+  const compacted = compactPayload(payload);
+  if (Object.keys(compacted).length === 0) return;
+
+  const { data: existingDetail, error: existingDetailError } = await supabase
+    .from(tableName)
+    .select("component_id")
+    .eq("component_id", componentId)
+    .maybeSingle();
+
+  if (existingDetailError) throw new Error(existingDetailError.message);
+
+  if (existingDetail) {
+    const { error } = await supabase
+      .from(tableName)
+      .update(compacted)
+      .eq("component_id", componentId);
+
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await supabase
+    .from(tableName)
+    .insert({ component_id: componentId, ...compacted });
+
+  if (error) throw new Error(error.message);
+}
+
+async function applyExtractedBookingDetailsToComponent(
+  supabase: any,
+  document: {
+    component_id: string | null;
+    component_type: string | null;
+  },
+  payload: any,
+) {
+  if (!document.component_id || !document.component_type) return;
+
+  const componentType = document.component_type;
+  const supplierName = cleanExtractedText(payload.supplier_name);
+  const confirmationNumber = cleanExtractedText(payload.confirmation_number);
+  const startDate = cleanExtractedText(payload.start_date);
+  const endDate = cleanExtractedText(payload.end_date);
+  const startTime = cleanExtractedText(payload.start_time);
+  const locationOrRoute = cleanExtractedText(payload.location_or_route);
+  const roomOrService = cleanExtractedText(payload.room_or_cabin_or_service);
+  const totalAmount = parseExtractedAmount(payload.total_amount);
+  const finalPaymentDueDate = cleanExtractedText(payload.final_payment_due_date);
+  const cancellationTerms = cleanExtractedText(payload.cancellation_terms);
+  const paymentTerms = cleanExtractedText(payload.payment_terms);
+  const notes = cleanExtractedArray(payload.important_notes);
+  const notesText = notes.join("\n") || null;
+  const displayName = roomOrService || supplierName || getComponentTypeLabel(componentType);
+
+  const componentPayload = compactPayload({
+    display_name: displayName,
+    supplier_name: supplierName,
+    booking_status: confirmationNumber ? "reserved" : null,
+    confirmation_number: confirmationNumber,
+    total_price: totalAmount,
+    final_payment_due_date: finalPaymentDueDate,
+    terms_and_conditions: paymentTerms,
+    cancellation_policy: cancellationTerms,
+  });
+
+  if (Object.keys(componentPayload).length > 0) {
+    const { error } = await supabase
+      .from("trip_components")
+      .update(componentPayload)
+      .eq("id", document.component_id);
+
+    if (error) throw new Error(error.message);
+  }
+
+  if (componentType === "hotel") {
+    await upsertComponentDetail(supabase, "hotel_components", document.component_id, {
+      hotel_name: supplierName || displayName,
+      check_in_date: startDate,
+      check_out_date: endDate,
+      room_category: roomOrService,
+      hotel_description: notesText,
+    });
+  } else if (componentType === "air") {
+    await upsertComponentDetail(supabase, "air_components", document.component_id, {
+      airline_locator: confirmationNumber,
+      rate_class: roomOrService,
+      flight_terms_and_conditions: paymentTerms,
+      flight_cancellation_policy: cancellationTerms,
+    });
+  } else if (componentType === "cruise") {
+    await upsertComponentDetail(supabase, "cruise_components", document.component_id, {
+      cruise_line: supplierName,
+      sailing_date: startDate,
+      return_date: endDate,
+      cabin_category: roomOrService,
+      departure_port: locationOrRoute,
+      cruise_description: notesText,
+    });
+  } else if (componentType === "transfer") {
+    await upsertComponentDetail(supabase, "transfer_components", document.component_id, {
+      supplier_name: supplierName,
+      pickup_datetime: combineDateAndTime(startDate, startTime),
+      pickup_location: locationOrRoute,
+      vehicle_type: roomOrService,
+      transfer_notes: notesText,
+    });
+  } else if (componentType === "activity") {
+    await upsertComponentDetail(supabase, "activity_components", document.component_id, {
+      activity_name: roomOrService || displayName,
+      supplier_name: supplierName,
+      activity_datetime: combineDateAndTime(startDate, startTime),
+      location: locationOrRoute,
+      activity_notes: notesText,
+    });
+  } else if (componentType === "insurance") {
+    await upsertComponentDetail(supabase, "insurance_components", document.component_id, {
+      provider_name: supplierName,
+      plan_name: roomOrService,
+      policy_number: confirmationNumber,
+      coverage_start_date: startDate,
+      coverage_end_date: endDate,
+      premium_amount: totalAmount,
+      insurance_notes: notesText,
+    });
+  }
 }
 
 async function extractBookingDetailsFromDocument({

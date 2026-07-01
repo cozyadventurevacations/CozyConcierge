@@ -34,6 +34,15 @@ const billableTripComponentTypes = [
   "insurance",
 ];
 
+const tripComponentTypeLabels: Record<string, string> = {
+  hotel: "Hotel",
+  air: "Air",
+  cruise: "Cruise",
+  transfer: "Transfer",
+  activity: "Activity",
+  insurance: "Insurance",
+};
+
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 
 const MAX_COMPONENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
@@ -715,10 +724,12 @@ function AiWritingToolButton({
 function ComponentDocumentUploadCard({
   formId,
   componentLabel,
+  componentType,
   componentId,
 }: {
   formId: string;
   componentLabel: string;
+  componentType: string;
   componentId?: string | null;
 }) {
   const disabled = !componentId;
@@ -742,52 +753,53 @@ function ComponentDocumentUploadCard({
 
       {disabled ? (
         <p style={{ margin: 0, color: "#92400e", fontSize: 13, fontWeight: 700 }}>
-          Save this component first, then upload documents to it.
+          Upload a PDF or image now to create this component, then extract booking details from Trip Documents.
         </p>
-      ) : (
-        <>
-          <input type="hidden" name="component_id" value={componentId ?? ""} form={formId} />
-          <label className="stack-sm">
-            <span className="label">Document File</span>
-            <input
-              className="input"
-              type="file"
-              name="file"
-              form={formId}
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
-            />
-          </label>
+      ) : null}
 
-          <label className="stack-sm">
-            <span className="label">Visibility</span>
-            <select className="select" name="visibility" defaultValue="internal" form={formId}>
-              <option value="internal">Agent Only</option>
-              <option value="client">Client & Agent</option>
-              <option value="travel_circle">Travel Circle & Agent</option>
-            </select>
-          </label>
+      <>
+        <input type="hidden" name="component_id" value={componentId ?? ""} form={formId} />
+        <input type="hidden" name="component_type" value={componentType} form={formId} />
+        <label className="stack-sm">
+          <span className="label">Document File</span>
+          <input
+            className="input"
+            type="file"
+            name="file"
+            form={formId}
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+          />
+        </label>
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 12px",
-              borderRadius: 12,
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              fontWeight: 800,
-            }}
-          >
-            <input type="checkbox" name="attach_to_commission" form={formId} />
-            Attach this document to the component commission
-          </label>
+        <label className="stack-sm">
+          <span className="label">Visibility</span>
+          <select className="select" name="visibility" defaultValue="internal" form={formId}>
+            <option value="internal">Agent Only</option>
+            <option value="client">Client & Agent</option>
+            <option value="travel_circle">Travel Circle & Agent</option>
+          </select>
+        </label>
 
-          <button type="submit" className="btn btn-outline" form={formId} style={{ alignSelf: "flex-start" }}>
-            Upload to {componentLabel}
-          </button>
-        </>
-      )}
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            fontWeight: 800,
+          }}
+        >
+          <input type="checkbox" name="attach_to_commission" form={formId} />
+          Attach this document to the component commission
+        </label>
+
+        <button type="submit" className="btn btn-outline" form={formId} style={{ alignSelf: "flex-start" }}>
+          Upload to {componentLabel}
+        </button>
+      </>
     </div>
   );
 }
@@ -1635,6 +1647,10 @@ function normalizeTripComponentType(value: string) {
   return aliases[normalized] ?? normalized;
 }
 
+function getTripComponentTypeLabel(componentType: string) {
+  return tripComponentTypeLabels[componentType] ?? componentType;
+}
+
 function getComponentLabel(componentType: string) {
   switch (componentType) {
     case "hotel": return "Hotel";
@@ -2083,6 +2099,9 @@ async function uploadComponentDocument(formData: FormData) {
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
   const componentId = String(formData.get("component_id") ?? "").trim();
+  const submittedComponentType = normalizeTripComponentType(
+    String(formData.get("component_type") ?? "").trim(),
+  );
   const visibility = requireAllowedValue(
     String(formData.get("visibility") ?? "internal").trim(),
     ["internal", "client", "travel_circle"],
@@ -2092,7 +2111,9 @@ async function uploadComponentDocument(formData: FormData) {
   const file = formData.get("file");
 
   if (!tripId) throw new Error("Missing trip ID.");
-  if (!componentId) throw new Error("Save this component before uploading a document.");
+  if (!componentId && !billableTripComponentTypes.includes(submittedComponentType)) {
+    throw new Error("Select a valid component type before uploading a document.");
+  }
   if (!(file instanceof File)) throw new Error("File is required.");
 
   validateComponentDocumentFile(file);
@@ -2107,15 +2128,57 @@ async function uploadComponentDocument(formData: FormData) {
     throw new Error("User profile not found.");
   }
 
-  const { data: component, error: componentError } = await supabase
-    .from("trip_components")
-    .select("id, trip_id, component_type")
-    .eq("id", componentId)
-    .eq("trip_id", tripId)
-    .single();
+  let component: { id: string; trip_id: string; component_type: string };
 
-  if (componentError || !component) {
-    throw new Error("Selected trip component was not found.");
+  if (componentId) {
+    const { data: selectedComponent, error: componentError } = await supabase
+      .from("trip_components")
+      .select("id, trip_id, component_type")
+      .eq("id", componentId)
+      .eq("trip_id", tripId)
+      .single();
+
+    if (componentError || !selectedComponent) {
+      throw new Error("Selected trip component was not found.");
+    }
+
+    component = selectedComponent as { id: string; trip_id: string; component_type: string };
+  } else {
+    const { data: existingComponent, error: existingComponentError } =
+      await supabase
+        .from("trip_components")
+        .select("id, trip_id, component_type")
+        .eq("trip_id", tripId)
+        .eq("component_type", submittedComponentType)
+        .maybeSingle();
+
+    if (existingComponentError) throw new Error(existingComponentError.message);
+
+    if (existingComponent) {
+      component = existingComponent as { id: string; trip_id: string; component_type: string };
+    } else {
+      const componentLabel = getTripComponentTypeLabel(submittedComponentType);
+      const { data: insertedComponent, error: insertComponentError } =
+        await supabase
+          .from("trip_components")
+          .insert({
+            trip_id: tripId,
+            component_type: submittedComponentType,
+            display_name: `${componentLabel} from uploaded document`,
+            booking_status: "quoted",
+            commission_admin_only: 0,
+          })
+          .select("id, trip_id, component_type")
+          .single();
+
+      if (insertComponentError || !insertedComponent) {
+        throw new Error(
+          insertComponentError?.message ?? `Failed to create ${componentLabel} component.`,
+        );
+      }
+
+      component = insertedComponent as { id: string; trip_id: string; component_type: string };
+    }
   }
 
   const safeFileName =
@@ -2162,7 +2225,7 @@ async function uploadComponentDocument(formData: FormData) {
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/admin/trips/${tripId}/documents`);
   revalidatePath(`/trips/${tripId}`);
-  redirect(`/admin/trips/${tripId}?documentUploaded=1#${component.component_type}-component`);
+  redirect(`/admin/trips/${tripId}/documents?uploaded=1`);
 }
 
 async function updateTrip(formData: FormData) {
@@ -3824,6 +3887,9 @@ export default async function AdminTripEditorPage({
   const hasInsuranceTripDocument = tripDocumentRows.some(
     (document) => document.component_type === "insurance",
   );
+  const hasAnsweredInsurance =
+    trip.insurance_decision === "accepted" ||
+    trip.insurance_decision === "declined";
   const hasMinorTravelDocument = clientDocumentRows.some(
     (document) =>
       document.document_type === "minor_permission" ||
@@ -3924,15 +3990,17 @@ export default async function AdminTripEditorPage({
     },
     {
       title: "Insurance documentation",
-      status: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument ? "Started" : "Missing",
+      status: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument || hasAnsweredInsurance ? "Started" : "Missing",
       helper: insurance.component
         ? "Insurance details have been added as a trip component."
         : hasInsuranceDocument
           ? "Insurance document exists in the client document library."
           : hasInsuranceTripDocument
             ? "Insurance waiver or insurance document is attached to this trip."
-            : "No insurance component or insurance document is currently attached.",
-      tone: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument ? "good" : "warning",
+            : hasAnsweredInsurance
+              ? "The client has answered the travel insurance waiver."
+              : "No insurance component or insurance document is currently attached.",
+      tone: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument || hasAnsweredInsurance ? "good" : "warning",
       href: insurance.component
         ? "#insurance-component"
         : hasInsuranceTripDocument
@@ -4034,7 +4102,7 @@ export default async function AdminTripEditorPage({
           cta: "Edit Overview",
         }
       : null,
-    !insurance.component
+    !insurance.component && !hasInsuranceDocument && !hasInsuranceTripDocument && !hasAnsweredInsurance
       ? {
           title: "Review travel protection",
           description: "Add the insurance component or document that coverage was declined.",
@@ -4238,7 +4306,7 @@ export default async function AdminTripEditorPage({
           </div>
         ) : null}
 
-        {!trip.insurance_decision ? (
+        {!hasAnsweredInsurance ? (
           <div
             className="card"
             style={{
@@ -5623,6 +5691,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-hotel-document-form"
             componentLabel="Hotel"
+            componentType="hotel"
             componentId={hotel.component?.id}
           />
           <div className="grid grid-2">
@@ -5805,6 +5874,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-air-document-form"
             componentLabel="Air"
+            componentType="air"
             componentId={air.component?.id}
           />
 
@@ -6118,6 +6188,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-cruise-document-form"
             componentLabel="Cruise"
+            componentType="cruise"
             componentId={cruise.component?.id}
           />
           <div className="grid grid-2">
@@ -6410,6 +6481,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-transfer-document-form"
             componentLabel="Transfer"
+            componentType="transfer"
             componentId={transfer.component?.id}
           />
           <div className="grid grid-2">
@@ -6646,6 +6718,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-activity-document-form"
             componentLabel="Activity"
+            componentType="activity"
             componentId={activity.component?.id}
           />
           <div className="grid grid-2">
@@ -6878,6 +6951,7 @@ export default async function AdminTripEditorPage({
           <ComponentDocumentUploadCard
             formId="upload-insurance-document-form"
             componentLabel="Insurance"
+            componentType="insurance"
             componentId={insurance.component?.id}
           />
           <div className="grid grid-2">
