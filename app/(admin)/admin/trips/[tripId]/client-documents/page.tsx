@@ -215,6 +215,8 @@ async function attachClientDocumentToTrip(formData: FormData) {
   const visibility = String(formData.get("visibility") ?? "client").trim();
   const displayTitle = cleanText(formData, "display_title");
   const notes = cleanText(formData, "notes");
+  const passportAttachmentConfirmed =
+    formData.get("attach_passport_to_trip_confirmed") === "on";
 
   if (!tripId) throw new Error("Missing trip ID.");
   if (!clientDocumentId) throw new Error("Missing client document ID.");
@@ -235,7 +237,7 @@ async function attachClientDocumentToTrip(formData: FormData) {
 
   const { data: document, error: documentError } = await supabase
     .from("client_documents")
-    .select("id, client_account_id, document_title")
+    .select("id, client_account_id, document_type, document_title")
     .eq("id", clientDocumentId)
     .single();
 
@@ -245,6 +247,10 @@ async function attachClientDocumentToTrip(formData: FormData) {
 
   if (document.client_account_id !== trip.client_account_id) {
     throw new Error("This document does not belong to this trip's client.");
+  }
+
+  if (document.document_type === "passport" && !passportAttachmentConfirmed) {
+    throw new Error("Confirm that this passport should be attached to this trip before saving.");
   }
 
   const { error } = await supabase.from("trip_client_documents").upsert(
@@ -768,6 +774,32 @@ export default async function AdminTripClientDocumentsPage({
                   <span className="label">Trip-Specific Notes</span>
                   <textarea className="textarea" name="notes" rows={3} />
                 </label>
+
+                {document.document_type === "passport" ? (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      background: "#fff7ed",
+                      border: "1px solid #fed7aa",
+                      color: "#9a3412",
+                      fontWeight: 800,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      name="attach_passport_to_trip_confirmed"
+                    />
+                    <span>
+                      Attach this passport to this trip. Passport files stay private
+                      unless this box is intentionally checked.
+                    </span>
+                  </label>
+                ) : null}
 
                 <button type="submit" className="btn btn-primary">
                   Attach to This Trip

@@ -3730,6 +3730,12 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("created_at", { ascending: false });
 
+  const { data: tripDocuments, error: tripDocumentsError } = await supabase
+    .from("trip_documents")
+    .select("id, title, file_name, component_type, visibility, created_at")
+    .eq("trip_id", tripId)
+    .order("created_at", { ascending: false });
+
   const { data: tripMembers, error: tripMembersError } = await supabase
     .from("trip_members" as any)
     .select("id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, invited_by_type, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at, client_accounts!trip_members_client_account_id_fkey(id, first_name, last_name, email)")
@@ -3776,6 +3782,7 @@ export default async function AdminTripEditorPage({
   const tripPaymentLedgerRows = (tripPaymentLedger ?? []) as TripPaymentLedgerRow[];
   const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
   const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
+  const tripDocumentRows = (tripDocuments ?? []) as any[];
   const tripMemberRows = (tripMembers ?? []) as TripMemberRow[];
   const activeTripMemberRows = tripMemberRows.filter(
     (member) => member.invite_status !== "removed",
@@ -3813,6 +3820,9 @@ export default async function AdminTripEditorPage({
   );
   const hasInsuranceDocument = clientDocumentRows.some(
     (document) => document.document_type === "insurance",
+  );
+  const hasInsuranceTripDocument = tripDocumentRows.some(
+    (document) => document.component_type === "insurance",
   );
   const hasMinorTravelDocument = clientDocumentRows.some(
     (document) =>
@@ -3914,14 +3924,22 @@ export default async function AdminTripEditorPage({
     },
     {
       title: "Insurance documentation",
-      status: insurance.component || hasInsuranceDocument ? "Started" : "Missing",
+      status: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument ? "Started" : "Missing",
       helper: insurance.component
         ? "Insurance details have been added as a trip component."
         : hasInsuranceDocument
           ? "Insurance document exists in the client document library."
-          : "No insurance component or insurance document is currently attached.",
-      tone: insurance.component || hasInsuranceDocument ? "good" : "warning",
-      href: insurance.component ? "#insurance-component" : clientInfo?.id ? `/admin/clients/${clientInfo.id}/documents` : "#insurance-component",
+          : hasInsuranceTripDocument
+            ? "Insurance waiver or insurance document is attached to this trip."
+            : "No insurance component or insurance document is currently attached.",
+      tone: insurance.component || hasInsuranceDocument || hasInsuranceTripDocument ? "good" : "warning",
+      href: insurance.component
+        ? "#insurance-component"
+        : hasInsuranceTripDocument
+          ? `/admin/trips/${trip.id}/documents`
+          : clientInfo?.id
+            ? `/admin/clients/${clientInfo.id}/documents`
+            : "#insurance-component",
       cta: insurance.component ? "Open Insurance" : "Review Docs",
     },
     {
@@ -4818,13 +4836,13 @@ export default async function AdminTripEditorPage({
 
             <CommandStatusBadge
               tone={
-                attachedTripDocumentRows.length > 0 &&
-                (clientDocumentsCollectedMilestone?.is_completed || clientDocumentRows.length > 0)
+                (attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0) &&
+                (clientDocumentsCollectedMilestone?.is_completed || clientDocumentRows.length > 0 || tripDocumentRows.length > 0)
                   ? "good"
                   : "warning"
               }
             >
-              {attachedTripDocumentRows.length > 0 ? "Docs attached" : "Needs review"}
+              {attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0 ? "Docs attached" : "Needs review"}
             </CommandStatusBadge>
           </div>
 
@@ -4838,7 +4856,13 @@ export default async function AdminTripEditorPage({
             <CommandStatCard
               label="Attached to Trip"
               value={attachedTripDocumentsError ? "Review" : attachedTripDocumentRows.length}
-              helper={attachedTripDocumentsError ? "Could not check trip attachments" : "Client docs linked to this trip"}
+              helper={attachedTripDocumentsError ? "Could not check trip attachments" : "Client passports/docs linked to this trip"}
+            />
+
+            <CommandStatCard
+              label="Trip Documents"
+              value={tripDocumentsError ? "Review" : tripDocumentRows.length}
+              helper={tripDocumentsError ? "Could not check trip documents" : "Advisor and generated files on this trip"}
             />
 
             <CommandStatCard

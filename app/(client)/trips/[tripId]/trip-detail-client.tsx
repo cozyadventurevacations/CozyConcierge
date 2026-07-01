@@ -412,6 +412,21 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
   return componentType ? labels[componentType] ?? componentType : "General";
 }
 
+function getDocumentTypeLabel(type: string | null | undefined) {
+  const labels: Record<string, string> = {
+    passport: "Passport",
+    minor_permission: "Minor Permission Slip",
+    minor_international_consent: "Minor International Travel Consent",
+    medical: "Medical / Health Document",
+    insurance: "Travel Insurance Document",
+    accessibility: "Accessibility Document",
+    supplier_required: "Supplier-Required Document",
+    general: "General Document",
+  };
+
+  return type ? labels[type] ?? type : "Document";
+}
+
 function SectionCard({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle?: string; children: ReactNode }) {
   return (
     <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
@@ -617,7 +632,7 @@ function TravelReadinessChecklist({
     },
     {
       label: "Shared documents",
-      helper: sharedDocumentsReady ? `${documents.length} shared document${documents.length === 1 ? "" : "s"} available.` : "Travel documents will appear here when shared by your advisor.",
+      helper: sharedDocumentsReady ? `${documents.length} shared document${documents.length === 1 ? "" : "s"} available.` : "Trip documents will appear here when shared by your advisor.",
       complete: sharedDocumentsReady,
       href: `/trips/${trip.id}/documents`,
     },
@@ -949,15 +964,15 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, activit
 function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[] }) {
   return (
     <div className="stack">
-      <SectionCard eyebrow="Travel Documents" title="Identity & Document Checklist" subtitle="Review these before your departure date.">
+      <SectionCard eyebrow="Documents" title="Passport & Trip Document Checklist" subtitle="Review these before your departure date.">
         <div className="grid grid-2">
           <ul style={{ margin: 0, padding: 0, display: "grid", gap: 12 }}>
             <ChecklistItem>Confirm all traveler names match exactly as shown on passports or government IDs.</ChecklistItem>
             <ChecklistItem>Check passport expiration dates — many countries require 6+ months validity beyond your return date.</ChecklistItem>
-            <ChecklistItem>Review destination entry, visa, and travel document requirements.</ChecklistItem>
+            <ChecklistItem>Review destination entry, visa, and passport requirements.</ChecklistItem>
           </ul>
           <ul style={{ margin: 0, padding: 0, display: "grid", gap: 12 }}>
-            <ChecklistItem>Keep digital and printed copies of confirmations, insurance, and travel documents.</ChecklistItem>
+            <ChecklistItem>Keep digital and printed copies of confirmations, insurance, passports, and shared trip documents.</ChecklistItem>
             <ChecklistItem>If minors are traveling without both parents, confirm whether consent documents are needed.</ChecklistItem>
             <ChecklistItem>Contact your advisor if anything looks incorrect before departure.</ChecklistItem>
           </ul>
@@ -1016,7 +1031,7 @@ function DocumentsTab({ tripId, documents, clientDocuments }: { tripId: string; 
                   <tr key={doc.id}>
                     <td>
                       <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 10px", background: "#f0f7f8", color: "var(--accent-dark)", fontWeight: 700, fontSize: 12 }}>
-                        {doc.document_type ?? "Document"}
+                        {getDocumentTypeLabel(doc.document_type)}
                       </span>
                     </td>
                     <td>{doc.title ?? doc.file_name ?? "—"}</td>

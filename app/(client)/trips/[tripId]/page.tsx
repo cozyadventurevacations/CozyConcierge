@@ -336,6 +336,19 @@ async function recordInsuranceDecision(formData: FormData) {
     .join("\n");
 
   const supabaseAdmin = createSupabaseAdminClient();
+  const waiverFileName = "travel-insurance-waiver.txt";
+  const waiverStoragePath = `${tripId}/generated/${waiverFileName}`;
+  const waiverBytes = new TextEncoder().encode(waiverContent);
+
+  const { error: waiverUploadError } = await supabaseAdmin.storage
+    .from("trip-documents")
+    .upload(waiverStoragePath, waiverBytes, {
+      contentType: "text/plain; charset=utf-8",
+      upsert: true,
+    });
+
+  if (waiverUploadError) throw new Error(waiverUploadError.message);
+
   const { data: existingWaiver, error: existingWaiverError } = await supabaseAdmin
     .from("trip_notes")
     .select("id")
@@ -369,8 +382,48 @@ async function recordInsuranceDecision(formData: FormData) {
     if (waiverInsertError) throw new Error(waiverInsertError.message);
   }
 
+  const { data: existingWaiverDocument, error: existingWaiverDocumentError } =
+    await supabaseAdmin
+      .from("trip_documents")
+      .select("id")
+      .eq("trip_id", tripId)
+      .eq("storage_path", waiverStoragePath)
+      .maybeSingle();
+
+  if (existingWaiverDocumentError) throw new Error(existingWaiverDocumentError.message);
+
+  const waiverDocumentPayload = {
+    trip_id: tripId,
+    title: "Travel Insurance Waiver",
+    file_name: waiverFileName,
+    storage_path: waiverStoragePath,
+    mime_type: "text/plain; charset=utf-8",
+    file_size_bytes: waiverBytes.byteLength,
+    visibility: "client",
+    component_id: null,
+    component_type: "insurance",
+    attach_to_commission: false,
+  };
+
+  if (existingWaiverDocument) {
+    const { error: waiverDocumentUpdateError } = await supabaseAdmin
+      .from("trip_documents")
+      .update(waiverDocumentPayload)
+      .eq("id", existingWaiverDocument.id);
+
+    if (waiverDocumentUpdateError) throw new Error(waiverDocumentUpdateError.message);
+  } else {
+    const { error: waiverDocumentInsertError } = await supabaseAdmin
+      .from("trip_documents")
+      .insert(waiverDocumentPayload);
+
+    if (waiverDocumentInsertError) throw new Error(waiverDocumentInsertError.message);
+  }
+
   revalidatePath(`/trips/${tripId}`);
   revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/trips/${tripId}/documents`);
   redirect(`/trips/${tripId}`);
 }
 
@@ -418,11 +471,12 @@ export default async function TripDetailPage({
 
   const isPrimaryClient = trip.client_account_id === clientAccount.id;
   let canManageTravelCircle = isPrimaryClient;
+  let canViewSharedDocuments = isPrimaryClient;
 
   if (!isPrimaryClient) {
     const { data: memberAccess } = await supabase
       .from("trip_members" as any)
-      .select("id, can_view_trip, can_manage_companions, invite_status")
+      .select("id, can_view_trip, can_view_shared_documents, can_manage_companions, invite_status")
       .eq("trip_id", tripId)
       .eq("client_account_id", clientAccount.id)
       .eq("invite_status", "active")
@@ -437,7 +491,14 @@ export default async function TripDetailPage({
     }
 
     canManageTravelCircle = memberAccess.can_manage_companions === true;
+    canViewSharedDocuments = memberAccess.can_view_shared_documents === true;
   }
+
+  const allowedDocumentVisibility = isPrimaryClient
+    ? ["client", "travel_circle"]
+    : canViewSharedDocuments
+      ? ["travel_circle"]
+      : [];
 
   const [
     proposalResult,
@@ -452,32 +513,34 @@ export default async function TripDetailPage({
     activityResult,
     insuranceResult,
   ] = await Promise.all([
-    supabase.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
-    supabase.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
-    supabase.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client_reminder").maybeSingle(),
+    supabaseAdmin.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
+    supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
+    supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client_reminder").maybeSingle(),
     supabase.from("trip_members" as any).select(`id, trip_id, client_account_id, invite_email, invite_name, role, invite_status, can_view_trip, can_view_shared_documents, can_join_group_messages, can_upload_own_documents, can_manage_companions, created_at, client_accounts!trip_members_client_account_id_fkey(id, first_name, last_name, email)`).eq("trip_id", tripId).neq("invite_status", "removed").order("created_at", { ascending: true }),
-    supabase.from("trip_documents").select("*").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
+    allowedDocumentVisibility.length > 0
+      ? supabaseAdmin.from("trip_documents").select("*").eq("trip_id", tripId).in("visibility", allowedDocumentVisibility).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
   ]);
 
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, activityDetails, insuranceDetails] = await Promise.all([
-    airResult.data ? supabase.from("air_components").select("*").eq("component_id", airResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    hotelResult.data ? supabase.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    cruiseResult.data ? supabase.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    transferResult.data ? supabase.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    activityResult.data ? supabase.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    insuranceResult.data ? supabase.from("insurance_components").select("*").eq("component_id", insuranceResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    airResult.data ? supabaseAdmin.from("air_components").select("*").eq("component_id", airResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    hotelResult.data ? supabaseAdmin.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    cruiseResult.data ? supabaseAdmin.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    transferResult.data ? supabaseAdmin.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    activityResult.data ? supabaseAdmin.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    insuranceResult.data ? supabaseAdmin.from("insurance_components").select("*").eq("component_id", insuranceResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   let outboundSegment: any = null;
   let returnSegment: any = null;
   if (airResult.data) {
-    const { data: segments } = await supabase
+    const { data: segments } = await supabaseAdmin
       .from("flight_segments")
       .select("*")
       .eq("air_component_id", airResult.data.id)
@@ -486,11 +549,30 @@ export default async function TripDetailPage({
     returnSegment = segments?.find((s: any) => s.direction === "return") ?? null;
   }
 
-  const clientDocumentsResult = await supabase
-    .from("client_documents")
-    .select("id, document_type, title, file_name, uploaded_at, notes, storage_path")
-    .eq("client_account_id", clientAccount.id)
-    .order("uploaded_at", { ascending: false });
+  const clientDocumentsResult = allowedDocumentVisibility.includes("client")
+    ? await supabaseAdmin
+        .from("trip_client_documents")
+        .select(
+          `
+          id,
+          visibility,
+          display_title,
+          notes,
+          client_documents (
+            id,
+            document_type,
+            document_title,
+            file_name,
+            storage_path,
+            notes,
+            created_at
+          )
+          `,
+        )
+        .eq("trip_id", tripId)
+        .eq("visibility", "client")
+        .order("created_at", { ascending: false })
+    : { data: [] };
 
   const tripDocs = (tripDocumentsResult.data ?? []) as any[];
   const documentsWithUrls = await Promise.all(
@@ -500,7 +582,25 @@ export default async function TripDetailPage({
     }),
   );
 
-  const clientDocs = (clientDocumentsResult.data ?? []) as any[];
+  const clientDocs = ((clientDocumentsResult.data ?? []) as any[])
+    .map((linkedDocument: any) => {
+      const clientDocument = Array.isArray(linkedDocument.client_documents)
+        ? linkedDocument.client_documents[0]
+        : linkedDocument.client_documents;
+
+      if (!clientDocument) return null;
+
+      return {
+        id: clientDocument.id,
+        document_type: clientDocument.document_type ?? null,
+        title: linkedDocument.display_title || clientDocument.document_title || null,
+        file_name: clientDocument.file_name ?? null,
+        uploaded_at: clientDocument.created_at ?? null,
+        notes: linkedDocument.notes ?? clientDocument.notes ?? null,
+        storage_path: clientDocument.storage_path ?? null,
+      };
+    })
+    .filter(Boolean);
   const clientDocsWithUrls = await Promise.all(
     clientDocs.map(async (doc: any) => {
       if (!doc.storage_path) return { ...doc, signedUrl: null };
