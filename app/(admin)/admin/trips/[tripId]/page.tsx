@@ -1696,6 +1696,11 @@ function cleanExtractedArray(value: unknown) {
     .filter(Boolean) as string[];
 }
 
+function cleanExtractedObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function compactExtractedPayload(payload: Record<string, unknown>) {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => {
@@ -1717,6 +1722,235 @@ function parseExtractedAmount(value: unknown) {
 function combineExtractedDateAndTime(date: string | null, time: string | null) {
   if (!date) return null;
   return time ? `${date} ${time}` : date;
+}
+
+function getExtractedString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = cleanExtractedText(record[key]);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function cleanExtractedAirportCode(value: string | null) {
+  if (!value) return null;
+  const codeMatch = value.toUpperCase().match(/\b[A-Z]{3,4}\b/);
+  return codeMatch ? codeMatch[0] : value.toUpperCase();
+}
+
+function parseExtractedRouteAirports(value: string | null) {
+  if (!value) return [null, null] as const;
+  const matches = value.toUpperCase().match(/\b[A-Z]{3}\b/g) ?? [];
+  return [matches[0] ?? null, matches[1] ?? null] as const;
+}
+
+function normalizeExtractedFlightDirection(value: string | null, fallback: "outbound" | "return") {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (normalized.includes("return") || normalized.includes("inbound")) return "return";
+  if (normalized.includes("outbound") || normalized.includes("depart")) return "outbound";
+  return fallback;
+}
+
+function combineExtractedFlightDateTime(
+  datetime: string | null,
+  date: string | null,
+  time: string | null,
+) {
+  if (datetime) {
+    const normalized = datetime.replace(" ", "T");
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(normalized)
+      ? normalized.slice(0, 16)
+      : datetime;
+  }
+
+  if (!date) return null;
+  if (!time) return date;
+
+  const timeMatch = time.match(/(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/i);
+  return `${date} ${timeMatch ? timeMatch[1] : time}`;
+}
+
+function getExtractedFlightSegment(
+  value: unknown,
+  index: number,
+  fallbackDirection: "outbound" | "return",
+) {
+  const record = cleanExtractedObject(value);
+  if (!record) return null;
+
+  const route = getExtractedString(record, ["route", "location_or_route"]);
+  const [routeDeparture, routeDestination] = parseExtractedRouteAirports(route);
+  const direction = normalizeExtractedFlightDirection(
+    getExtractedString(record, ["direction", "flight_direction", "segment_type"]),
+    fallbackDirection,
+  );
+  const segmentOrderValue = Number(record.segment_order ?? record.order ?? index + 1);
+  const segment = {
+    direction,
+    segment_order: Number.isFinite(segmentOrderValue) && segmentOrderValue > 0
+      ? segmentOrderValue
+      : index + 1,
+    departure_airport_code: cleanExtractedAirportCode(
+      getExtractedString(record, [
+        "departure_airport_code",
+        "origin_airport_code",
+        "origin_code",
+        "from_airport_code",
+        "departure_airport",
+        "origin",
+        "from",
+      ]) ?? routeDeparture,
+    ),
+    destination_airport_code: cleanExtractedAirportCode(
+      getExtractedString(record, [
+        "destination_airport_code",
+        "arrival_airport_code",
+        "arrival_code",
+        "to_airport_code",
+        "destination_airport",
+        "arrival_airport",
+        "destination",
+        "to",
+      ]) ?? routeDestination,
+    ),
+    departure_datetime: combineExtractedFlightDateTime(
+      getExtractedString(record, ["departure_datetime", "departure_date_time"]),
+      getExtractedString(record, ["departure_date"]),
+      getExtractedString(record, ["departure_time"]),
+    ),
+    arrival_datetime: combineExtractedFlightDateTime(
+      getExtractedString(record, ["arrival_datetime", "arrival_date_time"]),
+      getExtractedString(record, ["arrival_date"]),
+      getExtractedString(record, ["arrival_time"]),
+    ),
+    flight_number: getExtractedString(record, ["flight_number", "flight", "flight_no"]),
+    carrier: getExtractedString(record, [
+      "carrier",
+      "airline",
+      "airline_name",
+      "operating_airline",
+      "marketing_airline",
+    ]),
+    cabin_class: getExtractedString(record, ["cabin_class", "class", "fare_class", "rate_class"]),
+    seat_assignment: getExtractedString(record, ["seat_assignment", "seat", "seats"]),
+  };
+
+  const hasSegmentValue = Object.entries(segment).some(
+    ([key, segmentValue]) =>
+      key !== "direction" &&
+      key !== "segment_order" &&
+      segmentValue !== null &&
+      segmentValue !== undefined &&
+      segmentValue !== "",
+  );
+
+  return hasSegmentValue ? segment : null;
+}
+
+function getExtractedFlightSegments(payload: Record<string, unknown>) {
+  const rawSegments =
+    (Array.isArray(payload.flight_segments) && payload.flight_segments) ||
+    (Array.isArray(payload.flights) && payload.flights) ||
+    (Array.isArray(payload.air_segments) && payload.air_segments) ||
+    [];
+  const segments = rawSegments
+    .map((segment, index) =>
+      getExtractedFlightSegment(segment, index, index === 0 ? "outbound" : "return"),
+    )
+    .filter(Boolean) as Array<NonNullable<ReturnType<typeof getExtractedFlightSegment>>>;
+
+  if (segments.length > 0) return segments;
+
+  const [routeDeparture, routeDestination] = parseExtractedRouteAirports(
+    getExtractedString(payload, ["location_or_route", "route"]),
+  );
+  const outbound = getExtractedFlightSegment(
+    {
+      direction: "outbound",
+      departure_airport_code: getExtractedString(payload, ["departure_airport_code", "origin_airport_code", "origin"]) ?? routeDeparture,
+      destination_airport_code: getExtractedString(payload, ["destination_airport_code", "arrival_airport_code", "destination"]) ?? routeDestination,
+      departure_date: getExtractedString(payload, ["start_date", "departure_date"]),
+      departure_time: getExtractedString(payload, ["start_time", "departure_time"]),
+      arrival_date: getExtractedString(payload, ["end_date", "arrival_date"]),
+      arrival_time: getExtractedString(payload, ["end_time", "arrival_time"]),
+      flight_number: getExtractedString(payload, ["flight_number"]),
+      carrier: getExtractedString(payload, ["supplier_name", "carrier", "airline"]),
+      cabin_class: getExtractedString(payload, ["room_or_cabin_or_service", "cabin_class", "rate_class"]),
+    },
+    0,
+    "outbound",
+  );
+  const returnSegment = getExtractedFlightSegment(
+    {
+      direction: "return",
+      departure_airport_code: getExtractedString(payload, ["return_departure_airport_code", "return_origin_airport_code"]),
+      destination_airport_code: getExtractedString(payload, ["return_destination_airport_code", "return_arrival_airport_code"]),
+      departure_datetime: getExtractedString(payload, ["return_departure_datetime"]),
+      arrival_datetime: getExtractedString(payload, ["return_arrival_datetime"]),
+      flight_number: getExtractedString(payload, ["return_flight_number"]),
+      carrier: getExtractedString(payload, ["return_carrier", "supplier_name", "airline"]),
+      cabin_class: getExtractedString(payload, ["return_cabin_class", "room_or_cabin_or_service"]),
+    },
+    1,
+    "return",
+  );
+
+  return [outbound, returnSegment].filter(Boolean) as Array<
+    NonNullable<ReturnType<typeof getExtractedFlightSegment>>
+  >;
+}
+
+async function upsertExtractedFlightSegment(
+  supabase: any,
+  componentId: string,
+  airlineLocator: string | null,
+  segment: NonNullable<ReturnType<typeof getExtractedFlightSegment>>,
+) {
+  const segmentPayload = compactExtractedPayload({
+    departure_airport_code: segment.departure_airport_code,
+    destination_airport_code: segment.destination_airport_code,
+    departure_datetime: segment.departure_datetime,
+    arrival_datetime: segment.arrival_datetime,
+    flight_number: segment.flight_number,
+    carrier: segment.carrier,
+    airline_locator: airlineLocator,
+    cabin_class: segment.cabin_class,
+    seat_assignment: segment.seat_assignment,
+  });
+
+  if (Object.keys(segmentPayload).length === 0) return;
+
+  const { data: existingSegment, error: existingSegmentError } = await supabase
+    .from("flight_segments")
+    .select("id")
+    .eq("air_component_id", componentId)
+    .eq("direction", segment.direction)
+    .eq("segment_order", segment.segment_order)
+    .maybeSingle();
+
+  if (existingSegmentError) throw new Error(existingSegmentError.message);
+
+  if (existingSegment) {
+    const { error } = await supabase
+      .from("flight_segments")
+      .update(segmentPayload)
+      .eq("id", existingSegment.id);
+
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("flight_segments")
+    .insert({
+      air_component_id: componentId,
+      direction: segment.direction,
+      segment_order: segment.segment_order,
+      ...segmentPayload,
+    });
+
+  if (error) throw new Error(error.message);
 }
 
 function formatExtractedBookingSummary(value: unknown) {
@@ -1824,14 +2058,23 @@ async function applyExtractedBookingDetailsToTripComponent(
       hotel_description: notesText,
     });
   } else if (componentType === "air") {
+    const flightSegments = getExtractedFlightSegments(payload);
+
     await upsertExtractedComponentDetail(supabase, "air_components", component.id, {
-      flight_type: "round_trip",
+      flight_type:
+        flightSegments.length > 0 && !flightSegments.some((segment) => segment.direction === "return")
+          ? "one_way"
+          : "round_trip",
       traveler_count: 1,
       airline_locator: confirmationNumber,
       rate_class: roomOrService,
       flight_terms_and_conditions: paymentTerms,
       flight_cancellation_policy: cancellationTerms,
     });
+
+    for (const segment of flightSegments) {
+      await upsertExtractedFlightSegment(supabase, component.id, confirmationNumber, segment);
+    }
   } else if (componentType === "cruise") {
     await upsertExtractedComponentDetail(supabase, "cruise_components", component.id, {
       cruise_line: supplierName,
@@ -1942,6 +2185,24 @@ async function extractBookingDetailsFromUploadedComponentDocument({
                 '  "end_time": string | null,',
                 '  "location_or_route": string | null,',
                 '  "room_or_cabin_or_service": string | null,',
+                '  "flight_segments": [',
+                "    {",
+                '      "direction": "outbound | return",',
+                '      "segment_order": number,',
+                '      "carrier": string | null,',
+                '      "flight_number": string | null,',
+                '      "departure_airport_code": string | null,',
+                '      "destination_airport_code": string | null,',
+                '      "departure_date": "YYYY-MM-DD" | null,',
+                '      "departure_time": string | null,',
+                '      "departure_datetime": "YYYY-MM-DDTHH:mm" | null,',
+                '      "arrival_date": "YYYY-MM-DD" | null,',
+                '      "arrival_time": string | null,',
+                '      "arrival_datetime": "YYYY-MM-DDTHH:mm" | null,',
+                '      "cabin_class": string | null,',
+                '      "seat_assignment": string | null',
+                "    }",
+                "  ],",
                 '  "total_amount": string | null,',
                 '  "currency": string | null,',
                 '  "deposit_amount": string | null,',
