@@ -7,6 +7,7 @@ type ClientAccount = {
   first_name: string | null;
   last_name: string | null;
   email: string | null;
+  phone_primary: string | null;
 };
 
 type SafeTripContext = {
@@ -25,6 +26,38 @@ type AskCozyThread = {
   title: string;
   status: string;
   retention_until: string | null;
+};
+
+const allowedContactMethods = ["email", "text", "phone"];
+const allowedTravelTypes = [
+  "tour",
+  "cruise",
+  "air",
+  "hotel",
+  "transfer",
+  "theme_park",
+  "rental_car",
+  "rail",
+  "vacation_package",
+  "insurance",
+  "activity",
+];
+
+type TravelRequestDraft = {
+  full_name?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  preferred_contact_method?: string | null;
+  departure_date?: string | null;
+  return_date?: string | null;
+  optional_travel_dates?: string | null;
+  number_of_travelers?: number | string | null;
+  traveler_ages?: string[] | string | null;
+  travel_types_requested?: string[] | string | null;
+  destinations?: string | null;
+  budget?: string | null;
+  trip_vision_notes?: string | null;
+  zoom_call_availability?: string | null;
 };
 
 const ASK_COZY_SYSTEM_PROMPT = `
@@ -46,6 +79,8 @@ Primary role:
 - Explain travel concepts in plain language.
 - Suggest what clients should ask their travel advisor.
 - Help clients think through packing, documents, accessibility needs, family travel, group travel, cruises, theme parks, resorts, destination planning, and trip-readiness checklists.
+- Help clients build a complete travel request by gathering the same practical details as the Travel Request form: destination, dates, flexible windows, travelers, ages, travel type, budget, trip vision, and call availability.
+- If the client says they are ready to submit a travel request, gather any missing required details first, then submit it only when enough details are available.
 - Encourage clients to use Concierge Messages for booking-specific, account-specific, document-specific, payment-specific, passport-specific, or urgent advisor questions.
 
 Safe trip context:
@@ -75,6 +110,12 @@ Supplier idea behavior:
 - When asked about suppliers, explain common supplier categories that might fit the destination and trip style, then provide examples only as possibilities to discuss with the advisor.
 - Do not imply Cozy Adventure Vacations endorses, has booked, has preferred status with, or has verified a supplier unless the client explicitly provides that context.
 - Encourage the client to ask Jeremy which suppliers are available, vetted, commissionable, accessible, family-friendly, reliable, or best matched to the trip budget and style.
+
+Travel request behavior:
+- When the client wants help starting a travel request, act like a friendly intake assistant and ask for one to three missing details at a time.
+- Required details for submission are destination, departure date, return date or flexible date window, number of travelers, travel type, client name, email, and phone number.
+- Helpful optional details include traveler ages, budget, preferred contact method, Zoom availability, must-dos, must-avoids, accessibility needs, pace, supplier preferences, room/cabin style, and celebration notes.
+- When the client says they are ready to submit, do not claim it is submitted unless the system confirms the request was created.
 
 Important limitations:
 - You cannot see payment records, passport uploads, traveler numbers, or private documents.
@@ -193,7 +234,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name, email, phone_primary")
     .ilike("email", userEmail)
     .maybeSingle();
 
@@ -224,7 +265,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByProfile, error: clientProfileError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name, email, phone_primary")
     .eq("user_profile_id", userProfile.id)
     .maybeSingle();
 
@@ -407,6 +448,174 @@ async function saveMessage({
   }
 }
 
+function getClientDisplayName(clientAccount: ClientAccount) {
+  return `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim();
+}
+
+function shouldSubmitTravelRequest(message: string) {
+  return /\b(submit|send|create|make|turn this into|ready)\b[\s\S]{0,80}\b(travel request|trip request|quote request|planning request)\b/i.test(message);
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeDate(value: unknown) {
+  const text = normalizeText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function normalizeTravelerAges(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((age) => String(age).trim()).filter(Boolean);
+  }
+
+  const text = normalizeText(value);
+  return text ? text.split(",").map((age) => age.trim()).filter(Boolean) : [];
+}
+
+function normalizeTravelTypes(value: unknown) {
+  const rawTypes = Array.isArray(value)
+    ? value
+    : normalizeText(value)
+      ? normalizeText(value).split(",")
+      : [];
+
+  return rawTypes
+    .map((type) => String(type).trim().toLowerCase())
+    .map((type) => {
+      const normalized = type.replace(/[\s-]+/g, "_").replace(/[^a-z_]/g, "");
+      if (normalized === "themepark") return "theme_park";
+      if (normalized === "rentalcar") return "rental_car";
+      if (normalized === "package") return "vacation_package";
+      if (normalized === "excursion") return "activity";
+      return normalized;
+    })
+    .filter((type, index, types) => allowedTravelTypes.includes(type) && types.indexOf(type) === index);
+}
+
+function buildTravelRequestSummary({
+  draft,
+  transcript,
+  tripContext,
+}: {
+  draft: Required<Pick<TravelRequestDraft, "destinations">> & TravelRequestDraft;
+  transcript: string;
+  tripContext: SafeTripContext | null;
+}) {
+  return [
+    "This travel request was prepared with Ask Cozy.",
+    tripContext ? `Selected trip context: ${tripContext.trip_name ?? "Trip"}${tripContext.destinations ? ` - ${tripContext.destinations}` : ""}` : "",
+    "",
+    "Ask Cozy request summary:",
+    draft.trip_vision_notes ?? "",
+    "",
+    "Ask Cozy intake conversation:",
+    transcript,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+async function extractTravelRequestDraft({
+  client,
+  conversation,
+  tripContext,
+  clientAccount,
+}: {
+  client: OpenAI;
+  conversation: Array<{ role: "user" | "assistant"; content: string }>;
+  tripContext: SafeTripContext | null;
+  clientAccount: ClientAccount;
+}) {
+  const clientDefaults = [
+    `Client name from account: ${getClientDisplayName(clientAccount) || "Not provided"}`,
+    `Client email from account: ${clientAccount.email ?? "Not provided"}`,
+    `Client phone from account: ${clientAccount.phone_primary ?? "Not provided"}`,
+  ].join("\n");
+
+  const response = await client.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "system",
+        content: [
+          "Extract a Cozy Concierge travel request draft from the conversation.",
+          "Return only JSON with these keys:",
+          "full_name, email, phone_number, preferred_contact_method, departure_date, return_date, optional_travel_dates, number_of_travelers, traveler_ages, travel_types_requested, destinations, budget, trip_vision_notes, zoom_call_availability.",
+          "Use YYYY-MM-DD dates only when explicit. If dates are flexible or not exact, put that in optional_travel_dates and leave exact date fields null.",
+          "travel_types_requested must use only: tour, cruise, air, hotel, transfer, theme_park, rental_car, rail, vacation_package, insurance, activity.",
+          "Use client account defaults for name, email, and phone when the conversation does not override them.",
+          "Do not invent destination, dates, traveler count, budget, or travel type.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: [
+          clientDefaults,
+          "",
+          formatSafeTripContext(tripContext),
+          "",
+          "Conversation:",
+          ...conversation.map((message) => `${message.role === "assistant" ? "Ask Cozy" : "Client"}: ${message.content}`),
+        ].join("\n"),
+      },
+    ],
+  });
+
+  const text = response.output_text.trim();
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("Ask Cozy could not prepare a structured travel request yet.");
+  }
+
+  return JSON.parse(jsonMatch[0]) as TravelRequestDraft;
+}
+
+function normalizeTravelRequestDraft({
+  draft,
+  clientAccount,
+}: {
+  draft: TravelRequestDraft;
+  clientAccount: ClientAccount;
+}) {
+  const numberOfTravelers = Number(draft.number_of_travelers ?? 0);
+
+  return {
+    full_name: normalizeText(draft.full_name) || getClientDisplayName(clientAccount),
+    email: normalizeText(draft.email).toLowerCase() || clientAccount.email,
+    phone_number: normalizeText(draft.phone_number) || clientAccount.phone_primary,
+    preferred_contact_method: allowedContactMethods.includes(normalizeText(draft.preferred_contact_method))
+      ? normalizeText(draft.preferred_contact_method)
+      : "email",
+    departure_date: normalizeDate(draft.departure_date),
+    return_date: normalizeDate(draft.return_date),
+    optional_travel_dates: normalizeText(draft.optional_travel_dates) || null,
+    number_of_travelers: Number.isFinite(numberOfTravelers) && numberOfTravelers >= 1 ? numberOfTravelers : 0,
+    traveler_ages: normalizeTravelerAges(draft.traveler_ages),
+    travel_types_requested: normalizeTravelTypes(draft.travel_types_requested),
+    destinations: normalizeText(draft.destinations),
+    budget: normalizeText(draft.budget) || null,
+    trip_vision_notes: normalizeText(draft.trip_vision_notes),
+    zoom_call_availability: normalizeText(draft.zoom_call_availability) || null,
+  };
+}
+
+function getMissingTravelRequestFields(draft: ReturnType<typeof normalizeTravelRequestDraft>) {
+  const missing: string[] = [];
+
+  if (!draft.full_name) missing.push("your name");
+  if (!draft.email) missing.push("your email");
+  if (!draft.phone_number) missing.push("your phone number");
+  if (!draft.destinations) missing.push("destination");
+  if (!draft.departure_date) missing.push("departure date");
+  if (!draft.return_date) missing.push("return date");
+  if (!draft.number_of_travelers) missing.push("number of travelers");
+  if (!draft.travel_types_requested.length) missing.push("type of travel");
+
+  return missing;
+}
+
 async function loadRecentMessages({
   supabase,
   threadId,
@@ -528,6 +737,120 @@ export async function POST(request: Request) {
     const client = new OpenAI({
       apiKey,
     });
+
+    if (shouldSubmitTravelRequest(message)) {
+      const conversationForRequest = [
+        ...recentMessages,
+        {
+          role: "user" as const,
+          content: message,
+        },
+      ];
+      const transcript = conversationForRequest
+        .map((conversationMessage) => `${conversationMessage.role === "assistant" ? "Ask Cozy" : "Client"}: ${conversationMessage.content}`)
+        .join("\n\n");
+      const extractedDraft = await extractTravelRequestDraft({
+        client,
+        conversation: conversationForRequest,
+        tripContext,
+        clientAccount,
+      });
+      const normalizedDraft = normalizeTravelRequestDraft({
+        draft: extractedDraft,
+        clientAccount,
+      });
+      const missingFields = getMissingTravelRequestFields(normalizedDraft);
+
+      if (missingFields.length > 0) {
+        const answer = [
+          "I can help submit that travel request, but I need a little more information first.",
+          "",
+          `Please send: ${missingFields.join(", ")}.`,
+          "",
+          "Once you share that, tell me you are ready to submit the travel request and I will prepare it for Jeremy.",
+        ].join("\n");
+
+        await saveMessage({
+          supabase,
+          clientAccountId: clientAccount.id,
+          threadId: thread.id,
+          role: "assistant",
+          content: answer,
+        });
+
+        await touchThread({
+          supabase,
+          threadId: thread.id,
+        });
+
+        return NextResponse.json({
+          answer,
+          threadId: thread.id,
+          title: thread.title,
+          retentionUntil: thread.retention_until,
+          travelRequestSubmitted: false,
+          missingTravelRequestFields: missingFields,
+        });
+      }
+
+      const { error: insertError } = await supabase.from("quote_requests").insert({
+        client_account_id: clientAccount.id,
+        full_name: normalizedDraft.full_name,
+        email: normalizedDraft.email,
+        phone_number: normalizedDraft.phone_number,
+        preferred_contact_method: normalizedDraft.preferred_contact_method,
+        departure_date: normalizedDraft.departure_date,
+        return_date: normalizedDraft.return_date,
+        optional_travel_dates: normalizedDraft.optional_travel_dates,
+        number_of_travelers: normalizedDraft.number_of_travelers,
+        traveler_ages: normalizedDraft.traveler_ages.length > 0 ? normalizedDraft.traveler_ages : null,
+        travel_types_requested: normalizedDraft.travel_types_requested,
+        destinations: normalizedDraft.destinations,
+        budget: normalizedDraft.budget,
+        trip_vision_notes: buildTravelRequestSummary({
+          draft: {
+            ...extractedDraft,
+            destinations: normalizedDraft.destinations,
+            trip_vision_notes: normalizedDraft.trip_vision_notes,
+          },
+          transcript,
+          tripContext,
+        }),
+        zoom_call_availability: normalizedDraft.zoom_call_availability,
+        status: "new",
+      });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      const answer = [
+        "Done — I submitted your travel request to Jeremy for review.",
+        "",
+        "I included the details we gathered here, plus the Ask Cozy planning conversation, so he has the context behind the request. You can keep refining ideas here, but the request itself is now in Cozy Concierge.",
+      ].join("\n");
+
+      await saveMessage({
+        supabase,
+        clientAccountId: clientAccount.id,
+        threadId: thread.id,
+        role: "assistant",
+        content: answer,
+      });
+
+      await touchThread({
+        supabase,
+        threadId: thread.id,
+      });
+
+      return NextResponse.json({
+        answer,
+        threadId: thread.id,
+        title: thread.title,
+        retentionUntil: thread.retention_until,
+        travelRequestSubmitted: true,
+      });
+    }
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini",

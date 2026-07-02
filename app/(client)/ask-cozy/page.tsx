@@ -41,6 +41,13 @@ type TripRequestDraft = {
 
 const starterQuestionGroups = [
   {
+    title: "Travel Request",
+    questions: [
+      "Help me build a complete travel request. Ask me for the details Jeremy needs, then submit it when I say I am ready.",
+      "I am ready to submit this as a travel request for Jeremy.",
+    ],
+  },
+  {
     title: "Planning Ideas",
     questions: [
       "Create a sample day-by-day itinerary idea for this trip.",
@@ -164,7 +171,7 @@ function getConversationTimestamp() {
 }
 
 function looksLikeTripRequestCandidate(message: string) {
-  return /\b(itinerary|day-by-day|sample trip|trip idea|travel idea|travel plan|vacation idea|planning idea)\b/i.test(message);
+  return /\b(itinerary|day-by-day|sample trip|trip idea|travel idea|travel plan|vacation idea|planning idea|travel request|trip request|quote request|planning request|submit)\b/i.test(message);
 }
 
 function buildTravelRequestHref(draft: TripRequestDraft) {
@@ -444,7 +451,9 @@ function AskCozyContent() {
         },
       ]);
 
-      if (looksLikeTripRequestCandidate(messageToSend)) {
+      if (data.travelRequestSubmitted || data.missingTravelRequestFields) {
+        setTripRequestDraft(null);
+      } else if (looksLikeTripRequestCandidate(messageToSend)) {
         const tripForDraft = selectedTripId
           ? availableTrips.find((trip) => trip.id === selectedTripId) ?? null
           : null;
@@ -1019,8 +1028,7 @@ function AskCozyContent() {
                     Want Jeremy to turn this idea into a real trip request?
                   </p>
                   <p style={{ margin: "5px 0 0", lineHeight: 1.55 }}>
-                    I can carry the destination, dates, and Ask Cozy planning note into the travel request form.
-                    You can review everything before sending it.
+                    You can tell Ask Cozy you are ready to submit this travel request, or review the details in the form before sending it.
                   </p>
                 </div>
                 <Link
@@ -1028,7 +1036,7 @@ function AskCozyContent() {
                   className="btn btn-primary"
                   style={{ alignSelf: "flex-start" }}
                 >
-                  Make This a Trip Request
+                  Review In Travel Request Form
                 </Link>
               </div>
             ) : null}

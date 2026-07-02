@@ -20,6 +20,8 @@ const travelTypes = [
 ];
 
 const allowedTravelTypes = travelTypes.map((type) => type.value);
+const askCozyTravelRequestPrompt =
+  "Help me build a complete travel request. Ask me for the destination, dates, travelers, travel type, budget, trip vision, and anything Jeremy needs. When I say I am ready, submit the travel request for Jeremy to review.";
 
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
@@ -194,6 +196,38 @@ export default async function TravelRequestPage({
             <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
               Review the prefilled destination, dates, and planning note below, then finish any missing details before sending this to Jeremy.
             </p>
+          </section>
+        ) : null}
+
+        {!cameFromAskCozy ? (
+          <section
+            className="card"
+            style={{
+              border: "1px solid #bfdbfe",
+              background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 72%)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 16,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ maxWidth: 720 }}>
+              <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>
+                Want help shaping the idea?
+              </p>
+              <h2 style={{ margin: "4px 0 0" }}>Start planning with Ask Cozy</h2>
+              <p style={{ margin: "6px 0 0", color: "#5e7e8f", lineHeight: 1.55 }}>
+                Ask Cozy can gather the details in conversation, help refine the trip vision, and submit a travel request to Jeremy when you say you are ready.
+              </p>
+            </div>
+            <Link
+              href={`/ask-cozy?question=${encodeURIComponent(askCozyTravelRequestPrompt)}`}
+              className="btn btn-primary"
+              style={{ flexShrink: 0 }}
+            >
+              Plan With Ask Cozy
+            </Link>
           </section>
         ) : null}
 
