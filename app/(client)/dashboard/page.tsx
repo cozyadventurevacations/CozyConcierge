@@ -237,23 +237,18 @@ function MetricCard({
   label,
   value,
   helper,
+  href,
   tone = "neutral",
 }: {
   label: string;
   value: string | number;
   helper?: string;
+  href?: string;
   tone?: "neutral" | "warning";
 }) {
   const isWarning = tone === "warning";
-  return (
-    <div
-      className="card stack"
-      style={{
-        gap: 8,
-        border: isWarning ? "1px solid #fed7aa" : "1px solid #e6f0f2",
-        background: isWarning ? "#fffbf7" : "#ffffff",
-      }}
-    >
+  const content = (
+    <>
       <span style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5e7e8f", fontWeight: 700 }}>
         {label}
       </span>
@@ -263,6 +258,32 @@ function MetricCard({
       {helper && (
         <span style={{ fontSize: 12, color: "#5e7e8f", lineHeight: 1.4 }}>{helper}</span>
       )}
+    </>
+  );
+  const cardStyle = {
+    gap: 8,
+    border: isWarning ? "1px solid #fed7aa" : "1px solid #e6f0f2",
+    background: isWarning ? "#fffbf7" : "#ffffff",
+  };
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="card stack"
+        style={{ ...cardStyle, color: "inherit", textDecoration: "none", cursor: "pointer" }}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div
+      className="card stack"
+      style={cardStyle}
+    >
+      {content}
     </div>
   );
 }
@@ -457,10 +478,10 @@ function TripReadinessCard({
   if (!trip) return null;
 
   const items = [
-    { label: "Trip dates confirmed", complete: Boolean(trip.departure_date && trip.return_date) },
-    { label: "Passport uploaded", complete: passportUploaded },
-    { label: "Payment complete", complete: Number(trip.balance_due ?? 0) <= 0 },
-    { label: "Travel documents shared", complete: sharedDocumentCount > 0 },
+    { label: "Trip dates confirmed", complete: Boolean(trip.departure_date && trip.return_date), href: `/trips/${trip.trip_id}` },
+    { label: "Passport uploaded", complete: passportUploaded, href: "/profile/passport-upload" },
+    { label: "Payment complete", complete: Number(trip.balance_due ?? 0) <= 0, href: Number(trip.balance_due ?? 0) > 0 ? `/trips/${trip.trip_id}/request-payment` : `/trips/${trip.trip_id}` },
+    { label: "Travel documents shared", complete: sharedDocumentCount > 0, href: `/trips/${trip.trip_id}/documents` },
   ];
   const completeCount = items.filter((item) => item.complete).length;
   const percent = Math.round((completeCount / items.length) * 100);
@@ -487,11 +508,11 @@ function TripReadinessCard({
       </div>
       <div className="grid grid-4" style={{ gap: 10 }}>
         {items.map((item) => (
-          <div key={item.label} style={{ padding: 12, borderRadius: 12, border: "1px solid #e6f0f2", background: item.complete ? "#f0fdf4" : "#fff7ed" }}>
+          <Link key={item.label} href={item.href} style={{ padding: 12, borderRadius: 12, border: "1px solid #e6f0f2", background: item.complete ? "#f0fdf4" : "#fff7ed", color: "inherit", textDecoration: "none", display: "block" }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: item.complete ? "#027a48" : "#9a3412" }}>
               {item.complete ? "✓" : "○"} {item.label}
             </p>
-          </div>
+          </Link>
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -501,17 +522,44 @@ function TripReadinessCard({
     </div>
   );
 }
-function AskCozyCompact() {
+function AskCozyCompact({ nextTrip }: { nextTrip: TripRow | null }) {
+  const selectedTripQuery = nextTrip ? `&tripId=${encodeURIComponent(nextTrip.trip_id)}` : "";
+  const suggestedActions = [
+    {
+      label: "Packing List",
+      href: `/ask-cozy?question=${encodeURIComponent("Create a custom packing list for this trip.")}${selectedTripQuery}`,
+    },
+    {
+      label: "Destination Deep Dive",
+      href: `/ask-cozy?question=${encodeURIComponent("Research this destination and suggest the best activities, excursions, and day-by-day priorities to discuss with my advisor.")}${selectedTripQuery}`,
+    },
+    {
+      label: "Supplier Ideas",
+      href: `/ask-cozy?question=${encodeURIComponent("Deep dive common travel suppliers for this destination and trip style, including cruise lines, tour operators, resorts, transfer companies, and excursion providers I should ask my advisor about.")}${selectedTripQuery}`,
+    },
+  ];
+
   return (
-    <div className="card stack" style={{ gap: 10, border: "1px solid #e6f0f2" }}>
+    <div className="card stack" style={{ gap: 14, border: "1px solid #bfdbfe", background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 70%)" }}>
       <div>
         <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Ask Cozy</p>
-        <p style={{ margin: "3px 0 0", fontWeight: 700, fontSize: 15 }}>Got a travel question?</p>
+        <h2 style={{ margin: "4px 0 0" }}>Plan smarter with your AI travel helper</h2>
+        <p style={{ margin: "6px 0 0", color: "#5e7e8f", lineHeight: 1.55, fontSize: 13 }}>
+          Generate trip-specific packing lists, explore destination activities and excursions, or compare common suppliers to discuss with Jeremy.
+        </p>
       </div>
       <form action="/ask-cozy" method="get" style={{ display: "flex", gap: 8 }}>
-        <input className="input" name="question" placeholder="e.g. What should I pack for May in Florida?" style={{ flex: 1, padding: "9px 13px", fontSize: 13 }} />
+        {nextTrip ? <input type="hidden" name="tripId" value={nextTrip.trip_id} /> : null}
+        <input className="input" name="question" placeholder={nextTrip ? `Ask about ${nextTrip.trip_name ?? "your next trip"}` : "Ask about packing, activities, excursions, or suppliers"} style={{ flex: 1, padding: "9px 13px", fontSize: 13 }} />
         <button type="submit" className="btn btn-primary" style={{ padding: "9px 16px", fontSize: 13, whiteSpace: "nowrap" }}>Ask</button>
       </form>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {suggestedActions.map((action) => (
+          <Link key={action.label} href={action.href} className="btn btn-outline" style={{ padding: "8px 12px", fontSize: 12, background: "#ffffff" }}>
+            {action.label}
+          </Link>
+        ))}
+      </div>
       <p style={{ margin: 0, fontSize: 11, color: "#5e7e8f", lineHeight: 1.5 }}>
         For booking-specific questions, use Concierge Messages so your advisor can see the full context.
       </p>
@@ -845,17 +893,20 @@ export default async function ClientDashboardPage() {
           label="Upcoming Trips"
           value={upcomingTrips.length}
           helper={nextTrip ? `Next: ${nextTrip.trip_name ?? "Trip"} · ${formatDateShort(nextTrip.departure_date) ?? ""}` : "No upcoming trips yet."}
+          href={nextTrip ? `/trips/${nextTrip.trip_id}` : "/trips"}
         />
         <MetricCard
           label="Balance Due"
           value={formatMoney(totalBalance)}
           helper={nextPaymentTrip ? `Final payment due ${formatDateLong(nextPaymentTrip.final_payment_due_date)}` : "No outstanding balance."}
+          href={nextPaymentTrip ? `/trips/${nextPaymentTrip.trip_id}/request-payment` : "/trips"}
           tone={totalBalance > 0 ? "warning" : "neutral"}
         />
         <MetricCard
           label="Messages"
           value={openThreads}
           helper={unreadMessages > 0 ? `${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}` : "No unread messages."}
+          href="/messages"
           tone={unreadMessages > 0 ? "warning" : "neutral"}
         />
       </div>
@@ -893,7 +944,7 @@ export default async function ClientDashboardPage() {
       </div>
 
       <div className="grid grid-2">
-        <AskCozyCompact />
+        <AskCozyCompact nextTrip={nextTrip} />
         <QuickActions nextTripId={nextTrip?.trip_id ?? null} />
       </div>
     </PageShell>

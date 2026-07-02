@@ -48,6 +48,13 @@ const starterQuestionGroups = [
     ],
   },
   {
+    title: "Destination Deep Dives",
+    questions: [
+      "Research this destination and suggest the best activities, excursions, and day-by-day priorities to discuss with my advisor.",
+      "Help me find hidden-gem activities, popular excursions, and must-book experiences for this destination.",
+    ],
+  },
+  {
     title: "Trip Prep",
     questions: [
       "What should I double-check 30 days before travel?",
@@ -57,9 +64,16 @@ const starterQuestionGroups = [
   {
     title: "Packing",
     questions: [
-      "Create a custom packing list for this trip.",
+      "Create a custom packing list for this specific trip.",
       "What should I pack in my carry-on?",
       "What should I keep out of checked luggage?",
+    ],
+  },
+  {
+    title: "Supplier Ideas",
+    questions: [
+      "Deep dive common travel suppliers for this destination and trip style, including cruise lines, tour operators, resorts, transfer companies, and excursion providers I should ask my advisor about.",
+      "What supplier categories should I compare for this trip, and what should I ask Jeremy before choosing?",
     ],
   },
   {
@@ -81,7 +95,7 @@ const starterQuestionGroups = [
 const welcomeMessage: ChatMessage = {
   role: "assistant",
   content:
-    "Hi, I am Ask Cozy. I can help with trip ideas, sample itineraries, custom packing lists, trip prep, and what to ask your advisor. Select a trip when you want me to use safe high-level context like destination and travel dates.",
+    "Hi, I am Ask Cozy. I can help with trip-specific packing lists, destination activity and excursion deep dives, supplier ideas to discuss with your advisor, sample itineraries, and trip prep. Select a trip when you want me to use safe high-level context like destination and travel dates.",
 };
 
 function formatDateLabel(value: string | null | undefined) {
@@ -523,7 +537,7 @@ function AskCozyContent() {
   return (
     <PageShell
       title="Ask Cozy"
-      subtitle="Your Cozy Concierge AI helper for general travel questions and trip preparation."
+      subtitle="Your Cozy Concierge AI helper for trip prep, destination ideas, excursions, packing, and supplier questions."
     >
       <div
         className="card stack"
@@ -558,8 +572,9 @@ function AskCozyContent() {
             <h2 style={{ margin: "4px 0 0" }}>Ask Cozy</h2>
 
             <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>
-              Ask general travel questions, prepare for your trip, get packing
-              reminders, or figure out what to ask your advisor next.
+              Build a trip-specific packing list, explore destination activities
+              and excursions, compare supplier ideas, or figure out what to ask
+              your advisor next.
             </p>
           </div>
 
@@ -717,7 +732,7 @@ function AskCozyContent() {
             <div>
               <h2 style={{ margin: 0 }}>Starter Questions</h2>
               <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13, lineHeight: 1.5 }}>
-                Choose a prompt or type your own question. Select a trip first for itinerary ideas and custom packing lists.
+                Choose a prompt or type your own question. Select a trip first for packing lists, destination deep dives, activity ideas, and supplier comparisons.
               </p>
             </div>
 
@@ -1026,7 +1041,7 @@ function AskCozyContent() {
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={4}
-                  placeholder="Ask about packing, trip prep, destination basics, documents, or what to ask Jeremy next."
+                  placeholder="Ask about packing lists, activities, excursions, supplier ideas, trip prep, or what to ask Jeremy next."
                 />
               </label>
 
