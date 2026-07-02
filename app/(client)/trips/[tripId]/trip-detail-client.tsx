@@ -1186,18 +1186,11 @@ function TravelCircleTab({ tripId, tripMembers, canManageTravelCircle, onInviteC
         )}
       </SectionCard>
 
-      <SectionCard eyebrow="Concierge Messages" title="Send a Message" subtitle="Choose whether your message stays private or is shared with your Travel Circle.">
-        <div className="grid grid-2">
-          <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
-            <p style={{ margin: 0, fontWeight: 800 }}>Private Message</p>
-            <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.6 }}>For payments, personal details, documents, or anything between you and your advisor.</p>
-            <Link href={`/messages?tripId=${tripId}`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Message Advisor</Link>
-          </div>
-          <div className="card stack" style={{ border: "1px solid #fed7aa" }}>
-            <p style={{ margin: 0, fontWeight: 800 }}>Group Message</p>
-            <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.6 }}>For shared questions, meeting points, or anything your Travel Circle should also see.</p>
-            <Link href={`/messages?tripId=${tripId}&scope=group`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px" }}>Message Travel Circle</Link>
-          </div>
+      <SectionCard eyebrow="Concierge Messages" title="Send a Message" subtitle="Message your advisor directly about this trip.">
+        <div className="card stack" style={{ border: "1px solid #e6f0f2" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Advisor Message</p>
+          <p style={{ margin: 0, color: "#667085", fontSize: 13, lineHeight: 1.6 }}>For payments, personal details, documents, travel questions, or anything Cozy Adventure Vacations should review.</p>
+          <Link href={`/messages?tripId=${tripId}`} className="btn btn-primary" style={{ fontSize: 13, padding: "9px 16px", alignSelf: "flex-start" }}>Message Advisor</Link>
         </div>
       </SectionCard>
     </div>

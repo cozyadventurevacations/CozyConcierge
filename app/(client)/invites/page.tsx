@@ -431,8 +431,7 @@ export default async function ClientInvitationsPage({
 
                   <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
                     This shared trip access is active automatically. You can open the
-                    trip to view shared details, documents, and Travel Circle messages
-                    based on your access level.
+                    trip to view shared details and documents based on your access level.
                   </p>
 
                   {trip?.id ? (

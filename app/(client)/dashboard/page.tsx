@@ -570,7 +570,7 @@ function AskCozyCompact({ nextTrip }: { nextTrip: TripRow | null }) {
 function QuickActions({ nextTripId }: { nextTripId: string | null }) {
   const actions = [
     { label: "My Trips", href: "/trips" },
-    { label: "Messages & Invites", href: "/messages" },
+    { label: "Messages", href: "/messages" },
     { label: "My Profile", href: "/profile" },
     ...(nextTripId ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }] : []),
   ];
@@ -606,7 +606,7 @@ const TOUR_ITEMS = [
   {
     icon: "✉️",
     title: "Concierge Messages",
-    description: "Send private messages directly to your advisor, or use Travel Circle to keep your travel companions in the loop.",
+    description: "Send private messages directly to your advisor for booking questions, payments, documents, and trip support.",
     href: "/messages",
     cta: "Open Messages",
   },
@@ -811,6 +811,7 @@ export default async function ClientDashboardPage() {
       .from("message_threads")
       .select("id, status, client_unread_count, last_message_at")
       .eq("client_account_id", clientAccount.id)
+      .eq("thread_type", "private")
       .order("last_message_at", { ascending: false }),
 
   ]);

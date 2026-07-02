@@ -108,6 +108,10 @@ function containsAdvisorMention(body: string) {
   return /@advisor/i.test(body);
 }
 
+function assertTravelCircleMessagingEnabled(): never {
+  throw new Error("Travel Circle group messaging is no longer available. Please send a private advisor message instead.");
+}
+
 function groupMessagesByDate(messages: MessageRow[]) {
   const groups: { label: string; messages: MessageRow[] }[] = [];
   let currentLabel = "";
@@ -358,7 +362,9 @@ async function createClientMessageThread(formData: FormData) {
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
   const requestedThreadType = String(formData.get("thread_type") ?? "private").trim();
-  const threadType = requestedThreadType === "trip_group" ? "trip_group" : "private";
+  if (requestedThreadType === "trip_group") assertTravelCircleMessagingEnabled();
+
+  const threadType: string = "private";
   const subject = String(formData.get("subject") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const tripId = String(formData.get("trip_id") ?? "").trim() || null;
@@ -482,6 +488,7 @@ async function replyToClientThread(formData: FormData) {
   if (threadError || !thread) throw new Error(threadError?.message ?? "Message thread not found.");
 
   const isGroupThread = thread.thread_type === "trip_group";
+  if (isGroupThread) assertTravelCircleMessagingEnabled();
 
   if (isGroupThread) {
     if (!thread.trip_id) throw new Error("This group thread is missing a trip.");
@@ -545,6 +552,7 @@ async function hideThreadForClient(formData: FormData) {
   if (!thread) throw new Error("Message thread not found.");
 
   if (thread.thread_type === "trip_group") {
+    assertTravelCircleMessagingEnabled();
     if (!thread.trip_id) throw new Error("This group thread is missing a trip.");
     await assertCanUseTripMessages(supabase, clientAccount.id, thread.trip_id, true);
   } else if (thread.client_account_id !== clientAccount.id) {
@@ -572,6 +580,8 @@ async function hideThreadForClient(formData: FormData) {
 
 async function inviteAdvisorToThread(formData: FormData) {
   "use server";
+
+  assertTravelCircleMessagingEnabled();
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
@@ -621,6 +631,8 @@ async function inviteAdvisorToThread(formData: FormData) {
 async function notifyAdvisorInThread(formData: FormData) {
   "use server";
 
+  assertTravelCircleMessagingEnabled();
+
   const { supabase } = await getCurrentClientAccount();
   const threadId = String(formData.get("thread_id") ?? "").trim();
   if (!threadId) throw new Error("Missing thread ID.");
@@ -646,6 +658,8 @@ async function notifyAdvisorInThread(formData: FormData) {
 async function inviteCompanionToCircle(formData: FormData) {
   "use server";
 
+  assertTravelCircleMessagingEnabled();
+
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
   const threadId = String(formData.get("thread_id") ?? "").trim();
@@ -666,15 +680,25 @@ async function inviteCompanionToCircle(formData: FormData) {
     .eq("id", inviteClientAccountId)
     .maybeSingle();
 
-  if (!existingClient?.id || !existingClient.email) {
+  const inviteClient = existingClient as {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    notify_travel_circle_invites: boolean | null;
+  };
+
+  if (!inviteClient.id || !inviteClient.email) {
     throw new Error("The selected client account could not be found.");
   }
+  const inviteClientId = String(inviteClient.id);
+  const inviteClientEmail = String(inviteClient.email);
 
   const { data: existing } = await supabase
     .from("trip_members" as any)
     .select("id")
     .eq("trip_id", tripId)
-    .eq("client_account_id", existingClient.id)
+    .eq("client_account_id", inviteClientId)
     .neq("invite_status", "removed")
     .maybeSingle();
 
@@ -689,12 +713,12 @@ async function inviteCompanionToCircle(formData: FormData) {
     .eq("id", tripId)
     .maybeSingle();
 
-  const inviteName = `${existingClient.first_name ?? ""} ${existingClient.last_name ?? ""}`.trim() || null;
+  const inviteName = `${inviteClient.first_name ?? ""} ${inviteClient.last_name ?? ""}`.trim() || null;
 
   await supabase.from("trip_members" as any).insert({
     trip_id: tripId,
-    client_account_id: existingClient.id,
-    invite_email: existingClient.email,
+    client_account_id: inviteClientId,
+    invite_email: inviteClientEmail,
     invite_name: inviteName,
     role: "viewer",
     invite_status: "active",
@@ -707,9 +731,9 @@ async function inviteCompanionToCircle(formData: FormData) {
     updated_at: new Date().toISOString(),
   });
 
-  if (existingClient.notify_travel_circle_invites !== false) {
+  if (inviteClient.notify_travel_circle_invites !== false) {
     await sendTravelCircleInviteEmail({
-      to: existingClient.email, inviteName, role: "viewer",
+      to: inviteClientEmail, inviteName, role: "viewer",
       tripName: tripRow?.trip_name ?? "Your Trip",
       destinations: tripRow?.destinations ?? null,
       departureDate: tripRow?.departure_date ?? null,
@@ -727,7 +751,7 @@ export default async function ClientMessagesPage({
 }: {
   searchParams: Promise<{ threadId?: string; sent?: string; tripId?: string; subject?: string; scope?: string; hidden?: string }>;
 }) {
-  const { threadId, sent, tripId: requestedTripId, subject: requestedSubject, scope, hidden } = await searchParams;
+  const { threadId, sent, tripId: requestedTripId, subject: requestedSubject, hidden } = await searchParams;
 
   const { supabase, clientAccount } = await getCurrentClientAccount();
 
@@ -741,8 +765,6 @@ export default async function ClientMessagesPage({
       </PageShell>
     );
   }
-
-  const tripIds = tripRows.map((t) => t.trip_id);
 
   const { data: privateThreads, error: privateThreadsError } = await supabase
     .from("message_threads" as any)
@@ -759,27 +781,8 @@ export default async function ClientMessagesPage({
     );
   }
 
-  let groupThreadRows: MessageThreadRow[] = [];
-  if (tripIds.length > 0) {
-    const { data: groupThreads, error: groupThreadsError } = await supabase
-      .from("message_threads" as any)
-      .select("id, client_account_id, trip_id, subject, status, priority, thread_type, admin_unread_count, client_unread_count, last_message_at, created_at, advisor_invited_at")
-      .eq("thread_type", "trip_group")
-      .in("trip_id", tripIds)
-      .order("last_message_at", { ascending: false });
-
-    if (groupThreadsError) {
-      return (
-        <PageShell title="Messages" subtitle="We could not load your Travel Circle messages.">
-          <div className="card"><pre>{JSON.stringify(groupThreadsError, null, 2)}</pre></div>
-        </PageShell>
-      );
-    }
-    groupThreadRows = (groupThreads ?? []) as MessageThreadRow[];
-  }
-
   const threadMap = new Map<string, MessageThreadRow>();
-  for (const t of [...((privateThreads ?? []) as MessageThreadRow[]), ...groupThreadRows]) {
+  for (const t of (privateThreads ?? []) as MessageThreadRow[]) {
     threadMap.set(t.id, t);
   }
 
@@ -812,7 +815,6 @@ export default async function ClientMessagesPage({
 
   const defaultTripId = requestedTripId && tripRows.some((t) => t.trip_id === requestedTripId) ? requestedTripId : "";
   const defaultSubject = requestedSubject ? decodeURIComponent(requestedSubject) : "";
-  const defaultThreadType = scope === "group" ? "trip_group" : "private";
   const selectedThread = threadRows.find((t) => t.id === threadId) ?? threadRows[0] ?? null;
 
   let messageRows: MessageRow[] = [];
@@ -820,9 +822,13 @@ export default async function ClientMessagesPage({
   if (selectedThread) {
     const isGroup = selectedThread.thread_type === "trip_group";
 
-    if (isGroup && selectedThread.trip_id) {
-      await assertCanUseTripMessages(supabase, clientAccount.id, selectedThread.trip_id, true);
-    } else if (!isGroup && selectedThread.client_account_id !== clientAccount.id) {
+    if (isGroup) {
+      return (
+        <PageShell title="Messages" subtitle="Travel Circle group messaging is no longer available.">
+          <div className="card"><p>Please send a private advisor message instead.</p></div>
+        </PageShell>
+      );
+    } else if (selectedThread.client_account_id !== clientAccount.id) {
       return (
         <PageShell title="Messages" subtitle="We could not load this thread.">
           <div className="card"><p>Message thread not found.</p></div>
@@ -897,8 +903,7 @@ export default async function ClientMessagesPage({
   const tripMap = new Map(tripRows.map((t) => [t.trip_id, t]));
   const clientName = getClientDisplayName(clientAccount);
 
-  const privateThreadCount = threadRows.filter((t) => t.thread_type !== "trip_group").length;
-  const groupThreadCount = threadRows.filter((t) => t.thread_type === "trip_group").length;
+  const privateThreadCount = threadRows.length;
   const unreadReplyCount = threadRows.reduce((sum, t) => sum + Number(t.client_unread_count ?? 0), 0);
 
   const isGroupThread = selectedThread?.thread_type === "trip_group";
@@ -933,11 +938,10 @@ export default async function ClientMessagesPage({
         <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Cozy Concierge</p>
         <h2 style={{ margin: 0 }}>Message Center</h2>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Send a private message to your advisor or use Travel Circle messages for approved companions on a shared trip.
+          Send a private message directly to your advisor. Travel Circle companions can still share trip access, but client-to-client group messaging is no longer part of the message center.
         </p>
-        <div className="grid grid-3">
-          <MessageHelpCard title={`${privateThreadCount} Private`} description="Advisor-only conversations." />
-          <MessageHelpCard title={`${groupThreadCount} Travel Circle`} description="Shared trip conversations." tone={groupThreadCount > 0 ? "warning" : "neutral"} />
+        <div className="grid grid-2">
+          <MessageHelpCard title={`${privateThreadCount} Advisor Thread${privateThreadCount === 1 ? "" : "s"}`} description="Private conversations with Cozy Adventure Vacations." />
           <MessageHelpCard title={`${unreadReplyCount} Unread`} description="Replies waiting for you." tone={unreadReplyCount > 0 ? "warning" : "neutral"} />
         </div>
       </div>
@@ -947,16 +951,10 @@ export default async function ClientMessagesPage({
         <div className="card stack">
           <h2 style={{ margin: 0 }}>Start a New Message</h2>
           <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-            Private messages stay between you and your advisor. Travel Circle messages are visible to approved companions on the selected trip.
+            Messages stay between you and Cozy Adventure Vacations. Choose a related trip when it helps your advisor understand the context.
           </p>
           <form action={createClientMessageThread} className="stack">
-            <label>
-              <span className="label">Message Type</span>
-              <select className="select" name="thread_type" defaultValue={defaultThreadType}>
-                <option value="private">Private Advisor Message</option>
-                <option value="trip_group">Travel Circle Group Message</option>
-              </select>
-            </label>
+            <input type="hidden" name="thread_type" value="private" />
             <label>
               <span className="label">Related Trip</span>
               <select className="select" name="trip_id" defaultValue={defaultTripId}>
