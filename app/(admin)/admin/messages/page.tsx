@@ -485,7 +485,6 @@ export default async function AdminMessagesPage({
     (sum, thread) => sum + Number(thread.admin_unread_count ?? 0),
     0,
   );
-  const groupCount = threadRows.filter((thread) => thread.thread_type === "trip_group").length;
   const privateCount = threadRows.filter((thread) => thread.thread_type !== "trip_group").length;
 
   const selectedClient = selectedThread ? clientMap.get(selectedThread.client_account_id) : null;
@@ -494,7 +493,7 @@ export default async function AdminMessagesPage({
   return (
     <PageShell
       title="Concierge Messages"
-      subtitle="Read and reply to private client messages and Travel Circle group conversations from one inbox."
+      subtitle="Read and reply to private client messages from one inbox."
     >
       {/* ── Banner ── */}
       <div
@@ -505,7 +504,7 @@ export default async function AdminMessagesPage({
           Cozy Concierge
         </p>
         <h2 style={{ margin: 0 }}>Message Inbox</h2>
-        <div className="grid grid-4">
+        <div className="grid grid-3">
           <div className="card">
             <span className="label">Open Threads</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{openCount}</p>
@@ -518,16 +517,11 @@ export default async function AdminMessagesPage({
             <span className="label">Private Threads</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{privateCount}</p>
           </div>
-          <div className="card">
-            <span className="label">Travel Circle Threads</span>
-            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>{groupCount}</p>
-          </div>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <Link href="/admin/messages" className="btn btn-primary">All</Link>
           <Link href="/admin/messages?status=open" className="btn btn-primary">Open</Link>
           <Link href="/admin/messages?type=private" className="btn btn-primary">Private</Link>
-          <Link href="/admin/messages?type=trip_group" className="btn btn-primary">Travel Circle</Link>
           <Link href="/admin/messages?status=resolved" className="btn btn-primary">Resolved</Link>
           <Link href="/admin/dashboard" className="btn btn-primary">Admin Dashboard</Link>
         </div>
@@ -826,7 +820,7 @@ export default async function AdminMessagesPage({
             <select className="select" name="thread_type" defaultValue="all">
               <option value="all">All types</option>
               <option value="private">Private only</option>
-              <option value="trip_group">Travel Circle only</option>
+              <option value="trip_group">Legacy Travel Circle only</option>
             </select>
           </label>
           <label className="stack-sm" style={{ gridColumn: "span 2" }}>
