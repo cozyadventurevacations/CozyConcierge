@@ -7151,7 +7151,7 @@ export default async function AdminTripEditorPage({
                 defaultChecked={Boolean(cruise.component?.price_watch_enabled)}
                 style={{ width: 18, height: 18 }}
               />
-              <span style={{ fontWeight: 800 }}>Watch this cruise for public price drops of $100 or more</span>
+              <span style={{ fontWeight: 800 }}>Watch this cruise for public price drops of $100 or more, plus holiday and major sale-day review items</span>
             </label>
 
             <div className="grid grid-2">
@@ -7196,7 +7196,7 @@ export default async function AdminTripEditorPage({
               </p>
             ) : (
               <p style={{ margin: 0, color: "#64748b", lineHeight: 1.5 }}>
-                Save this cruise with a public pricing URL and cabin code, then the weekly check can compare it.
+                Save this cruise with a public pricing URL and cabin code, then the weekly check can compare it around holidays and major cruise sale days.
               </p>
             )}
           </div>

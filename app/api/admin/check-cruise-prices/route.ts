@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const MIN_SAVINGS_AMOUNT = 100;
+const SALE_WINDOW_DAYS = 5;
 const SUPPORTED_CRUISE_LINES = [
   "royal caribbean",
   "celebrity",
@@ -44,6 +45,12 @@ type WatchStatus =
   | "error"
   | "skipped";
 
+type PriceWatchSaleWindow = {
+  label: string;
+  date: string;
+  type: "holiday" | "sale";
+};
+
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -82,6 +89,88 @@ function supportedCruiseLine(value: string | null | undefined) {
   return SUPPORTED_CRUISE_LINES.some((line) => normalized.includes(line));
 }
 
+function toUtcDate(year: number, monthIndex: number, day: number) {
+  return new Date(Date.UTC(year, monthIndex, day));
+}
+
+function formatIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getNthWeekdayOfMonth(year: number, monthIndex: number, weekday: number, nth: number) {
+  const firstOfMonth = toUtcDate(year, monthIndex, 1);
+  const offset = (weekday - firstOfMonth.getUTCDay() + 7) % 7;
+  return toUtcDate(year, monthIndex, 1 + offset + (nth - 1) * 7);
+}
+
+function getLastWeekdayOfMonth(year: number, monthIndex: number, weekday: number) {
+  const lastOfMonth = toUtcDate(year, monthIndex + 1, 0);
+  const offset = (lastOfMonth.getUTCDay() - weekday + 7) % 7;
+  return toUtcDate(year, monthIndex, lastOfMonth.getUTCDate() - offset);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function daysBetween(left: Date, right: Date) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((Date.UTC(left.getUTCFullYear(), left.getUTCMonth(), left.getUTCDate()) - Date.UTC(right.getUTCFullYear(), right.getUTCMonth(), right.getUTCDate())) / msPerDay);
+}
+
+function getThanksgiving(year: number) {
+  return getNthWeekdayOfMonth(year, 10, 4, 4);
+}
+
+function getHolidayAndSaleDates(year: number): PriceWatchSaleWindow[] {
+  const thanksgiving = getThanksgiving(year);
+  const blackFriday = addDays(thanksgiving, 1);
+  const cyberMonday = addDays(thanksgiving, 4);
+  const travelTuesday = addDays(thanksgiving, 5);
+
+  return [
+    { label: "New Year travel sale window", date: formatIsoDate(toUtcDate(year, 0, 1)), type: "sale" },
+    { label: "MLK Day holiday sale window", date: formatIsoDate(getNthWeekdayOfMonth(year, 0, 1, 3)), type: "holiday" },
+    { label: "Presidents Day holiday sale window", date: formatIsoDate(getNthWeekdayOfMonth(year, 1, 1, 3)), type: "holiday" },
+    { label: "Memorial Day holiday sale window", date: formatIsoDate(getLastWeekdayOfMonth(year, 4, 1)), type: "holiday" },
+    { label: "July 4 holiday sale window", date: formatIsoDate(toUtcDate(year, 6, 4)), type: "holiday" },
+    { label: "Labor Day holiday sale window", date: formatIsoDate(getNthWeekdayOfMonth(year, 8, 1, 1)), type: "holiday" },
+    { label: "Black Friday cruise sale window", date: formatIsoDate(blackFriday), type: "sale" },
+    { label: "Cyber Monday cruise sale window", date: formatIsoDate(cyberMonday), type: "sale" },
+    { label: "Travel Tuesday cruise sale window", date: formatIsoDate(travelTuesday), type: "sale" },
+    { label: "Christmas holiday sale window", date: formatIsoDate(toUtcDate(year, 11, 25)), type: "holiday" },
+  ];
+}
+
+function getActivePriceWatchSaleWindows(now = new Date()) {
+  const today = toUtcDate(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const years = [today.getUTCFullYear() - 1, today.getUTCFullYear(), today.getUTCFullYear() + 1];
+  const windows = years
+    .flatMap(getHolidayAndSaleDates)
+    .filter((window) => Math.abs(daysBetween(today, new Date(`${window.date}T00:00:00.000Z`))) <= SALE_WINDOW_DAYS);
+
+  const isWaveSeason = today >= toUtcDate(today.getUTCFullYear(), 0, 1) && today <= toUtcDate(today.getUTCFullYear(), 2, 31);
+  if (isWaveSeason) {
+    windows.push({
+      label: "Wave season cruise sale window",
+      date: `${today.getUTCFullYear()}-01-01 to ${today.getUTCFullYear()}-03-31`,
+      type: "sale",
+    });
+  }
+
+  return windows;
+}
+
+function formatSaleWindowList(windows: PriceWatchSaleWindow[]) {
+  return windows.map((window) => window.label).join(", ");
+}
+
+function hasSaleLanguage(text: string) {
+  return /\b(sale|deal|offer|promo|promotion|bonus|onboard credit|free gratuities|kids sail free|reduced deposit|black friday|cyber monday|travel tuesday|wave season|holiday)\b/i.test(text);
+}
+
 function extractPromoCodes(text: string) {
   const promos = new Set<string>();
   const patterns = [
@@ -116,10 +205,12 @@ function parsePublicCruisePage({
   html,
   cabinMatchCode,
   bookedTotal,
+  saleWindows,
 }: {
   html: string;
   cabinMatchCode: string;
   bookedTotal: number;
+  saleWindows: PriceWatchSaleWindow[];
 }): {
   status: WatchStatus;
   foundTotal: number | null;
@@ -129,6 +220,13 @@ function parsePublicCruisePage({
 } {
   const code = cabinMatchCode.trim();
   const promoCodes = extractPromoCodes(html);
+  const saleWindowLabel = formatSaleWindowList(saleWindows);
+  const hasActiveSaleWindow = saleWindows.length > 0;
+  const hasVisibleSaleLanguage = hasSaleLanguage(html);
+  const saleContextMessage =
+    hasActiveSaleWindow
+      ? ` This check ran during ${saleWindowLabel}; verify any holiday or major sale perks against the client booking.`
+      : "";
 
   if (!code) {
     return {
@@ -136,7 +234,7 @@ function parsePublicCruisePage({
       foundTotal: null,
       savingsAmount: null,
       promoCodes,
-      message: "No cabin category code was saved, so the app could not match exact room class.",
+      message: `No cabin category code was saved, so the app could not match exact room class.${saleContextMessage}`,
     };
   }
 
@@ -149,7 +247,7 @@ function parsePublicCruisePage({
       foundTotal: null,
       savingsAmount: null,
       promoCodes,
-      message: `Could not confirm exact cabin category ${code} on the public page.`,
+      message: `Could not confirm exact cabin category ${code} on the public page.${saleContextMessage}`,
     };
   }
 
@@ -166,7 +264,7 @@ function parsePublicCruisePage({
       foundTotal: null,
       savingsAmount: null,
       promoCodes,
-      message: `Found cabin category ${code}, but no public price was visible near it.`,
+      message: `Found cabin category ${code}, but no public price was visible near it.${saleContextMessage}`,
     };
   }
 
@@ -176,7 +274,7 @@ function parsePublicCruisePage({
       foundTotal: Math.min(...nearbyPrices),
       savingsAmount: null,
       promoCodes,
-      message: `Found cabin category ${code} and a visible price, but could not confirm it was the total booking price.`,
+      message: `Found cabin category ${code} and a visible price, but could not confirm it was the total booking price.${saleContextMessage}`,
     };
   }
 
@@ -189,7 +287,17 @@ function parsePublicCruisePage({
       foundTotal,
       savingsAmount,
       promoCodes,
-      message: `Found a public price at least ${MIN_SAVINGS_AMOUNT.toLocaleString("en-US", { style: "currency", currency: "USD" })} lower for cabin category ${code}.`,
+      message: `Found a public price at least ${MIN_SAVINGS_AMOUNT.toLocaleString("en-US", { style: "currency", currency: "USD" })} lower for cabin category ${code}.${saleContextMessage}`,
+    };
+  }
+
+  if (hasActiveSaleWindow && hasVisibleSaleLanguage) {
+    return {
+      status: "manual_review",
+      foundTotal,
+      savingsAmount,
+      promoCodes,
+      message: `Checked cabin category ${code} during ${saleWindowLabel}. The visible total was not at least ${MIN_SAVINGS_AMOUNT.toLocaleString("en-US", { style: "currency", currency: "USD" })} lower, but the public page appears to mention a holiday or major sale offer. Review perks, onboard credit, deposit terms, or promo codes before telling the client their booked price is still best.`,
     };
   }
 
@@ -198,12 +306,13 @@ function parsePublicCruisePage({
     foundTotal,
     savingsAmount,
     promoCodes,
-    message: `Checked cabin category ${code}; no qualifying lower public total was found.`,
+    message: `Checked cabin category ${code}; no qualifying lower public total was found.${saleContextMessage}`,
   };
 }
 
 async function runCruisePriceWatch() {
   const supabase = getSupabaseAdminClient();
+  const saleWindows = getActivePriceWatchSaleWindows();
 
   const { data: componentsData, error: componentsError } = await supabase
     .from("trip_components")
@@ -276,7 +385,7 @@ async function runCruisePriceWatch() {
       }
 
       const html = await response.text();
-      const parsed = parsePublicCruisePage({ html, cabinMatchCode, bookedTotal });
+      const parsed = parsePublicCruisePage({ html, cabinMatchCode, bookedTotal, saleWindows });
 
       await supabase.from("cruise_price_watch_results").insert({
         trip_id: component.trip_id,

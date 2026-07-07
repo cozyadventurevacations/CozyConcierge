@@ -287,7 +287,8 @@ export default async function AdminTripsPage({
       deleted_at, deletion_requested_at, deletion_requested_by, retain_data,
       client_accounts!trips_client_account_id_fkey (first_name, last_name)
     `)
-    .order("departure_date", { ascending: true });
+    .order("departure_date", { ascending: true, nullsFirst: false })
+    .order("trip_name", { ascending: true });
 
   const { data: trips, error } = showDeleted
     ? await query.not("deleted_at", "is", null)

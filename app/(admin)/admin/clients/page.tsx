@@ -110,7 +110,10 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
   const { data: clients, error } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, preferred_name, email, phone_primary, city, state, travel_style, preferred_airport, passport_expiration_date, created_at")
-    .order("last_name", { ascending: true });
+    .order("last_name", { ascending: true, nullsFirst: false })
+    .order("first_name", { ascending: true, nullsFirst: false })
+    .order("preferred_name", { ascending: true, nullsFirst: false })
+    .order("email", { ascending: true, nullsFirst: false });
 
   const { data: passportDocs } = await supabase
     .from("client_documents")
