@@ -1106,26 +1106,26 @@ function StickyTripActionBar({
         <a href="#trip-timeline" style={sectionLinkStyle}>
           Checklist
         </a>
-        <a href="#trip-messages" style={sectionLinkStyle}>
-          Messages
-        </a>
-        <a href="#travel-companions" style={sectionLinkStyle}>
-          Companions
-        </a>
-        <a href="#document-readiness" style={sectionLinkStyle}>
-          Documents
-        </a>
-        <a href="#trip-snapshot" style={sectionLinkStyle}>
-          Snapshot
-        </a>
         <a href="#trip-overview" style={sectionLinkStyle}>
           Overview
+        </a>
+        <a href="#hotel-component" style={sectionLinkStyle}>
+          Components
         </a>
         <a href="#trip-payments" style={sectionLinkStyle}>
           Payments
         </a>
         <a href="#commissions" style={sectionLinkStyle}>
           Commissions
+        </a>
+        <a href="#travel-companions" style={sectionLinkStyle}>
+          Booking People
+        </a>
+        <a href="#document-readiness" style={sectionLinkStyle}>
+          Documents
+        </a>
+        <a href="#trip-messages" style={sectionLinkStyle}>
+          Messages
         </a>
         <a href="#trip-notes" style={sectionLinkStyle}>
           Notes
@@ -1237,7 +1237,7 @@ function getTripMemberStatusTone(status: string | null | undefined): "good" | "w
 
 function getTripMemberHelperText(member: TripMemberRow) {
   if (member.role === "owner") {
-    return "Primary trip owner. This access is tied to the lead client for the trip.";
+    return "Main client for this booking.";
   }
 
   if (member.invite_status === "invited") {
@@ -1245,14 +1245,14 @@ function getTripMemberHelperText(member: TripMemberRow) {
   }
 
   if (member.invite_status === "active") {
-    return "Active access. This companion can open shared trip details, shared documents, and Travel Circle messages based on their role.";
+    return "Added to this booking.";
   }
 
   if (member.invite_status === "declined") {
     return "This access was declined. Add them again if they need access later.";
   }
 
-  return "Travel Circle access is managed from this section.";
+  return "Booking access is managed from this section.";
 }
 
 function TripCompanionCard({ member }: { member: TripMemberRow }) {
@@ -1299,18 +1299,6 @@ function TripCompanionCard({ member }: { member: TripMemberRow }) {
       <p style={{ margin: 0, color: isPendingInvite ? "#9a3412" : "#667085", lineHeight: 1.55 }}>
         {getTripMemberHelperText(member)}
       </p>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {member.can_join_group_messages ? (
-          <CommandStatusBadge tone="neutral">Group messages</CommandStatusBadge>
-        ) : null}
-        {member.can_view_shared_documents ? (
-          <CommandStatusBadge tone="neutral">Shared docs</CommandStatusBadge>
-        ) : null}
-        {member.can_upload_own_documents ? (
-          <CommandStatusBadge tone="neutral">Can upload own docs</CommandStatusBadge>
-        ) : null}
-      </div>
 
       {!isOwner ? (
         <button
@@ -2892,7 +2880,7 @@ async function updateTrip(formData: FormData) {
 
   const { data: existingTrip, error: existingTripError } = await supabase
     .from("trips")
-    .select("id")
+    .select("id, client_account_id")
     .eq("id", tripId)
     .single();
 
@@ -2917,8 +2905,25 @@ async function updateTrip(formData: FormData) {
     allowedTripStatuses,
     "draft",
   );
+  const mainClientAccountId = String(formData.get("client_account_id") ?? "").trim();
+
+  if (!mainClientAccountId) {
+    throw new Error("Choose a main client for this booking.");
+  }
+
+  const { data: mainClient, error: mainClientError } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .eq("id", mainClientAccountId)
+    .maybeSingle();
+
+  if (mainClientError) throw new Error(mainClientError.message);
+  if (!mainClient?.id || !mainClient.email) {
+    throw new Error("The selected main client could not be found.");
+  }
 
   const tripUpdates = {
+    client_account_id: mainClientAccountId,
     trip_name: String(formData.get("trip_name") ?? "").trim(),
     departure_date: String(formData.get("departure_date") ?? "").trim(),
     return_date: String(formData.get("return_date") ?? "").trim(),
@@ -2946,6 +2951,59 @@ async function updateTrip(formData: FormData) {
     .eq("id", tripId);
 
   if (tripError) throw new Error(tripError.message);
+
+  if (mainClientAccountId !== existingTrip.client_account_id) {
+    await supabase
+      .from("trip_members" as any)
+      .update({
+        invite_status: "removed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("trip_id", tripId)
+      .eq("role", "owner")
+      .neq("client_account_id", mainClientAccountId);
+  }
+
+  const ownerName = `${mainClient.first_name ?? ""} ${mainClient.last_name ?? ""}`.trim() || null;
+  const ownerPayload = {
+    trip_id: tripId,
+    client_account_id: mainClient.id,
+    invite_email: mainClient.email,
+    invite_name: ownerName,
+    role: "owner",
+    invite_status: "active",
+    invited_by_type: "admin",
+    can_view_trip: true,
+    can_view_shared_documents: true,
+    can_join_group_messages: true,
+    can_upload_own_documents: true,
+    can_manage_companions: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: existingOwnerMember, error: existingOwnerMemberError } = await supabase
+    .from("trip_members" as any)
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("client_account_id", mainClient.id)
+    .maybeSingle();
+
+  if (existingOwnerMemberError) throw new Error(existingOwnerMemberError.message);
+
+  if (existingOwnerMember?.id) {
+    const { error: ownerUpdateError } = await supabase
+      .from("trip_members" as any)
+      .update(ownerPayload)
+      .eq("id", existingOwnerMember.id);
+
+    if (ownerUpdateError) throw new Error(ownerUpdateError.message);
+  } else {
+    const { error: ownerInsertError } = await supabase
+      .from("trip_members" as any)
+      .insert(ownerPayload);
+
+    if (ownerInsertError) throw new Error(ownerInsertError.message);
+  }
 
   const coverImage = formData.get("cover_image") as File | null;
   if (coverImage && coverImage.size > 0) {
@@ -4434,8 +4492,8 @@ export default async function AdminTripEditorPage({
     .order("last_name", { ascending: true })
     .order("first_name", { ascending: true });
 
-  const registeredClientOptions = ((clientOptions ?? []) as ClientOption[])
-    .filter((client) => client.id !== trip.client_account_id);
+  const clientSelectOptions = (clientOptions ?? []) as ClientOption[];
+  const registeredClientOptions = clientSelectOptions.filter((client) => client.id !== trip.client_account_id);
 
   const { data: proposal } = await supabase
     .from("trip_proposals")
@@ -4609,25 +4667,18 @@ export default async function AdminTripEditorPage({
   const privateTripMessageThreads = tripMessageThreadRows.filter(
     (thread) => thread.thread_type !== "trip_group",
   );
-  const travelCircleMessageThreads = tripMessageThreadRows.filter(
-    (thread) => thread.thread_type === "trip_group",
-  );
   const tripMessageUnreadTotal = tripMessageThreadRows.reduce(
     (total, thread) => total + Number(thread.admin_unread_count ?? 0),
     0,
   );
   const mostRecentTripMessageThread = tripMessageThreadRows[0] ?? null;
   const mostRecentPrivateTripMessageThread = privateTripMessageThreads[0] ?? null;
-  const mostRecentTravelCircleMessageThread = travelCircleMessageThreads[0] ?? null;
   const tripMessagesHref = mostRecentTripMessageThread
     ? `/admin/messages?threadId=${mostRecentTripMessageThread.id}`
     : "/admin/messages";
   const privateTripMessagesHref = mostRecentPrivateTripMessageThread
     ? `/admin/messages?threadId=${mostRecentPrivateTripMessageThread.id}&type=private`
     : "/admin/messages?type=private";
-  const travelCircleMessagesHref = mostRecentTravelCircleMessageThread
-    ? `/admin/messages?threadId=${mostRecentTravelCircleMessageThread.id}&type=trip_group`
-    : "/admin/messages?type=trip_group";
 
   const hasPassportDocument = clientDocumentRows.some(
     (document) => document.document_type === "passport",
@@ -5354,561 +5405,6 @@ export default async function AdminTripEditorPage({
           )}
         </CollapsibleSection>
 
-        <div
-          className="admin-trip-relationship-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            gap: 16,
-            alignItems: "start",
-          }}
-        >
-          <div className="stack">
-        <span id="trip-messages" />
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #e6f0f2",
-            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--accent-dark)",
-                  fontWeight: 800,
-                }}
-              >
-                Trip Messages
-              </p>
-              <h2 style={{ margin: "6px 0 0" }}>Message activity for this trip</h2>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                See private advisor threads and Travel Circle group conversations tied to this trip.
-              </p>
-            </div>
-
-            <Link href={tripMessagesHref} className="btn btn-primary">
-              Open Trip Messages
-            </Link>
-          </div>
-
-          {tripMessageThreadsError ? (
-            <div className="card" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
-              <p style={{ margin: 0, fontWeight: 800, color: "#c2410c" }}>
-                Message summary needs review.
-              </p>
-              <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(tripMessageThreadsError, null, 2)}</pre>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
-                <TripMessageSummaryCard
-                  title="Private Advisor Threads"
-                  value={privateTripMessageThreads.length}
-                  helper="One-on-one client/advisor conversations tied to this trip."
-                  href={privateTripMessagesHref}
-                  cta="Open Private Messages"
-                  tone={privateTripMessageThreads.length > 0 ? "neutral" : "warning"}
-                />
-
-                <TripMessageSummaryCard
-                  title="Travel Circle Threads"
-                  value={travelCircleMessageThreads.length}
-                  helper="Shared group conversations visible to approved companions."
-                  href={travelCircleMessagesHref}
-                  cta="Open Travel Circle"
-                  tone={travelCircleMessageThreads.length > 0 ? "good" : "warning"}
-                />
-
-                <TripMessageSummaryCard
-                  title="Unread for Admin"
-                  value={tripMessageUnreadTotal}
-                  helper="Client or companion messages waiting for your review."
-                  href={tripMessagesHref}
-                  cta="Review Inbox"
-                  tone={tripMessageUnreadTotal > 0 ? "warning" : "good"}
-                />
-              </div>
-
-              {mostRecentTripMessageThread ? (
-                <div
-                  style={{
-                    padding: "12px",
-                    borderRadius: 12,
-                    background: "#f7fbfc",
-                    border: "1px solid #e6f0f2",
-                    color: "#667085",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <strong style={{ color: "var(--accent-dark)" }}>Most recent:</strong>{" "}
-                  {mostRecentTripMessageThread.subject} • {mostRecentTripMessageThread.thread_type === "trip_group" ? "Travel Circle" : "Private"} • {mostRecentTripMessageThread.status}
-                </div>
-              ) : (
-                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                  No messages are tied to this trip yet. Once clients use the private or Travel Circle buttons, activity will appear here.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-          </div>
-
-          <div className="stack">
-        <span id="travel-companions" />
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #e6f0f2",
-            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--accent-dark)",
-                  fontWeight: 800,
-                }}
-              >
-                Travel Companions
-              </p>
-              <h2 style={{ margin: "6px 0 0" }}>Your Travel Circle</h2>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                Manage who can access shared details for this trip. Viewer access is read-only;
-                contributor access is ready for future shared uploads and group messaging.
-              </p>
-            </div>
-
-            <CommandStatusBadge tone={tripMembersError ? "warning" : activeTripMemberRows.length > 0 ? "good" : "warning"}>
-              {tripMembersError
-                ? "Review"
-                : `${activeTripMemberRows.length} member${activeTripMemberRows.length === 1 ? "" : "s"}`}
-            </CommandStatusBadge>
-          </div>
-
-          {tripMembersError ? (
-            <div className="card">
-              <p>
-                <strong>Error loading Travel Companions:</strong>
-              </p>
-              <pre>{JSON.stringify(tripMembersError, null, 2)}</pre>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
-                <CommandStatCard
-                  label="Owners"
-                  value={ownerTripMembers.length}
-                  helper="Lead client access"
-                />
-                <CommandStatCard
-                  label="Companions"
-                  value={activeCompanionRows.length}
-                  helper="Viewer or contributor access"
-                />
-                <CommandStatCard
-                  label="Pending Invites"
-                  value={invitedTripMembers.length}
-                  helper="Invited by email"
-                />
-              </div>
-
-              <div className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
-                <h3 style={{ margin: 0 }}>Add a Travel Companion</h3>
-                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                  Add a registered Cozy Concierge client to this trip&apos;s Travel Circle. For privacy, outside email invites are no longer created from this form.
-                </p>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-                  <label>
-                    <span className="label">Registered Client</span>
-                    <select
-                      className="select"
-                      form="add-trip-companion-form"
-                      name="companion_client_account_id"
-                      defaultValue=""
-                    >
-                      <option value="">Choose a client...</option>
-                      {registeredClientOptions.map((client) => {
-                        const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
-                        return (
-                          <option key={client.id} value={client.id}>
-                            {name || client.email || "Unnamed Client"}{client.email ? ` - ${client.email}` : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-
-                  <label>
-                    <span className="label">Access Level</span>
-                    <select
-                      className="select"
-                      form="add-trip-companion-form"
-                      name="companion_role"
-                      defaultValue="viewer"
-                    >
-                      <option value="viewer">Viewer — read only</option>
-                      <option value="contributor">Contributor — shared participation</option>
-                    </select>
-                  </label>
-                </div>
-
-                <button
-                  type="submit"
-                  form="add-trip-companion-form"
-                  className="btn btn-primary"
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  Add Travel Companion
-                </button>
-              </div>
-
-              {activeTripMemberRows.length === 0 ? (
-                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-                  No Travel Companions are linked yet. The SQL setup should automatically create an owner row for the primary client.
-                </p>
-              ) : (
-                <div className="stack">
-                  {invitedTripMembers.length > 0 ? (
-                    <div
-                      style={{
-                        padding: "12px",
-                        borderRadius: 12,
-                        background: "#fff7ed",
-                        border: "1px solid #fed7aa",
-                        color: "#9a3412",
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      <strong>Legacy pending access:</strong> Ask companions to create or log into Cozy Concierge with the invited email address. Their shared trip access will activate automatically.
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-2">
-                    {activeTripMemberRows.map((member) => (
-                      <TripCompanionCard key={member.id} member={member} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  background: "#fff7ed",
-                  border: "1px solid #fed7aa",
-                  color: "#9a3412",
-                  lineHeight: 1.6,
-                }}
-              >
-                <strong>Privacy note:</strong> Travel Companions are for shared trip visibility, shared trip documents,
-                and future group messaging. Personal client documents like passports, traveler numbers, and loyalty data
-                should remain private unless intentionally shared.
-              </div>
-            </>
-          )}
-        </div>
-          </div>
-        </div>
-
-        <style>{"@media (max-width: 980px) { .admin-trip-relationship-grid { grid-template-columns: 1fr !important; } }"}</style>
-        <span id="document-readiness" />
-        <div
-          className="card stack"
-          style={{
-            border: "1px solid #e6f0f2",
-            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--accent-dark)",
-                  fontWeight: 800,
-                }}
-              >
-                Document Readiness
-              </p>
-              <h2 style={{ margin: "6px 0 0" }}>Trip document checklist</h2>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                A quick check of client documents, trip attachments, passport files, insurance docs, and document-related milestones.
-              </p>
-            </div>
-
-            <CommandStatusBadge
-              tone={
-                (attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0) &&
-                (clientDocumentsCollectedMilestone?.is_completed || clientDocumentRows.length > 0 || tripDocumentRows.length > 0)
-                  ? "good"
-                  : "warning"
-              }
-            >
-              {attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0 ? "Docs attached" : "Needs review"}
-            </CommandStatusBadge>
-          </div>
-
-          <div className="grid grid-3">
-            <CommandStatCard
-              label="Client Documents"
-              value={clientDocumentsError ? "Review" : clientDocumentRows.length}
-              helper={clientDocumentsError ? "Could not check client documents" : "Files in client document library"}
-            />
-
-            <CommandStatCard
-              label="Attached to Trip"
-              value={attachedTripDocumentsError ? "Review" : attachedTripDocumentRows.length}
-              helper={attachedTripDocumentsError ? "Could not check trip attachments" : "Client passports/docs linked to this trip"}
-            />
-
-            <CommandStatCard
-              label="Trip Documents"
-              value={tripDocumentsError ? "Review" : tripDocumentRows.length}
-              helper={tripDocumentsError ? "Could not check trip documents" : "Advisor and generated files on this trip"}
-            />
-
-            <CommandStatCard
-              label="Passport File"
-              value={hasPassportDocument ? "Yes" : "No"}
-              helper={hasPassportDocument ? "Passport document found" : "No passport document found"}
-            />
-          </div>
-
-          <div className="grid grid-2">
-            {documentReadinessItems.map((item) => (
-              <DocumentReadinessCard
-                key={item.title}
-                title={item.title}
-                status={item.status}
-                helper={item.helper}
-                tone={item.tone}
-                href={item.href}
-                cta={item.cta}
-              />
-            ))}
-          </div>
-        </div>
-
-        <span id="trip-snapshot" />
-        <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--accent-dark)",
-                  fontWeight: 800,
-                }}
-              >
-                Trip Snapshot
-              </p>
-              <h2 style={{ margin: "6px 0 0" }}>Readable booking summary</h2>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                A quick, read-only view of what is currently entered before you open the detailed edit sections.
-              </p>
-            </div>
-
-            <CommandStatusBadge tone={activeTripComponents.length > 0 ? "neutral" : "warning"}>
-              {activeTripComponents.length} active component{activeTripComponents.length === 1 ? "" : "s"}
-            </CommandStatusBadge>
-          </div>
-
-          <div className="grid grid-2">
-            <SnapshotCard
-              title="Hotel"
-              href="#hotel-component"
-              status={
-                <CommandStatusBadge tone={hotel.component ? "neutral" : "warning"}>
-                  {hotel.component ? hotel.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Hotel" value={hotel.details?.hotel_name ?? hotel.component?.display_name ?? "Not provided"} />
-              <SnapshotRow label="Check-in" value={formatDate(hotel.details?.check_in_date, "Not provided")} />
-              <SnapshotRow label="Check-out" value={formatDate(hotel.details?.check_out_date, "Not provided")} />
-              <SnapshotRow label="Room" value={hotel.details?.room_category ?? "Not provided"} />
-              <SnapshotRow label="Confirm #" value={hotel.component?.confirmation_number ?? "Missing"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Air"
-              href="#air-component"
-              status={
-                <CommandStatusBadge tone={air.component ? "neutral" : "warning"}>
-                  {air.component ? air.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Supplier" value={air.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow
-                label="Outbound"
-                value={
-                  outboundSegment
-                    ? `${outboundSegment.departure_airport_code ?? "???"} → ${outboundSegment.destination_airport_code ?? "???"}`
-                    : "Not provided"
-                }
-              />
-              <SnapshotRow
-                label="Return"
-                value={
-                  returnSegment
-                    ? `${returnSegment.departure_airport_code ?? "???"} → ${returnSegment.destination_airport_code ?? "???"}`
-                    : "Not provided"
-                }
-              />
-              <SnapshotRow label="Locator" value={air.details?.airline_locator ?? "Not provided"} />
-              <SnapshotRow label="Confirm #" value={air.component?.confirmation_number ?? "Missing"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Cruise"
-              href="#cruise-component"
-              status={
-                <CommandStatusBadge tone={cruise.component ? "neutral" : "warning"}>
-                  {cruise.component ? cruise.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Line" value={cruise.details?.cruise_line ?? cruise.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow label="Ship" value={cruise.details?.ship_name ?? "Not provided"} />
-              <SnapshotRow label="Sailing" value={formatDate(cruise.details?.sailing_date, "Not provided")} />
-              <SnapshotRow label="Return" value={formatDate(cruise.details?.return_date, "Not provided")} />
-              <SnapshotRow label="Confirm #" value={cruise.component?.confirmation_number ?? "Missing"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Transfer"
-              href="#transfer-component"
-              status={
-                <CommandStatusBadge tone={transfer.component ? "neutral" : "warning"}>
-                  {transfer.component ? transfer.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Supplier" value={transfer.details?.supplier_name ?? transfer.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow label="Pickup" value={transfer.details?.pickup_location ?? "Not provided"} />
-              <SnapshotRow label="Drop-off" value={transfer.details?.dropoff_location ?? "Not provided"} />
-              <SnapshotRow label="Vehicle" value={transfer.details?.vehicle_type ?? "Not provided"} />
-              <SnapshotRow label="Confirm #" value={transfer.component?.confirmation_number ?? "Missing"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Activity"
-              href="#activity-component"
-              status={
-                <CommandStatusBadge tone={activity.component ? "neutral" : "warning"}>
-                  {activity.component ? activity.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Activity" value={activity.details?.activity_name ?? activity.component?.display_name ?? "Not provided"} />
-              <SnapshotRow label="Supplier" value={activity.details?.supplier_name ?? activity.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow label="Date/Time" value={activity.details?.activity_datetime ? formatDate(activity.details.activity_datetime) : "Not provided"} />
-              <SnapshotRow label="Location" value={activity.details?.location ?? "Not provided"} />
-              <SnapshotRow label="Confirm #" value={activity.component?.confirmation_number ?? "Missing"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Insurance"
-              href="#insurance-component"
-              status={
-                <CommandStatusBadge tone={insurance.component ? "neutral" : "warning"}>
-                  {insurance.component ? insurance.component.booking_status ?? "added" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Provider" value={insurance.details?.provider_name ?? insurance.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow label="Plan" value={insurance.details?.plan_name ?? "Not provided"} />
-              <SnapshotRow label="Policy #" value={insurance.details?.policy_number ?? insurance.component?.confirmation_number ?? "Missing"} />
-              <SnapshotRow label="Premium" value={insurance.details?.premium_amount ? formatMoney(Number(insurance.details.premium_amount)) : "Not provided"} />
-              <SnapshotRow label="Coverage" value={insurance.details?.coverage_start_date || insurance.details?.coverage_end_date ? `${formatDate(insurance.details?.coverage_start_date, "?")} to ${formatDate(insurance.details?.coverage_end_date, "?")}` : "Not provided"} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Commissions"
-              href="#commissions"
-              status={
-                <CommandStatusBadge tone={commissionOutstandingTotal > 0 ? "warning" : "good"}>
-                  {commissionOutstandingTotal > 0 ? "outstanding" : "current"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Records" value={commissionRows.length} />
-              <SnapshotRow label="Full" value={formatMoney(commissionFullTotal)} />
-              <SnapshotRow label="Expected" value={formatMoney(commissionExpectedTotal)} />
-              <SnapshotRow label="Received" value={formatMoney(commissionReceivedTotal)} />
-              <SnapshotRow label="Outstanding" value={formatMoney(commissionOutstandingTotal)} />
-            </SnapshotCard>
-
-            <SnapshotCard
-              title="Notes"
-              href="#trip-notes"
-              status={
-                <CommandStatusBadge tone={internalNote || clientNote || clientReminder ? "neutral" : "warning"}>
-                  {internalNote || clientNote || clientReminder ? "started" : "not added"}
-                </CommandStatusBadge>
-              }
-            >
-              <SnapshotRow label="Internal" value={internalNote?.title ?? "Not provided"} />
-              <SnapshotRow label="Client Note" value={clientNote?.title ?? "Not provided"} />
-              <SnapshotRow label="Reminder" value={clientReminder?.title ?? "Not provided"} />
-              <SnapshotRow label="Client" value={getClientDisplayName(clientInfo)} />
-              <SnapshotRow label="Email" value={clientInfo?.email ?? "Not provided"} />
-            </SnapshotCard>
-          </div>
-        </div>
-
         <span id="trip-overview" />
         <CollapsibleSection title="Trip Overview">
           <div className="grid grid-2">
@@ -5919,6 +5415,25 @@ export default async function AdminTripEditorPage({
                 name="trip_name"
                 defaultValue={trip.trip_name ?? ""}
               />
+            </label>
+
+            <label>
+              <span className="label">Main Client</span>
+              <select
+                className="select"
+                name="client_account_id"
+                defaultValue={trip.client_account_id ?? ""}
+              >
+                <option value="">Choose the main client...</option>
+                {clientSelectOptions.map((client) => {
+                  const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
+                  return (
+                    <option key={client.id} value={client.id}>
+                      {name || client.email || "Unnamed Client"}{client.email ? ` - ${client.email}` : ""}
+                    </option>
+                  );
+                })}
+              </select>
             </label>
 
             <label>
@@ -6094,356 +5609,6 @@ export default async function AdminTripEditorPage({
           </div>
 
           <SectionSaveButton label="Trip Overview" />
-        </CollapsibleSection>
-
-        <span id="trip-payments" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Payments & Adjustments" badge={`${tripPaymentLedgerRows.length} entries`} tone={tripPaymentLedgerRows.length > 0 ? "good" : "neutral"} />}>
-          <div className="grid grid-3">
-            <div className="card">
-              <span className="label">Total Paid</span>
-              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{formatMoney(totalPaid)}</p>
-            </div>
-            <div className="card">
-              <span className="label">Balance Due</span>
-              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: balanceDue > 0 ? "#c2410c" : "#027a48" }}>{formatMoney(balanceDue)}</p>
-            </div>
-            <div className="card">
-              <span className="label">Final Payment Due</span>
-              <p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 900 }}>{formatDate(trip.final_payment_due_date, "Not set")}</p>
-            </div>
-          </div>
-
-          <div className="card stack" style={{ background: "#fbfdfe" }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Record Payment, Refund, Credit, Fee, or Adjustment</h3>
-              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                These entries update the trip&apos;s Total Paid and Balance Due automatically. Use the Trip Overview fields only for rare manual corrections.
-              </p>
-            </div>
-
-            <div className="grid grid-3">
-              <label>
-                <span className="label">Entry Type</span>
-                <select className="select" name="entry_type" form="add-trip-payment-ledger-entry-form" defaultValue="payment">
-                  <option value="payment">Payment received</option>
-                  <option value="refund">Refund issued</option>
-                  <option value="credit">Credit applied</option>
-                  <option value="fee">Fee added</option>
-                  <option value="adjustment">Manual balance adjustment</option>
-                </select>
-              </label>
-              <label>
-                <span className="label">Amount</span>
-                <input className="input" type="number" step="0.01" name="amount" form="add-trip-payment-ledger-entry-form" placeholder="0.00" />
-              </label>
-              <label>
-                <span className="label">Entry Date</span>
-                <input className="input" type="date" name="entry_date" form="add-trip-payment-ledger-entry-form" defaultValue={todayDateString()} />
-              </label>
-              <label>
-                <span className="label">Payment Method</span>
-                <input className="input" name="payment_method" form="add-trip-payment-ledger-entry-form" placeholder="Credit card, check, ACH, supplier portal..." />
-              </label>
-              <label>
-                <span className="label">Reference #</span>
-                <input className="input" name="reference_number" form="add-trip-payment-ledger-entry-form" placeholder="Receipt, authorization, or invoice #" />
-              </label>
-              <label>
-                <span className="label">Notes</span>
-                <input className="input" name="notes" form="add-trip-payment-ledger-entry-form" placeholder="Short internal note" />
-              </label>
-            </div>
-
-            <button type="submit" form="add-trip-payment-ledger-entry-form" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
-              Add Payment Entry
-            </button>
-          </div>
-
-          {tripPaymentLedgerError ? (
-            <div className="card">
-              <p><strong>Error loading payment ledger:</strong></p>
-              <pre>{JSON.stringify(tripPaymentLedgerError, null, 2)}</pre>
-            </div>
-          ) : tripPaymentLedgerRows.length === 0 ? (
-            <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#64748b" }}>
-              No payment ledger entries have been recorded yet.
-            </div>
-          ) : (
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <table className="table" style={{ minWidth: 960 }}>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Method</th>
-                    <th>Reference</th>
-                    <th>Notes</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tripPaymentLedgerRows.map((entry) => {
-                    const entryTypeLabel = entry.entry_type
-                      .split("_")
-                      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-                      .join(" ");
-                    const isPositiveBalanceType = entry.entry_type === "refund" || entry.entry_type === "fee";
-                    const isReductionType = entry.entry_type === "payment" || entry.entry_type === "credit";
-                    return (
-                      <tr key={entry.id}>
-                        <td>{formatDate(entry.entry_date)}</td>
-                        <td>
-                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: isReductionType ? "#ecfdf3" : isPositiveBalanceType ? "#fff7ed" : "#f0f7f8", color: isReductionType ? "#027a48" : isPositiveBalanceType ? "#c2410c" : "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
-                            {entryTypeLabel}
-                          </span>
-                        </td>
-                        <td style={{ fontWeight: 900 }}>{formatMoney(entry.amount)}</td>
-                        <td>{entry.payment_method ?? "Not provided"}</td>
-                        <td>{entry.reference_number ?? "Not provided"}</td>
-                        <td style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{entry.notes ?? "Not provided"}</td>
-                        <td>
-                          <button
-                            type="submit"
-                            form="delete-trip-payment-ledger-entry-form"
-                            name="ledger_id"
-                            value={entry.id}
-                            className="btn btn-outline"
-                            style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CollapsibleSection>
-
-        <span id="proposal" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal ? "Started" : "Empty"} tone={proposal ? "good" : "neutral"} />}>
-          <div className="grid grid-2">
-            <label>
-              <span className="label">Planning Fee</span>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                name="planning_fee"
-                defaultValue={proposal?.planning_fee ?? 0}
-              />
-            </label>
-
-            <div
-              style={{
-                padding: "12px",
-                border: "1px solid #e6f0f2",
-                borderRadius: 12,
-                background: "#f7fbfc",
-              }}
-            >
-              <span className="label">Calculated Trip Total</span>
-              <p style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 900 }}>
-                {formatMoney(calculatedProposalTotal)}
-              </p>
-              <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>
-                Component prices ({formatMoney(componentPriceTotal)}) plus planning fee ({formatMoney(proposalPlanningFee)}). This total is calculated automatically.
-              </p>
-            </div>
-
-            <label style={{ gridColumn: "1 / -1" }}>
-              <span className="label">Proposal Title</span>
-              <input
-                className="input"
-                name="proposal_title"
-                defaultValue={proposal?.proposal_title ?? ""}
-              />
-            </label>
-          </div>
-
-          <label>
-            <span className="label">Proposal Welcome Text</span>
-            <textarea
-              className="textarea"
-              name="proposal_welcome_text"
-              defaultValue={proposal?.proposal_welcome_text ?? ""}
-            />
-          </label>
-
-          <label>
-            <span className="label">Proposal Closing Text</span>
-            <textarea
-              className="textarea"
-              name="proposal_closing_text"
-              defaultValue={proposal?.proposal_closing_text ?? ""}
-            />
-          </label>
-        
-
-          <SectionSaveButton label="Proposal" />
-        </CollapsibleSection>
-
-        <span id="commissions" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Commissions for This Trip" badge={`${commissionRows.length} record${commissionRows.length === 1 ? "" : "s"}`} tone={commissionRows.length > 0 ? "good" : "neutral"} />}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0 }}>Trip Commission Tracker</h3>
-            </div>
-
-            <Link
-              href={`/admin/commissions/new?tripId=${trip.id}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "10px 14px",
-                borderRadius: 10,
-                background: "var(--accent-dark)",
-                color: "white",
-                fontWeight: 700,
-                textDecoration: "none",
-              }}
-            >
-              Add Commission
-            </Link>
-          </div>
-
-          {tripCommissionsError ? (
-            <div className="card">
-              <p>
-                <strong>Error loading commissions:</strong>
-              </p>
-              <pre>{JSON.stringify(tripCommissionsError, null, 2)}</pre>
-            </div>
-          ) : commissionRows.length === 0 ? (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 12,
-                background: "#f7fbfc",
-                border: "1px solid #e6f0f2",
-              }}
-            >
-              <p style={{ margin: 0 }}>
-                No commission records are linked to this trip yet.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-3">
-                <div className="card">
-                  <span className="label">Full Commission</span>
-                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                    {formatMoney(commissionFullTotal)}
-                  </p>
-                </div>
-
-                <div className="card">
-                  <span className="label">Your Expected Commission</span>
-                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                    {formatMoney(commissionExpectedTotal)}
-                  </p>
-                </div>
-
-                <div className="card">
-                  <span className="label">Received</span>
-                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                    {formatMoney(commissionReceivedTotal)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="card">
-                <span className="label">Outstanding</span>
-                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
-                  {formatMoney(commissionOutstandingTotal)}
-                </p>
-              </div>
-
-              <div style={{ width: "100%", overflowX: "auto" }}>
-                <table className="table" style={{ minWidth: 1120 }}>
-                  <thead>
-                    <tr>
-                      <th>Commission</th>
-                      <th>Supplier</th>
-                      <th>Booking #</th>
-                      <th>Status</th>
-                      <th>Full</th>
-                      <th>Your %</th>
-                      <th>Your Expected</th>
-                      <th>Received</th>
-                      <th>Expected Date</th>
-                      <th>Received Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {commissionRows.map((commission) => {
-                      const expectedCommission = getExpectedCommission(commission);
-
-                      return (
-                        <tr key={commission.id}>
-                          <td>{commission.commission_name}</td>
-                          <td>{commission.supplier_name_snapshot ?? "Not provided"}</td>
-                          <td>{commission.booking_number ?? "Not provided"}</td>
-                          <td>{commission.commission_status ?? "expected"}</td>
-                          <td>{formatMoney(commission.full_commission_amount)}</td>
-                          <td>{commission.agency_commission_percent ?? 90}%</td>
-                          <td>{formatMoney(expectedCommission)}</td>
-                          <td>{formatMoney(commission.received_commission_amount)}</td>
-                          <td>{formatDate(commission.expected_payment_date)}</td>
-                          <td>{formatDate(commission.received_payment_date)}</td>
-                          <td>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <Link
-                                href={`/admin/commissions/${commission.id}`}
-                                style={{
-                                  color: "var(--accent-dark)",
-                                  fontWeight: 700,
-                                  textDecoration: "none",
-                                }}
-                              >
-                                Open
-                              </Link>
-
-                              {commission.commission_status !== "received" ? (
-                                <button
-                                  type="submit"
-                                  form="mark-trip-commission-received-form"
-                                  name="commission_id"
-                                  value={commission.id}
-                                  className="btn btn-primary"
-                                  style={{
-                                    padding: "4px 8px",
-                                    fontSize: 12,
-                                    lineHeight: 1.2,
-                                  }}
-                                >
-                                  Mark Received
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
         </CollapsibleSection>
 
         <span id="hotel-component" />
@@ -8113,6 +7278,899 @@ export default async function AdminTripEditorPage({
 
           <SectionSaveButton label="Insurance Component" />
         </CollapsibleSection>
+
+        <span id="trip-payments" />
+        <CollapsibleSection title={<SectionTitleWithBadge title="Payments & Adjustments" badge={`${tripPaymentLedgerRows.length} entries`} tone={tripPaymentLedgerRows.length > 0 ? "good" : "neutral"} />}>
+          <div className="grid grid-3">
+            <div className="card">
+              <span className="label">Total Paid</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{formatMoney(totalPaid)}</p>
+            </div>
+            <div className="card">
+              <span className="label">Balance Due</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900, color: balanceDue > 0 ? "#c2410c" : "#027a48" }}>{formatMoney(balanceDue)}</p>
+            </div>
+            <div className="card">
+              <span className="label">Final Payment Due</span>
+              <p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 900 }}>{formatDate(trip.final_payment_due_date, "Not set")}</p>
+            </div>
+          </div>
+
+          <div className="card stack" style={{ background: "#fbfdfe" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Record Payment, Refund, Credit, Fee, or Adjustment</h3>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                These entries update the trip&apos;s Total Paid and Balance Due automatically. Use the Trip Overview fields only for rare manual corrections.
+              </p>
+            </div>
+
+            <div className="grid grid-3">
+              <label>
+                <span className="label">Entry Type</span>
+                <select className="select" name="entry_type" form="add-trip-payment-ledger-entry-form" defaultValue="payment">
+                  <option value="payment">Payment received</option>
+                  <option value="refund">Refund issued</option>
+                  <option value="credit">Credit applied</option>
+                  <option value="fee">Fee added</option>
+                  <option value="adjustment">Manual balance adjustment</option>
+                </select>
+              </label>
+              <label>
+                <span className="label">Amount</span>
+                <input className="input" type="number" step="0.01" name="amount" form="add-trip-payment-ledger-entry-form" placeholder="0.00" />
+              </label>
+              <label>
+                <span className="label">Entry Date</span>
+                <input className="input" type="date" name="entry_date" form="add-trip-payment-ledger-entry-form" defaultValue={todayDateString()} />
+              </label>
+              <label>
+                <span className="label">Payment Method</span>
+                <input className="input" name="payment_method" form="add-trip-payment-ledger-entry-form" placeholder="Credit card, check, ACH, supplier portal..." />
+              </label>
+              <label>
+                <span className="label">Reference #</span>
+                <input className="input" name="reference_number" form="add-trip-payment-ledger-entry-form" placeholder="Receipt, authorization, or invoice #" />
+              </label>
+              <label>
+                <span className="label">Notes</span>
+                <input className="input" name="notes" form="add-trip-payment-ledger-entry-form" placeholder="Short internal note" />
+              </label>
+            </div>
+
+            <button type="submit" form="add-trip-payment-ledger-entry-form" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+              Add Payment Entry
+            </button>
+          </div>
+
+          {tripPaymentLedgerError ? (
+            <div className="card">
+              <p><strong>Error loading payment ledger:</strong></p>
+              <pre>{JSON.stringify(tripPaymentLedgerError, null, 2)}</pre>
+            </div>
+          ) : tripPaymentLedgerRows.length === 0 ? (
+            <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#64748b" }}>
+              No payment ledger entries have been recorded yet.
+            </div>
+          ) : (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 960 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th>Notes</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tripPaymentLedgerRows.map((entry) => {
+                    const entryTypeLabel = entry.entry_type
+                      .split("_")
+                      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                      .join(" ");
+                    const isPositiveBalanceType = entry.entry_type === "refund" || entry.entry_type === "fee";
+                    const isReductionType = entry.entry_type === "payment" || entry.entry_type === "credit";
+                    return (
+                      <tr key={entry.id}>
+                        <td>{formatDate(entry.entry_date)}</td>
+                        <td>
+                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: isReductionType ? "#ecfdf3" : isPositiveBalanceType ? "#fff7ed" : "#f0f7f8", color: isReductionType ? "#027a48" : isPositiveBalanceType ? "#c2410c" : "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
+                            {entryTypeLabel}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 900 }}>{formatMoney(entry.amount)}</td>
+                        <td>{entry.payment_method ?? "Not provided"}</td>
+                        <td>{entry.reference_number ?? "Not provided"}</td>
+                        <td style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{entry.notes ?? "Not provided"}</td>
+                        <td>
+                          <button
+                            type="submit"
+                            form="delete-trip-payment-ledger-entry-form"
+                            name="ledger_id"
+                            value={entry.id}
+                            className="btn btn-outline"
+                            style={{ fontSize: 13, padding: "5px 12px", color: "#be123c", borderColor: "#fecaca" }}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CollapsibleSection>
+
+        <span id="proposal" />
+        <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal ? "Started" : "Empty"} tone={proposal ? "good" : "neutral"} />}>
+          <div className="grid grid-2">
+            <label>
+              <span className="label">Planning Fee</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                name="planning_fee"
+                defaultValue={proposal?.planning_fee ?? 0}
+              />
+            </label>
+
+            <div
+              style={{
+                padding: "12px",
+                border: "1px solid #e6f0f2",
+                borderRadius: 12,
+                background: "#f7fbfc",
+              }}
+            >
+              <span className="label">Calculated Trip Total</span>
+              <p style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 900 }}>
+                {formatMoney(calculatedProposalTotal)}
+              </p>
+              <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>
+                Component prices ({formatMoney(componentPriceTotal)}) plus planning fee ({formatMoney(proposalPlanningFee)}). This total is calculated automatically.
+              </p>
+            </div>
+
+            <label style={{ gridColumn: "1 / -1" }}>
+              <span className="label">Proposal Title</span>
+              <input
+                className="input"
+                name="proposal_title"
+                defaultValue={proposal?.proposal_title ?? ""}
+              />
+            </label>
+          </div>
+
+          <label>
+            <span className="label">Proposal Welcome Text</span>
+            <textarea
+              className="textarea"
+              name="proposal_welcome_text"
+              defaultValue={proposal?.proposal_welcome_text ?? ""}
+            />
+          </label>
+
+          <label>
+            <span className="label">Proposal Closing Text</span>
+            <textarea
+              className="textarea"
+              name="proposal_closing_text"
+              defaultValue={proposal?.proposal_closing_text ?? ""}
+            />
+          </label>
+        
+
+          <SectionSaveButton label="Proposal" />
+        </CollapsibleSection>
+
+        <span id="commissions" />
+        <CollapsibleSection title={<SectionTitleWithBadge title="Commissions for This Trip" badge={`${commissionRows.length} record${commissionRows.length === 1 ? "" : "s"}`} tone={commissionRows.length > 0 ? "good" : "neutral"} />}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0 }}>Trip Commission Tracker</h3>
+            </div>
+
+            <Link
+              href={`/admin/commissions/new?tripId=${trip.id}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "10px 14px",
+                borderRadius: 10,
+                background: "var(--accent-dark)",
+                color: "white",
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              Add Commission
+            </Link>
+          </div>
+
+          {tripCommissionsError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading commissions:</strong>
+              </p>
+              <pre>{JSON.stringify(tripCommissionsError, null, 2)}</pre>
+            </div>
+          ) : commissionRows.length === 0 ? (
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: 12,
+                background: "#f7fbfc",
+                border: "1px solid #e6f0f2",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                No commission records are linked to this trip yet.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-3">
+                <div className="card">
+                  <span className="label">Full Commission</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionFullTotal)}
+                  </p>
+                </div>
+
+                <div className="card">
+                  <span className="label">Your Expected Commission</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionExpectedTotal)}
+                  </p>
+                </div>
+
+                <div className="card">
+                  <span className="label">Received</span>
+                  <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                    {formatMoney(commissionReceivedTotal)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="card">
+                <span className="label">Outstanding</span>
+                <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800 }}>
+                  {formatMoney(commissionOutstandingTotal)}
+                </p>
+              </div>
+
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 1120 }}>
+                  <thead>
+                    <tr>
+                      <th>Commission</th>
+                      <th>Supplier</th>
+                      <th>Booking #</th>
+                      <th>Status</th>
+                      <th>Full</th>
+                      <th>Your %</th>
+                      <th>Your Expected</th>
+                      <th>Received</th>
+                      <th>Expected Date</th>
+                      <th>Received Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {commissionRows.map((commission) => {
+                      const expectedCommission = getExpectedCommission(commission);
+
+                      return (
+                        <tr key={commission.id}>
+                          <td>{commission.commission_name}</td>
+                          <td>{commission.supplier_name_snapshot ?? "Not provided"}</td>
+                          <td>{commission.booking_number ?? "Not provided"}</td>
+                          <td>{commission.commission_status ?? "expected"}</td>
+                          <td>{formatMoney(commission.full_commission_amount)}</td>
+                          <td>{commission.agency_commission_percent ?? 90}%</td>
+                          <td>{formatMoney(expectedCommission)}</td>
+                          <td>{formatMoney(commission.received_commission_amount)}</td>
+                          <td>{formatDate(commission.expected_payment_date)}</td>
+                          <td>{formatDate(commission.received_payment_date)}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <Link
+                                href={`/admin/commissions/${commission.id}`}
+                                style={{
+                                  color: "var(--accent-dark)",
+                                  fontWeight: 700,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                Open
+                              </Link>
+
+                              {commission.commission_status !== "received" ? (
+                                <button
+                                  type="submit"
+                                  form="mark-trip-commission-received-form"
+                                  name="commission_id"
+                                  value={commission.id}
+                                  className="btn btn-primary"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: 12,
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  Mark Received
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CollapsibleSection>
+
+        <div
+          className="admin-trip-relationship-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          <div className="stack">
+        <span id="trip-messages" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Trip Messages
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Message activity for this trip</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                See private advisor threads tied to this trip.
+              </p>
+            </div>
+
+            <Link href={tripMessagesHref} className="btn btn-primary">
+              Open Trip Messages
+            </Link>
+          </div>
+
+          {tripMessageThreadsError ? (
+            <div className="card" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+              <p style={{ margin: 0, fontWeight: 800, color: "#c2410c" }}>
+                Message summary needs review.
+              </p>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(tripMessageThreadsError, null, 2)}</pre>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
+                <TripMessageSummaryCard
+                  title="Private Advisor Threads"
+                  value={privateTripMessageThreads.length}
+                  helper="One-on-one client/advisor conversations tied to this trip."
+                  href={privateTripMessagesHref}
+                  cta="Open Private Messages"
+                  tone={privateTripMessageThreads.length > 0 ? "neutral" : "warning"}
+                />
+
+                <TripMessageSummaryCard
+                  title="Unread for Admin"
+                  value={tripMessageUnreadTotal}
+                  helper="Client or companion messages waiting for your review."
+                  href={tripMessagesHref}
+                  cta="Review Inbox"
+                  tone={tripMessageUnreadTotal > 0 ? "warning" : "good"}
+                />
+              </div>
+
+              {mostRecentTripMessageThread ? (
+                <div
+                  style={{
+                    padding: "12px",
+                    borderRadius: 12,
+                    background: "#f7fbfc",
+                    border: "1px solid #e6f0f2",
+                    color: "#667085",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong style={{ color: "var(--accent-dark)" }}>Most recent:</strong>{" "}
+                  {mostRecentTripMessageThread.subject} • {mostRecentTripMessageThread.thread_type === "trip_group" ? "Travel Circle" : "Private"} • {mostRecentTripMessageThread.status}
+                </div>
+              ) : (
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  No private advisor messages are tied to this trip yet.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+          </div>
+
+          <div className="stack">
+        <span id="travel-companions" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Booking People
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Main client and Travel Circle</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                Keep the booking assigned to one main client, then add registered clients who should have shared trip access.
+              </p>
+            </div>
+
+            <CommandStatusBadge tone={tripMembersError ? "warning" : activeTripMemberRows.length > 0 ? "good" : "warning"}>
+              {tripMembersError
+                ? "Review"
+                : `${activeTripMemberRows.length} member${activeTripMemberRows.length === 1 ? "" : "s"}`}
+            </CommandStatusBadge>
+          </div>
+
+          {tripMembersError ? (
+            <div className="card">
+              <p>
+                <strong>Error loading Travel Companions:</strong>
+              </p>
+              <pre>{JSON.stringify(tripMembersError, null, 2)}</pre>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
+                <CommandStatCard
+                  label="Main Client"
+                  value={ownerTripMembers.length}
+                  helper={getClientDisplayName(clientInfo)}
+                />
+                <CommandStatCard
+                  label="Added People"
+                  value={activeCompanionRows.length}
+                  helper="Shared trip access"
+                />
+                <CommandStatCard
+                  label="Pending"
+                  value={invitedTripMembers.length}
+                  helper="Legacy invited access"
+                />
+              </div>
+
+              <div className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
+                <h3 style={{ margin: 0 }}>Add someone to the booking</h3>
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  Add a registered Cozy Concierge client. To change the main client, use Trip Overview.
+                </p>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                  <label>
+                    <span className="label">Registered Client</span>
+                    <select
+                      className="select"
+                      form="add-trip-companion-form"
+                      name="companion_client_account_id"
+                      defaultValue=""
+                    >
+                      <option value="">Choose a client...</option>
+                      {registeredClientOptions.map((client) => {
+                        const name = `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim();
+                        return (
+                          <option key={client.id} value={client.id}>
+                            {name || client.email || "Unnamed Client"}{client.email ? ` - ${client.email}` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span className="label">Access Level</span>
+                    <select
+                      className="select"
+                      form="add-trip-companion-form"
+                      name="companion_role"
+                      defaultValue="viewer"
+                    >
+                      <option value="viewer">Viewer — read only</option>
+                      <option value="contributor">Contributor — shared participation</option>
+                    </select>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  form="add-trip-companion-form"
+                  className="btn btn-primary"
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  Add to Booking
+                </button>
+              </div>
+
+              {activeTripMemberRows.length === 0 ? (
+                <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+                  No additional people are linked yet. The main client is assigned in Trip Overview.
+                </p>
+              ) : (
+                <div className="stack">
+                  {invitedTripMembers.length > 0 ? (
+                    <div
+                      style={{
+                        padding: "12px",
+                        borderRadius: 12,
+                        background: "#fff7ed",
+                        border: "1px solid #fed7aa",
+                        color: "#9a3412",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <strong>Legacy pending access:</strong> Ask companions to create or log into Cozy Concierge with the invited email address. Their shared trip access will activate automatically.
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-2">
+                    {activeTripMemberRows.map((member) => (
+                      <TripCompanionCard key={member.id} member={member} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: 12,
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  color: "#9a3412",
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Privacy note:</strong> Added people are for shared trip visibility only. Personal client documents like passports, traveler numbers, and loyalty data should remain private unless intentionally shared.
+              </div>
+            </>
+          )}
+        </div>
+          </div>
+        </div>
+
+        <style>{"@media (max-width: 980px) { .admin-trip-relationship-grid { grid-template-columns: 1fr !important; } }"}</style>
+        <span id="document-readiness" />
+        <div
+          className="card stack"
+          style={{
+            border: "1px solid #e6f0f2",
+            background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Document Readiness
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Trip document checklist</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                A quick check of client documents, trip attachments, passport files, insurance docs, and document-related milestones.
+              </p>
+            </div>
+
+            <CommandStatusBadge
+              tone={
+                (attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0) &&
+                (clientDocumentsCollectedMilestone?.is_completed || clientDocumentRows.length > 0 || tripDocumentRows.length > 0)
+                  ? "good"
+                  : "warning"
+              }
+            >
+              {attachedTripDocumentRows.length > 0 || tripDocumentRows.length > 0 ? "Docs attached" : "Needs review"}
+            </CommandStatusBadge>
+          </div>
+
+          <div className="grid grid-3">
+            <CommandStatCard
+              label="Client Documents"
+              value={clientDocumentsError ? "Review" : clientDocumentRows.length}
+              helper={clientDocumentsError ? "Could not check client documents" : "Files in client document library"}
+            />
+
+            <CommandStatCard
+              label="Attached to Trip"
+              value={attachedTripDocumentsError ? "Review" : attachedTripDocumentRows.length}
+              helper={attachedTripDocumentsError ? "Could not check trip attachments" : "Client passports/docs linked to this trip"}
+            />
+
+            <CommandStatCard
+              label="Trip Documents"
+              value={tripDocumentsError ? "Review" : tripDocumentRows.length}
+              helper={tripDocumentsError ? "Could not check trip documents" : "Advisor and generated files on this trip"}
+            />
+
+            <CommandStatCard
+              label="Passport File"
+              value={hasPassportDocument ? "Yes" : "No"}
+              helper={hasPassportDocument ? "Passport document found" : "No passport document found"}
+            />
+          </div>
+
+          <div className="grid grid-2">
+            {documentReadinessItems.map((item) => (
+              <DocumentReadinessCard
+                key={item.title}
+                title={item.title}
+                status={item.status}
+                helper={item.helper}
+                tone={item.tone}
+                href={item.href}
+                cta={item.cta}
+              />
+            ))}
+          </div>
+        </div>
+
+        <span id="trip-snapshot" />
+        <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-dark)",
+                  fontWeight: 800,
+                }}
+              >
+                Trip Snapshot
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Readable booking summary</h2>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                A quick, read-only view of what is currently entered before you open the detailed edit sections.
+              </p>
+            </div>
+
+            <CommandStatusBadge tone={activeTripComponents.length > 0 ? "neutral" : "warning"}>
+              {activeTripComponents.length} active component{activeTripComponents.length === 1 ? "" : "s"}
+            </CommandStatusBadge>
+          </div>
+
+          <div className="grid grid-2">
+            <SnapshotCard
+              title="Hotel"
+              href="#hotel-component"
+              status={
+                <CommandStatusBadge tone={hotel.component ? "neutral" : "warning"}>
+                  {hotel.component ? hotel.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Hotel" value={hotel.details?.hotel_name ?? hotel.component?.display_name ?? "Not provided"} />
+              <SnapshotRow label="Check-in" value={formatDate(hotel.details?.check_in_date, "Not provided")} />
+              <SnapshotRow label="Check-out" value={formatDate(hotel.details?.check_out_date, "Not provided")} />
+              <SnapshotRow label="Room" value={hotel.details?.room_category ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={hotel.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Air"
+              href="#air-component"
+              status={
+                <CommandStatusBadge tone={air.component ? "neutral" : "warning"}>
+                  {air.component ? air.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Supplier" value={air.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow
+                label="Outbound"
+                value={
+                  outboundSegment
+                    ? `${outboundSegment.departure_airport_code ?? "???"} → ${outboundSegment.destination_airport_code ?? "???"}`
+                    : "Not provided"
+                }
+              />
+              <SnapshotRow
+                label="Return"
+                value={
+                  returnSegment
+                    ? `${returnSegment.departure_airport_code ?? "???"} → ${returnSegment.destination_airport_code ?? "???"}`
+                    : "Not provided"
+                }
+              />
+              <SnapshotRow label="Locator" value={air.details?.airline_locator ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={air.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Cruise"
+              href="#cruise-component"
+              status={
+                <CommandStatusBadge tone={cruise.component ? "neutral" : "warning"}>
+                  {cruise.component ? cruise.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Line" value={cruise.details?.cruise_line ?? cruise.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Ship" value={cruise.details?.ship_name ?? "Not provided"} />
+              <SnapshotRow label="Sailing" value={formatDate(cruise.details?.sailing_date, "Not provided")} />
+              <SnapshotRow label="Return" value={formatDate(cruise.details?.return_date, "Not provided")} />
+              <SnapshotRow label="Confirm #" value={cruise.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Transfer"
+              href="#transfer-component"
+              status={
+                <CommandStatusBadge tone={transfer.component ? "neutral" : "warning"}>
+                  {transfer.component ? transfer.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Supplier" value={transfer.details?.supplier_name ?? transfer.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Pickup" value={transfer.details?.pickup_location ?? "Not provided"} />
+              <SnapshotRow label="Drop-off" value={transfer.details?.dropoff_location ?? "Not provided"} />
+              <SnapshotRow label="Vehicle" value={transfer.details?.vehicle_type ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={transfer.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Activity"
+              href="#activity-component"
+              status={
+                <CommandStatusBadge tone={activity.component ? "neutral" : "warning"}>
+                  {activity.component ? activity.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Activity" value={activity.details?.activity_name ?? activity.component?.display_name ?? "Not provided"} />
+              <SnapshotRow label="Supplier" value={activity.details?.supplier_name ?? activity.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Date/Time" value={activity.details?.activity_datetime ? formatDate(activity.details.activity_datetime) : "Not provided"} />
+              <SnapshotRow label="Location" value={activity.details?.location ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={activity.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Insurance"
+              href="#insurance-component"
+              status={
+                <CommandStatusBadge tone={insurance.component ? "neutral" : "warning"}>
+                  {insurance.component ? insurance.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Provider" value={insurance.details?.provider_name ?? insurance.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Plan" value={insurance.details?.plan_name ?? "Not provided"} />
+              <SnapshotRow label="Policy #" value={insurance.details?.policy_number ?? insurance.component?.confirmation_number ?? "Missing"} />
+              <SnapshotRow label="Premium" value={insurance.details?.premium_amount ? formatMoney(Number(insurance.details.premium_amount)) : "Not provided"} />
+              <SnapshotRow label="Coverage" value={insurance.details?.coverage_start_date || insurance.details?.coverage_end_date ? `${formatDate(insurance.details?.coverage_start_date, "?")} to ${formatDate(insurance.details?.coverage_end_date, "?")}` : "Not provided"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Commissions"
+              href="#commissions"
+              status={
+                <CommandStatusBadge tone={commissionOutstandingTotal > 0 ? "warning" : "good"}>
+                  {commissionOutstandingTotal > 0 ? "outstanding" : "current"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Records" value={commissionRows.length} />
+              <SnapshotRow label="Full" value={formatMoney(commissionFullTotal)} />
+              <SnapshotRow label="Expected" value={formatMoney(commissionExpectedTotal)} />
+              <SnapshotRow label="Received" value={formatMoney(commissionReceivedTotal)} />
+              <SnapshotRow label="Outstanding" value={formatMoney(commissionOutstandingTotal)} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Notes"
+              href="#trip-notes"
+              status={
+                <CommandStatusBadge tone={internalNote || clientNote || clientReminder ? "neutral" : "warning"}>
+                  {internalNote || clientNote || clientReminder ? "started" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Internal" value={internalNote?.title ?? "Not provided"} />
+              <SnapshotRow label="Client Note" value={clientNote?.title ?? "Not provided"} />
+              <SnapshotRow label="Reminder" value={clientReminder?.title ?? "Not provided"} />
+              <SnapshotRow label="Client" value={getClientDisplayName(clientInfo)} />
+              <SnapshotRow label="Email" value={clientInfo?.email ?? "Not provided"} />
+            </SnapshotCard>
+          </div>
+        </div>
 
         <span id="trip-notes" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Notes" badge={clientReminder ? "Reminder added" : "Needs reminder"} tone={clientReminder ? "good" : "warning"} />}>
