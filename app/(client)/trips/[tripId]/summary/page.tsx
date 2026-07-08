@@ -136,7 +136,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
   }
 
   const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, rentalCarResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
-    supabase.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).eq("visibility", "client").order("created_at", { ascending: false }),
+    supabase.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).in("visibility", ["client", "client_travel_circle"]).order("created_at", { ascending: false }),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
     supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),

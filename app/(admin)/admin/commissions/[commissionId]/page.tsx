@@ -131,6 +131,7 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
 function getVisibilityLabel(visibility: string | null | undefined) {
   if (visibility === "client") return "Client & Agent";
   if (visibility === "travel_circle") return "Travel Circle & Agent";
+  if (visibility === "client_travel_circle") return "Client, Agent & Travel Circle";
   return "Agent Only";
 }
 

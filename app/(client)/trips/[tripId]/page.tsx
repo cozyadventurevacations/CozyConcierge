@@ -728,7 +728,7 @@ async function recordInsuranceDecision(formData: FormData) {
     storage_path: waiverStoragePath,
     mime_type: "text/html; charset=utf-8",
     file_size_bytes: waiverBytes.byteLength,
-    visibility: "travel_circle",
+    visibility: "client_travel_circle",
     component_id: null,
     component_type: "insurance",
     attach_to_commission: false,
@@ -838,9 +838,9 @@ export default async function TripDetailPage({
   }
 
   const allowedDocumentVisibility = isPrimaryClient
-    ? ["client", "travel_circle"]
+    ? ["client", "client_travel_circle"]
     : canViewSharedDocuments
-      ? ["travel_circle"]
+      ? ["travel_circle", "client_travel_circle"]
       : [];
 
   const [

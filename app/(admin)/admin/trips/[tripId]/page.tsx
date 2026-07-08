@@ -175,6 +175,15 @@ type TripPaymentLedgerRow = {
   created_at: string | null;
 };
 
+type PaymentRequestSummaryRow = {
+  id: string;
+  status: string | null;
+  requested_amount: number | null;
+  requested_payment_date: string | null;
+  requested_at: string | null;
+  completed_at: string | null;
+};
+
 type TripMilestoneRow = {
   id: string;
   trip_id: string;
@@ -822,6 +831,7 @@ function ComponentDocumentUploadCard({
             <option value="internal">Agent Only</option>
             <option value="client">Client & Agent</option>
             <option value="travel_circle">Travel Circle & Agent</option>
+            <option value="client_travel_circle">Client, Agent & Travel Circle</option>
           </select>
         </label>
 
@@ -2702,7 +2712,7 @@ async function uploadComponentDocument(formData: FormData) {
   );
   const visibility = requireAllowedValue(
     String(formData.get("visibility") ?? "internal").trim(),
-    ["internal", "client", "travel_circle"],
+    ["internal", "client", "travel_circle", "client_travel_circle"],
     "internal",
   );
   const attachToCommission = formData.get("attach_to_commission") === "on";
@@ -4616,6 +4626,12 @@ export default async function AdminTripEditorPage({
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false });
 
+  const { data: paymentRequests, error: paymentRequestsError } = await supabase
+    .from("payment_requests")
+    .select("id, status, requested_amount, requested_payment_date, requested_at, completed_at")
+    .eq("trip_id", tripId)
+    .order("requested_at", { ascending: false });
+
   const { data: clientDocuments, error: clientDocumentsError } = await supabase
     .from("client_documents")
     .select("id, document_type, document_title, file_name, created_at")
@@ -4678,6 +4694,7 @@ export default async function AdminTripEditorPage({
 
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
   const tripPaymentLedgerRows = (tripPaymentLedger ?? []) as TripPaymentLedgerRow[];
+  const paymentRequestRows = (paymentRequests ?? []) as PaymentRequestSummaryRow[];
   const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
   const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
   const tripDocumentRows = (tripDocuments ?? []) as any[];
@@ -7366,6 +7383,66 @@ export default async function AdminTripEditorPage({
             <button type="submit" form="add-trip-payment-ledger-entry-form" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
               Add Payment Entry
             </button>
+          </div>
+
+          <div className="card stack" style={{ background: "#fbfdfe" }}>
+            <div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Payment Request Documents</h3>
+                <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                  Upload encrypted payment receipts and authorization forms from the linked payment request.
+                </p>
+              </div>
+              <Link href="/admin/payment-requests" className="btn btn-outline" style={{ whiteSpace: "nowrap" }}>
+                All Payment Requests
+              </Link>
+            </div>
+
+            {paymentRequestsError ? (
+              <div>
+                <p><strong>Error loading payment requests:</strong></p>
+                <pre>{JSON.stringify(paymentRequestsError, null, 2)}</pre>
+              </div>
+            ) : paymentRequestRows.length === 0 ? (
+              <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#64748b", lineHeight: 1.6 }}>
+                No payment requests exist for this trip yet. Clients can request a payment link from their trip page, then receipts and authorization forms can be uploaded from that payment request.
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 820 }}>
+                  <thead>
+                    <tr>
+                      <th>Requested</th>
+                      <th>Amount</th>
+                      <th>Payment Date</th>
+                      <th>Status</th>
+                      <th>Completed</th>
+                      <th>Documents</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentRequestRows.map((request) => (
+                      <tr key={request.id}>
+                        <td>{formatDate(request.requested_at, "Not provided")}</td>
+                        <td style={{ fontWeight: 900 }}>{formatMoney(request.requested_amount)}</td>
+                        <td>{formatDate(request.requested_payment_date, "Not set")}</td>
+                        <td>
+                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: "#f0f7f8", color: "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
+                            {request.status ?? "new"}
+                          </span>
+                        </td>
+                        <td>{formatDate(request.completed_at, "Not completed")}</td>
+                        <td>
+                          <Link href={`/admin/payment-requests/${request.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}>
+                            Upload Receipts/Forms
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {tripPaymentLedgerError ? (

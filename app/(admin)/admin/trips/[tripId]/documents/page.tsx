@@ -70,7 +70,8 @@ function validateVisibility(value: string) {
   if (
     value !== "internal" &&
     value !== "client" &&
-    value !== "travel_circle"
+    value !== "travel_circle" &&
+    value !== "client_travel_circle"
   ) {
     throw new Error("Invalid document visibility.");
   }
@@ -142,9 +143,12 @@ function formatDateTime(value: string | null | undefined, fallback = "") {
 function VisibilityBadge({ visibility }: { visibility: string | null | undefined }) {
   const isClient = visibility === "client";
   const isTravelCircle = visibility === "travel_circle";
+  const isClientTravelCircle = visibility === "client_travel_circle";
 
-  const label = isTravelCircle
-    ? "Shared With Travel Circle"
+  const label = isClientTravelCircle
+    ? "Client, Agent & Travel Circle"
+    : isTravelCircle
+      ? "Travel Circle & Agent"
     : isClient
       ? "Visible to Lead Client"
       : "Internal Only";
@@ -156,8 +160,8 @@ function VisibilityBadge({ visibility }: { visibility: string | null | undefined
         alignItems: "center",
         borderRadius: 999,
         padding: "5px 10px",
-        background: isTravelCircle ? "#eff6ff" : isClient ? "#ecfdf3" : "#fff7ed",
-        color: isTravelCircle ? "#1d4ed8" : isClient ? "#027a48" : "#c2410c",
+        background: isClientTravelCircle ? "#f0f9ff" : isTravelCircle ? "#eff6ff" : isClient ? "#ecfdf3" : "#fff7ed",
+        color: isClientTravelCircle ? "#0369a1" : isTravelCircle ? "#1d4ed8" : isClient ? "#027a48" : "#c2410c",
         fontWeight: 700,
         fontSize: 13,
         whiteSpace: "nowrap",
@@ -611,13 +615,16 @@ export default async function AdminTripDocumentsPage({
   );
 
   const internalOnlyCount = documentsWithUrls.filter(
-    (doc) => doc.visibility !== "client" && doc.visibility !== "travel_circle",
+    (doc) => doc.visibility !== "client" && doc.visibility !== "travel_circle" && doc.visibility !== "client_travel_circle",
   ).length;
   const leadClientCount = documentsWithUrls.filter(
     (doc) => doc.visibility === "client",
   ).length;
   const travelCircleCount = documentsWithUrls.filter(
     (doc) => doc.visibility === "travel_circle",
+  ).length;
+  const clientAndTravelCircleCount = documentsWithUrls.filter(
+    (doc) => doc.visibility === "client_travel_circle",
   ).length;
 
   return (
@@ -663,11 +670,12 @@ export default async function AdminTripDocumentsPage({
         <h2 style={{ margin: 0 }}>Shared Document Control</h2>
 
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          Keep private files internal, share client-facing documents with the lead
-          traveler, or make approved trip documents available to the full Travel Circle.
+          Keep private files internal, share lead-client-only files, share companion-only
+          Travel Circle files, or make approved documents available to both the lead
+          client and Travel Circle.
         </p>
 
-        <div className="grid grid-3">
+        <div className="grid grid-4">
           <div className="card">
             <span className="label">Internal Only</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
@@ -686,6 +694,13 @@ export default async function AdminTripDocumentsPage({
             <span className="label">Travel Circle Shared</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
               {travelCircleCount}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Client + Circle Shared</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {clientAndTravelCircleCount}
             </p>
           </div>
         </div>
@@ -787,6 +802,7 @@ export default async function AdminTripDocumentsPage({
             <option value="internal">Agent Only</option>
             <option value="client">Client & Agent</option>
             <option value="travel_circle">Travel Circle & Agent</option>
+            <option value="client_travel_circle">Client, Agent & Travel Circle</option>
           </select>
         </label>
 
@@ -1002,6 +1018,7 @@ export default async function AdminTripDocumentsPage({
                             <option value="internal">Agent Only</option>
                             <option value="client">Client & Agent</option>
                             <option value="travel_circle">Travel Circle & Agent</option>
+                            <option value="client_travel_circle">Client, Agent & Travel Circle</option>
                           </select>
                         </label>
                       </div>

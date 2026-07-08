@@ -107,6 +107,7 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 
 function VisibilityBadge({ visibility }: { visibility: string | null | undefined }) {
   const isTravelCircle = visibility === "travel_circle";
+  const isClientTravelCircle = visibility === "client_travel_circle";
 
   return (
     <span
@@ -115,14 +116,14 @@ function VisibilityBadge({ visibility }: { visibility: string | null | undefined
         alignItems: "center",
         borderRadius: 999,
         padding: "5px 10px",
-        background: isTravelCircle ? "#eff6ff" : "#ecfdf3",
-        color: isTravelCircle ? "#1d4ed8" : "#027a48",
+        background: isClientTravelCircle ? "#f0f9ff" : isTravelCircle ? "#eff6ff" : "#ecfdf3",
+        color: isClientTravelCircle ? "#0369a1" : isTravelCircle ? "#1d4ed8" : "#027a48",
         fontWeight: 700,
         fontSize: 13,
         whiteSpace: "nowrap",
       }}
     >
-      {isTravelCircle ? "Travel Circle" : "Lead Client"}
+      {isClientTravelCircle ? "Lead Client + Travel Circle" : isTravelCircle ? "Travel Circle" : "Lead Client"}
     </span>
   );
 }
@@ -308,8 +309,8 @@ export default async function ClientTripDocumentsPage({
   }
 
   const allowedVisibility = access.isLeadClient
-    ? ["client", "travel_circle"]
-    : ["travel_circle"];
+    ? ["client", "client_travel_circle"]
+    : ["travel_circle", "client_travel_circle"];
 
   const { data: documents, error: documentsError } = await supabase
     .from("trip_documents")
@@ -352,14 +353,17 @@ export default async function ClientTripDocumentsPage({
   const travelCircleDocumentCount = documentsWithUrls.filter(
     (document) => document.visibility === "travel_circle",
   ).length;
+  const clientAndTravelCircleDocumentCount = documentsWithUrls.filter(
+    (document) => document.visibility === "client_travel_circle",
+  ).length;
 
   return (
     <PageShell
       title="Trip Documents"
       subtitle={
         access.isLeadClient
-          ? "Lead-client and Travel Circle files shared by Cozy Adventure Vacations."
-          : "Travel Circle files shared by Cozy Adventure Vacations."
+          ? "Lead-client, Travel Circle, and shared-with-all files from Cozy Adventure Vacations."
+          : "Travel Circle and shared-with-all files from Cozy Adventure Vacations."
       }
     >
       <div
@@ -400,7 +404,7 @@ export default async function ClientTripDocumentsPage({
           </span>
         </div>
 
-        <div className="grid grid-2">
+        <div className="grid grid-3">
           {access.isLeadClient ? (
             <div className="card">
               <span className="label">Lead Client Documents</span>
@@ -414,6 +418,13 @@ export default async function ClientTripDocumentsPage({
             <span className="label">Travel Circle Documents</span>
             <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
               {travelCircleDocumentCount}
+            </p>
+          </div>
+
+          <div className="card">
+            <span className="label">Client + Circle Documents</span>
+            <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 800 }}>
+              {clientAndTravelCircleDocumentCount}
             </p>
           </div>
         </div>
@@ -476,8 +487,8 @@ export default async function ClientTripDocumentsPage({
             <h2 style={{ margin: 0 }}>Shared Documents</h2>
             <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
               {access.isLeadClient
-                ? "These are the lead-client and Travel Circle files your advisor has made visible for this trip."
-                : "These are the Travel Circle files your advisor has shared with approved companions for this trip."}
+                ? "These are the lead-client, Travel Circle, and shared-with-all files your advisor has made visible for this trip."
+                : "These are the Travel Circle and shared-with-all files your advisor has shared with approved companions for this trip."}
             </p>
             <p style={{ margin: "6px 0 0", color: "var(--accent-dark)", fontWeight: 800 }}>
               {documentsWithUrls.length} document{documentsWithUrls.length === 1 ? "" : "s"} available

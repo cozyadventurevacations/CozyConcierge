@@ -848,7 +848,7 @@ export default async function ClientDashboardPage() {
           .from("trip_documents")
           .select("id", { count: "exact", head: true })
           .eq("trip_id", nextTrip.trip_id)
-          .eq("visibility", "client")
+          .in("visibility", ["client", "client_travel_circle"])
       : Promise.resolve({ count: 0 }),
   ]);
 
