@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { encryptBuffer } from "@/lib/encryption";
 
 type PaymentRequestDetail = {
   id: string;
@@ -32,6 +33,17 @@ type PaymentRequestDetail = {
     | null;
 };
 
+type PaymentRequestDocument = {
+  id: string;
+  file_name: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  payment_document_type: string | null;
+  is_encrypted: boolean | null;
+  created_at: string | null;
+};
+
 const allowedStatuses = ["new", "sent", "completed", "cancelled", "declined"];
 const billableTripComponentTypes = [
   "hotel",
@@ -42,6 +54,17 @@ const billableTripComponentTypes = [
   "activity",
   "insurance",
 ];
+const paymentDocumentTypes = ["receipt", "authorization_form", "other"] as const;
+const MAX_PAYMENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
+const allowedPaymentDocumentMimeTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const allowedPaymentDocumentExtensions = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"];
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
@@ -49,6 +72,75 @@ function todayDateString() {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function getPaymentDocumentTypeLabel(value: string | null | undefined) {
+  if (value === "receipt") return "Payment Receipt";
+  if (value === "authorization_form") return "Authorization Form";
+  return "Other Payment Document";
+}
+
+function validatePaymentDocumentType(value: string) {
+  if (!paymentDocumentTypes.includes(value as (typeof paymentDocumentTypes)[number])) {
+    throw new Error("Invalid payment document type.");
+  }
+
+  return value;
+}
+
+function getFileExtension(fileName: string) {
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex === -1) return "";
+  return fileName.slice(lastDotIndex).toLowerCase();
+}
+
+function validatePaymentDocumentFile(file: File) {
+  if (file.size === 0) {
+    throw new Error("Selected file is empty.");
+  }
+
+  if (file.size > MAX_PAYMENT_DOCUMENT_SIZE_BYTES) {
+    throw new Error("File is too large. Maximum upload size is 15MB.");
+  }
+
+  const extension = getFileExtension(file.name);
+  const mimeType = file.type || "";
+  const hasAllowedExtension = allowedPaymentDocumentExtensions.includes(extension);
+  const hasAllowedMimeType = mimeType ? allowedPaymentDocumentMimeTypes.includes(mimeType) : false;
+
+  if (!hasAllowedExtension || (mimeType && !hasAllowedMimeType)) {
+    throw new Error("Invalid file type. Allowed files: PDF, JPG, PNG, WEBP, DOC, and DOCX.");
+  }
+}
+
+function formatFileSize(bytes: number | null | undefined) {
+  if (!bytes || bytes <= 0) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size = size / 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function getPaymentDocumentSchemaErrorMessage(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  if (
+    message.includes("payment_request_id") ||
+    message.includes("payment_document_type") ||
+    message.includes("is_encrypted") ||
+    message.includes("encryption_algorithm") ||
+    message.includes("schema cache")
+  ) {
+    return "Payment request documents are not fully set up in Supabase yet. Run scripts/setup-payment-request-documents.sql in the Supabase SQL Editor, then try again.";
+  }
+
+  return null;
 }
 
 async function recalculateTripPaymentTotals(
@@ -277,6 +369,139 @@ function StatusButton({
   );
 }
 
+async function uploadPaymentRequestDocument(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireAdmin();
+
+  const requestId = String(formData.get("request_id") ?? "").trim();
+  const paymentDocumentType = validatePaymentDocumentType(
+    String(formData.get("payment_document_type") ?? "").trim(),
+  );
+  const file = formData.get("file");
+
+  if (!requestId) throw new Error("Missing payment request ID.");
+  if (!(file instanceof File)) throw new Error("File is required.");
+
+  validatePaymentDocumentFile(file);
+
+  const { data: paymentRequest, error: paymentRequestError } = await supabase
+    .from("payment_requests")
+    .select("id, trip_id")
+    .eq("id", requestId)
+    .single();
+
+  if (paymentRequestError || !paymentRequest) {
+    throw new Error(paymentRequestError?.message ?? "Payment request not found.");
+  }
+
+  const { data: userProfile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (profileError || !userProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const safeFileName =
+    file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/_+/g, "_") || "payment-document";
+  const storagePath = `${paymentRequest.trip_id}/payments/${requestId}/${crypto.randomUUID()}-${safeFileName}`;
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+  const encryptedFileBuffer = encryptBuffer(fileBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from("trip-documents")
+    .upload(storagePath, encryptedFileBuffer, {
+      contentType: "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { error: insertError } = await supabase
+    .from("trip_documents")
+    .insert({
+      trip_id: paymentRequest.trip_id,
+      file_name: file.name,
+      storage_path: storagePath,
+      mime_type: file.type || null,
+      file_size_bytes: file.size,
+      visibility: "internal",
+      component_id: null,
+      component_type: null,
+      attach_to_commission: false,
+      uploaded_by_user_profile_id: userProfile.id,
+      payment_request_id: requestId,
+      payment_document_type: paymentDocumentType,
+      is_encrypted: true,
+      encryption_algorithm: "aes-256-gcm",
+    });
+
+  if (insertError) {
+    await supabase.storage.from("trip-documents").remove([storagePath]);
+    throw new Error(
+      getPaymentDocumentSchemaErrorMessage(insertError) ??
+        insertError.message,
+    );
+  }
+
+  revalidatePath(`/admin/payment-requests/${requestId}`);
+  revalidatePath(`/admin/trips/${paymentRequest.trip_id}`);
+  revalidatePath(`/admin/trips/${paymentRequest.trip_id}/documents`);
+}
+
+async function deletePaymentRequestDocument(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const requestId = String(formData.get("request_id") ?? "").trim();
+  const documentId = String(formData.get("document_id") ?? "").trim();
+
+  if (!requestId) throw new Error("Missing payment request ID.");
+  if (!documentId) throw new Error("Missing document ID.");
+
+  const { data: document, error: documentError } = await supabase
+    .from("trip_documents")
+    .select("id, trip_id, storage_path")
+    .eq("id", documentId)
+    .eq("payment_request_id", requestId)
+    .single();
+
+  if (documentError || !document) {
+    throw new Error(documentError?.message ?? "Payment document not found.");
+  }
+
+  const { error: deleteError } = await supabase
+    .from("trip_documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("payment_request_id", requestId);
+
+  if (deleteError) {
+    throw new Error(
+      getPaymentDocumentSchemaErrorMessage(deleteError) ??
+        deleteError.message,
+    );
+  }
+
+  if (document.storage_path) {
+    await supabase.storage.from("trip-documents").remove([document.storage_path]);
+  }
+
+  revalidatePath(`/admin/payment-requests/${requestId}`);
+  revalidatePath(`/admin/trips/${document.trip_id}`);
+  revalidatePath(`/admin/trips/${document.trip_id}/documents`);
+}
+
 async function updatePaymentRequestStatus(formData: FormData) {
   "use server";
 
@@ -470,6 +695,14 @@ export default async function AdminPaymentRequestDetailPage({
   const request = data as PaymentRequestDetail;
   const trip = request.trips?.[0] ?? null;
   const client = request.client_accounts?.[0] ?? null;
+  const { data: paymentDocumentsData, error: paymentDocumentsError } = await supabase
+    .from("trip_documents")
+    .select("id, file_name, storage_path, mime_type, file_size_bytes, payment_document_type, is_encrypted, created_at")
+    .eq("payment_request_id", request.id)
+    .order("created_at", { ascending: false });
+  const paymentDocumentsSetupMessage =
+    getPaymentDocumentSchemaErrorMessage(paymentDocumentsError);
+  const paymentDocuments = (paymentDocumentsData ?? []) as PaymentRequestDocument[];
 
   const clientName = client
     ? `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim()
@@ -595,6 +828,127 @@ export default async function AdminPaymentRequestDetailPage({
           <StatusButton requestId={request.id} status="cancelled" label="Mark Cancelled" />
           <StatusButton requestId={request.id} status="declined" label="Mark Declined" />
         </div>
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ margin: 0 }}>Payment Documents</h2>
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Upload payment receipts, signed authorization forms, or other payment records for this request.
+        </p>
+
+        {paymentDocumentsSetupMessage ? (
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #fed7aa",
+              background: "#fff7ed",
+              color: "#9a3412",
+              lineHeight: 1.55,
+              fontWeight: 700,
+            }}
+          >
+            {paymentDocumentsSetupMessage}
+          </div>
+        ) : paymentDocumentsError ? (
+          <div>
+            <p>
+              <strong>Error loading payment documents:</strong>
+            </p>
+            <pre>{JSON.stringify(paymentDocumentsError, null, 2)}</pre>
+          </div>
+        ) : null}
+
+        <form action={uploadPaymentRequestDocument} className="stack">
+          <input type="hidden" name="request_id" value={request.id} />
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Document Type</span>
+              <select className="select" name="payment_document_type" defaultValue="receipt" required>
+                <option value="receipt">Payment Receipt</option>
+                <option value="authorization_form">Authorization Form</option>
+                <option value="other">Other Payment Document</option>
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">File</span>
+              <input
+                className="input"
+                type="file"
+                name="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                required
+              />
+            </label>
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              background: "#f7fbfc",
+              border: "1px solid #e6f0f2",
+              color: "#667085",
+              lineHeight: 1.6,
+            }}
+          >
+            Payment documents are saved as internal trip files and linked to this payment request.
+          </div>
+
+          <button type="submit" className="btn btn-primary" disabled={Boolean(paymentDocumentsSetupMessage)}>
+            Upload Payment Document
+          </button>
+        </form>
+
+        {paymentDocuments.length === 0 ? (
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            No payment documents have been uploaded yet.
+          </p>
+        ) : (
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 760 }}>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>File</th>
+                  <th>Size</th>
+                  <th>Uploaded</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentDocuments.map((document) => (
+                  <tr key={document.id}>
+                    <td>{getPaymentDocumentTypeLabel(document.payment_document_type)}</td>
+                    <td>{document.file_name ?? "Payment document"}</td>
+                    <td>{formatFileSize(document.file_size_bytes)}</td>
+                    <td>{formatDateTime(document.created_at)}</td>
+                    <td>
+                      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <a
+                          className="btn btn-outline"
+                          href={`/api/admin/payment-request-documents/${document.id}/open`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open
+                        </a>
+                        <form action={deletePaymentRequestDocument}>
+                          <input type="hidden" name="request_id" value={request.id} />
+                          <input type="hidden" name="document_id" value={document.id} />
+                          <button type="submit" className="btn btn-outline" style={{ borderColor: "#fecaca", color: "#b42318" }}>
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card stack">

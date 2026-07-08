@@ -53,3 +53,33 @@ export function decryptIfPresent(value: string | null | undefined): string | nul
   if (!value) return null;
   return decrypt(value);
 }
+
+export function encryptBuffer(plaintext: Buffer | Uint8Array): Buffer {
+  const key = getKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(Buffer.from(plaintext)),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+
+  return Buffer.concat([iv, authTag, encrypted]);
+}
+
+export function decryptBuffer(ciphertext: Buffer | Uint8Array): Buffer {
+  const payload = Buffer.from(ciphertext);
+
+  if (payload.length < 29) {
+    throw new Error("Encrypted file payload is invalid.");
+  }
+
+  const key = getKey();
+  const iv = payload.subarray(0, 12);
+  const authTag = payload.subarray(12, 28);
+  const encrypted = payload.subarray(28);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+}
