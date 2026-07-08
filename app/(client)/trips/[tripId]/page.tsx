@@ -50,6 +50,11 @@ const answeredInsuranceDecisionValues = new Set([
   "coverage_declined",
 ]);
 
+const insuranceOfferedMilestoneTitle = "Travel insurance offered";
+const insuranceAnsweredMilestoneTitle = "Travel insurance accepted / declined";
+const agencyName = "Cozy Adventure Vacations";
+const agencyTagline = "Memories Await!";
+
 function normalizeInsuranceDecision(value: unknown) {
   return String(value ?? "")
     .trim()
@@ -62,6 +67,234 @@ function hasInsuranceDecisionBeenAnswered(decision: unknown, decidedAt: unknown)
     answeredInsuranceDecisionValues.has(normalizeInsuranceDecision(decision)) ||
     String(decidedAt ?? "").trim().length > 0
   );
+}
+
+function escapeHtml(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildInsuranceWaiverDocument({
+  clientName,
+  clientEmail,
+  tripName,
+  destinations,
+  departureDate,
+  decision,
+  decisionLabel,
+  recordedAt,
+}: {
+  clientName: string;
+  clientEmail: string | null;
+  tripName: string;
+  destinations: string | null;
+  departureDate: string | null;
+  decision: "accepted" | "declined";
+  decisionLabel: string;
+  recordedAt: string;
+}) {
+  const formattedDepartureDate = fmtDate(departureDate) ?? departureDate ?? "Not provided";
+  const formattedRecordedAt = fmtDateTime(recordedAt) ?? recordedAt;
+  const decisionSummary =
+    decision === "accepted"
+      ? "Client accepted travel insurance coverage review."
+      : "Client declined travel insurance coverage review.";
+  const acknowledgment =
+    decision === "accepted"
+      ? "I request that Cozy Adventure Vacations review travel insurance coverage options for this trip. I understand coverage is not bound until an insurance policy is selected, purchased, and confirmed by the insurance provider."
+      : "I decline travel insurance coverage review for this trip at this time. I understand that I may be responsible for trip costs, penalties, medical expenses, delays, cancellations, interruptions, baggage issues, or other losses that may have been covered by a travel insurance policy.";
+  const plainText = [
+    `${agencyName}`,
+    agencyTagline,
+    "",
+    "Travel Insurance Acknowledgment and Waiver",
+    "",
+    `Client: ${clientName}`,
+    clientEmail ? `Client email: ${clientEmail}` : null,
+    `Trip: ${tripName}`,
+    destinations ? `Destination(s): ${destinations}` : null,
+    `Departure date: ${formattedDepartureDate}`,
+    `Decision: ${decisionSummary}`,
+    `Decision detail: Client ${decisionLabel}.`,
+    `Recorded at: ${formattedRecordedAt}`,
+    "",
+    "Client Acknowledgment",
+    acknowledgment,
+    "",
+    "Advisor Record",
+    "Travel insurance was offered through the client trip page. The client submitted the decision above while logged into their Cozy Concierge account.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Travel Insurance Acknowledgment and Waiver</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #14313f;
+      --muted: #5f7180;
+      --accent: #1f6f7a;
+      --warm: #fff7ed;
+      --line: #dbe8ec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f5f8fa;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      max-width: 840px;
+      margin: 28px auto;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      padding: 40px;
+    }
+    header {
+      border-bottom: 3px solid var(--accent);
+      padding-bottom: 22px;
+      margin-bottom: 28px;
+    }
+    .brand {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0;
+      margin: 0;
+    }
+    .tagline {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-style: italic;
+    }
+    h1 {
+      margin: 22px 0 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    h2 {
+      font-size: 16px;
+      margin: 24px 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+    }
+    dl {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 8px 16px;
+      margin: 0;
+    }
+    dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+    dd {
+      margin: 0;
+      font-weight: 700;
+    }
+    .decision {
+      margin: 18px 0;
+      padding: 18px;
+      background: var(--warm);
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+      font-weight: 800;
+    }
+    .acknowledgment {
+      border: 1px solid var(--line);
+      padding: 18px;
+      background: #fbfdfe;
+    }
+    .signature {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .signature div {
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer {
+      margin-top: 28px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media print {
+      body { background: #ffffff; }
+      main { margin: 0; border: 0; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="brand">${escapeHtml(agencyName)}</p>
+      <p class="tagline">${escapeHtml(agencyTagline)}</p>
+      <h1>Travel Insurance Acknowledgment and Waiver</h1>
+    </header>
+
+    <section>
+      <h2>Trip Record</h2>
+      <dl>
+        <dt>Client</dt>
+        <dd>${escapeHtml(clientName)}</dd>
+        <dt>Email</dt>
+        <dd>${escapeHtml(clientEmail ?? "Not provided")}</dd>
+        <dt>Trip</dt>
+        <dd>${escapeHtml(tripName)}</dd>
+        <dt>Destination(s)</dt>
+        <dd>${escapeHtml(destinations ?? "Not provided")}</dd>
+        <dt>Departure date</dt>
+        <dd>${escapeHtml(formattedDepartureDate)}</dd>
+        <dt>Recorded at</dt>
+        <dd>${escapeHtml(formattedRecordedAt)}</dd>
+        <dt>Decision detail</dt>
+        <dd>Client ${escapeHtml(decisionLabel)}.</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Client Decision</h2>
+      <div class="decision">${escapeHtml(decisionSummary)}</div>
+      <div class="acknowledgment">
+        <strong>Client acknowledgment:</strong>
+        <p>${escapeHtml(acknowledgment)}</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Advisor Record</h2>
+      <p>Travel insurance was offered through the client trip page. The client submitted this decision while logged into their Cozy Concierge account.</p>
+      <div class="signature">
+        <div>Client: ${escapeHtml(clientName)}</div>
+        <div>Date recorded: ${escapeHtml(formattedRecordedAt)}</div>
+      </div>
+    </section>
+
+    <footer>
+      Generated by Cozy Concierge for ${escapeHtml(agencyName)}. This record documents the client's selection for this trip.
+    </footer>
+  </main>
+</body>
+</html>`;
+
+  return { html, plainText };
 }
 
 function createSupabaseAdminClient() {
@@ -420,33 +653,27 @@ async function recordInsuranceDecision(formData: FormData) {
     `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
     clientAccount.email ||
     "Client";
-  const waiverContent = [
-    "Travel Insurance Waiver Record",
-    "",
-    `Client: ${clientName}`,
-    clientAccount.email ? `Client email: ${clientAccount.email}` : null,
-    `Trip: ${trip.trip_name ?? "Trip"}`,
-    trip.destinations ? `Destination(s): ${trip.destinations}` : null,
-    trip.departure_date ? `Departure date: ${fmtDate(trip.departure_date) ?? trip.departure_date}` : null,
-    `Decision: Client ${decisionLabel}.`,
-    `Recorded at: ${fmtDateTime(decisionAt) ?? decisionAt}`,
-    "",
-    decision === "accepted"
-      ? "Client requested that Cozy Adventure Vacations review travel insurance coverage options for this trip."
-      : "Client confirmed they do not want Cozy Adventure Vacations to review travel insurance coverage options for this trip at this time.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const waiverDocument = buildInsuranceWaiverDocument({
+    clientName,
+    clientEmail: clientAccount.email ?? null,
+    tripName: trip.trip_name ?? "Trip",
+    destinations: trip.destinations ?? null,
+    departureDate: trip.departure_date ?? null,
+    decision: decision as "accepted" | "declined",
+    decisionLabel,
+    recordedAt: decisionAt,
+  });
+  const waiverContent = waiverDocument.plainText;
 
   const supabaseAdmin = createSupabaseAdminClient();
-  const waiverFileName = "travel-insurance-waiver.txt";
+  const waiverFileName = "travel-insurance-waiver.html";
   const waiverStoragePath = `${tripId}/generated/${waiverFileName}`;
-  const waiverBytes = new TextEncoder().encode(waiverContent);
+  const waiverBytes = new TextEncoder().encode(waiverDocument.html);
 
   const { error: waiverUploadError } = await supabaseAdmin.storage
     .from("trip-documents")
     .upload(waiverStoragePath, waiverBytes, {
-      contentType: "text/plain; charset=utf-8",
+      contentType: "text/html; charset=utf-8",
       upsert: true,
     });
 
@@ -499,9 +726,9 @@ async function recordInsuranceDecision(formData: FormData) {
     trip_id: tripId,
     file_name: waiverFileName,
     storage_path: waiverStoragePath,
-    mime_type: "text/plain; charset=utf-8",
+    mime_type: "text/html; charset=utf-8",
     file_size_bytes: waiverBytes.byteLength,
-    visibility: "client",
+    visibility: "travel_circle",
     component_id: null,
     component_type: "insurance",
     attach_to_commission: false,
@@ -521,6 +748,18 @@ async function recordInsuranceDecision(formData: FormData) {
 
     if (waiverDocumentInsertError) throw new Error(waiverDocumentInsertError.message);
   }
+
+  const { error: milestoneUpdateError } = await supabaseAdmin
+    .from("trip_milestones" as any)
+    .update({
+      is_completed: true,
+      completed_at: decisionAt,
+      updated_at: decisionAt,
+    })
+    .eq("trip_id", tripId)
+    .eq("title", insuranceAnsweredMilestoneTitle);
+
+  if (milestoneUpdateError) throw new Error(milestoneUpdateError.message);
 
   revalidatePath(`/trips/${tripId}`);
   revalidatePath(`/admin/trips/${tripId}`);
@@ -617,6 +856,7 @@ export default async function TripDetailPage({
     rentalCarResult,
     activityResult,
     insuranceResult,
+    insuranceOfferedMilestoneResult,
   ] = await Promise.all([
     supabaseAdmin.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
     supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
@@ -632,6 +872,12 @@ export default async function TripDetailPage({
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
+    supabaseAdmin
+      .from("trip_milestones" as any)
+      .select("id, is_completed")
+      .eq("trip_id", tripId)
+      .eq("title", insuranceOfferedMilestoneTitle)
+      .maybeSingle(),
   ]);
 
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails, insuranceDetails] = await Promise.all([
@@ -877,8 +1123,11 @@ export default async function TripDetailPage({
   };
 
   const deletionRequested = Boolean(trip.deletion_requested_at);
+  const hasInsuranceBeenOffered =
+    insuranceOfferedMilestoneResult.data?.is_completed === true;
   const shouldAskInsurance =
     isPrimaryClient &&
+    hasInsuranceBeenOffered &&
     !hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at);
 
   return (
@@ -891,9 +1140,10 @@ export default async function TripDetailPage({
           <div>
             <p style={{ margin: 0, fontWeight: 900 }}>Travel Insurance Waiver</p>
             <p style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              Please choose whether you would like travel insurance coverage reviewed for this trip.
-              If you decline, you are confirming that you do not want Cozy Adventure
-              Vacations to review travel insurance options for this trip at this time.
+              Your advisor has offered travel insurance coverage review for this trip.
+              Please choose whether you would like coverage reviewed. If you decline,
+              you are confirming that you do not want your advisor to review travel
+              insurance options for this trip at this time.
             </p>
           </div>
           <form action={recordInsuranceDecision} className="row">

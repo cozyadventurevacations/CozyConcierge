@@ -99,11 +99,13 @@ const allowedComponentDocumentExtensions = [
   ".xlsx",
 ];
 
+const insuranceOfferedMilestoneTitle = "Travel insurance offered";
+
 const defaultTripMilestones = [
   { title: "Quote requested", description: "Initial client request or inquiry has been received." },
   { title: "Trip created", description: "Trip record has been created in Cozy Concierge." },
   { title: "Deposit paid", description: "Client deposit has been paid or marked as not required." },
-  { title: "Travel insurance offered", description: "Travel protection has been offered and documented." },
+  { title: insuranceOfferedMilestoneTitle, description: "Travel protection has been offered and the client trip-page prompt is available." },
   { title: "Travel insurance accepted / declined", description: "Client decision about travel protection has been documented." },
   { title: "Client documents collected", description: "Required client documents have been collected or reviewed." },
   { title: "Supplier confirmations added", description: "Supplier confirmation numbers and booking details have been added." },
@@ -1003,6 +1005,11 @@ function MilestoneChecklist({ milestones }: { milestones: TripMilestoneRow[] }) 
             <p style={{ margin: "5px 0 0", color: "#667085", lineHeight: 1.45 }}>
               {milestone.description ?? "Not provided"}
             </p>
+            {milestone.title === insuranceOfferedMilestoneTitle ? (
+              <p style={{ margin: "5px 0 0", color: "#9a3412", fontSize: 13, lineHeight: 1.45, fontWeight: 700 }}>
+                Marking this complete shows the insurance accept/decline prompt on the client's trip page.
+              </p>
+            ) : null}
             {milestone.completed_at ? (
               <p style={{ margin: "5px 0 0", color: "#667085", fontSize: 13 }}>
                 Completed {formatDate(milestone.completed_at)}
