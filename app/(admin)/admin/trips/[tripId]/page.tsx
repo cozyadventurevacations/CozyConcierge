@@ -76,6 +76,19 @@ function hasInsuranceDecisionBeenAnswered(decision: unknown, decidedAt: unknown)
   );
 }
 
+function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  if (
+    message.includes("price_watch_") ||
+    message.includes("cruise_price_watch_results") ||
+    message.includes("schema cache")
+  ) {
+    return "Cruise Price Watch is not fully set up in Supabase yet. Run scripts/setup-cruise-price-watch.sql in the Supabase SQL Editor, then try saving the cruise again.";
+  }
+
+  return null;
+}
+
 const allowedComponentDocumentMimeTypes = [
   "application/pdf",
   "image/jpeg",
@@ -3108,7 +3121,12 @@ async function updateTrip(formData: FormData) {
         .update(componentPayload)
         .eq("id", componentId);
 
-      if (componentUpdateError) throw new Error(componentUpdateError.message);
+      if (componentUpdateError) {
+        throw new Error(
+          getCruisePriceWatchSchemaErrorMessage(componentUpdateError) ??
+            componentUpdateError.message,
+        );
+      }
     } else {
       const { data: insertedComponent, error: componentInsertError } =
         await supabase
@@ -3123,7 +3141,8 @@ async function updateTrip(formData: FormData) {
 
       if (componentInsertError || !insertedComponent) {
         throw new Error(
-          componentInsertError?.message ??
+          getCruisePriceWatchSchemaErrorMessage(componentInsertError) ??
+            componentInsertError?.message ??
             `Failed to create ${componentType} component.`,
         );
       }

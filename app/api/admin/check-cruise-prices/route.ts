@@ -76,6 +76,19 @@ function isAuthorized(request: Request) {
   return { ok: false, status: 401, error: "Unauthorized." };
 }
 
+function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  if (
+    message.includes("price_watch_") ||
+    message.includes("cruise_price_watch_results") ||
+    message.includes("schema cache")
+  ) {
+    return "Cruise Price Watch is not fully set up in Supabase yet. Run scripts/setup-cruise-price-watch.sql in the Supabase SQL Editor, then try again.";
+  }
+
+  return null;
+}
+
 function normalizeCode(value: string | null | undefined) {
   return (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -321,7 +334,12 @@ async function runCruisePriceWatch() {
     .eq("price_watch_enabled", true)
     .not("price_watch_public_url", "is", null);
 
-  if (componentsError) throw new Error(componentsError.message);
+  if (componentsError) {
+    throw new Error(
+      getCruisePriceWatchSchemaErrorMessage(componentsError) ??
+        componentsError.message,
+    );
+  }
 
   const components = (componentsData ?? []) as TripComponentRow[];
   const componentIds = components.map((component) => component.id);

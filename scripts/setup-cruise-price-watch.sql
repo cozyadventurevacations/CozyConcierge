@@ -65,3 +65,5 @@ create policy "Admins can manage cruise price watch results"
   );
 
 grant select, insert, update, delete on public.cruise_price_watch_results to authenticated;
+
+notify pgrst, 'reload schema';
