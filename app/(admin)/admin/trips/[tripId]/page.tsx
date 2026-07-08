@@ -1020,7 +1020,7 @@ function MilestoneChecklist({ milestones }: { milestones: TripMilestoneRow[] }) 
             </p>
             {milestone.title === insuranceOfferedMilestoneTitle ? (
               <p style={{ margin: "5px 0 0", color: "#9a3412", fontSize: 13, lineHeight: 1.45, fontWeight: 700 }}>
-                Marking this complete shows the insurance accept/decline prompt on the client's trip page.
+                Marking this complete shows the insurance accept/decline prompt on the client trip page.
               </p>
             ) : null}
             {milestone.completed_at ? (
