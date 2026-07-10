@@ -13,6 +13,7 @@ import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
+import { encryptBuffer } from "@/lib/encryption";
 import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
 const allowedTripStatuses = [
@@ -47,8 +48,19 @@ const tripComponentTypeLabels: Record<string, string> = {
 };
 
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
+const paymentDocumentTypes = ["receipt", "authorization_form", "other"] as const;
 
 const MAX_COMPONENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
+const MAX_PAYMENT_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024;
+const allowedPaymentDocumentMimeTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const allowedPaymentDocumentExtensions = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"];
 
 const answeredInsuranceDecisionValues = new Set([
   "accepted",
@@ -74,6 +86,78 @@ function hasInsuranceDecisionBeenAnswered(decision: unknown, decidedAt: unknown)
     answeredInsuranceDecisionValues.has(normalizeInsuranceDecision(decision)) ||
     String(decidedAt ?? "").trim().length > 0
   );
+}
+
+function getInsuranceDecisionLabel(decision: unknown, noteContent?: string | null) {
+  const normalizedDecision = normalizeInsuranceDecision(decision);
+  const normalizedNote = String(noteContent ?? "").toLowerCase();
+
+  if (["accepted", "accept", "yes", "coverage_accepted"].includes(normalizedDecision)) {
+    return "Accepted";
+  }
+
+  if (["declined", "decline", "no", "waived", "coverage_declined"].includes(normalizedDecision)) {
+    return "Declined";
+  }
+
+  if (normalizedNote.includes("declined")) return "Declined";
+  if (normalizedNote.includes("accepted")) return "Accepted";
+
+  return "Answered";
+}
+
+function getPaymentDocumentTypeLabel(value: string | null | undefined) {
+  if (value === "receipt") return "Payment Receipt";
+  if (value === "authorization_form") return "Authorization Form";
+  return "Other Payment Document";
+}
+
+function validatePaymentDocumentType(value: string) {
+  if (!paymentDocumentTypes.includes(value as (typeof paymentDocumentTypes)[number])) {
+    throw new Error("Invalid payment document type.");
+  }
+
+  return value;
+}
+
+function getFileExtension(fileName: string) {
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex === -1) return "";
+  return fileName.slice(lastDotIndex).toLowerCase();
+}
+
+function validatePaymentDocumentFile(file: File) {
+  if (file.size === 0) {
+    throw new Error("Selected file is empty.");
+  }
+
+  if (file.size > MAX_PAYMENT_DOCUMENT_SIZE_BYTES) {
+    throw new Error("File is too large. Maximum upload size is 15MB.");
+  }
+
+  const extension = getFileExtension(file.name);
+  const mimeType = file.type || "";
+  const hasAllowedExtension = allowedPaymentDocumentExtensions.includes(extension);
+  const hasAllowedMimeType = mimeType ? allowedPaymentDocumentMimeTypes.includes(mimeType) : false;
+
+  if (!hasAllowedExtension || (mimeType && !hasAllowedMimeType)) {
+    throw new Error("Invalid file type. Allowed files: PDF, JPG, PNG, WEBP, DOC, and DOCX.");
+  }
+}
+
+function getPaymentDocumentSchemaErrorMessage(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  if (
+    message.includes("payment_request_id") ||
+    message.includes("payment_document_type") ||
+    message.includes("is_encrypted") ||
+    message.includes("encryption_algorithm") ||
+    message.includes("schema cache")
+  ) {
+    return "Payment request documents are not fully set up in Supabase yet. Run scripts/setup-payment-request-documents.sql in the Supabase SQL Editor, then try again.";
+  }
+
+  return null;
 }
 
 function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | null | undefined) {
@@ -4379,6 +4463,98 @@ async function addTripPaymentLedgerEntry(formData: FormData) {
   revalidatePath("/admin/dashboard");
 }
 
+async function uploadTripPaymentDocument(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const requestId = String(formData.get("request_id") ?? "").trim();
+  const paymentDocumentType = validatePaymentDocumentType(
+    String(formData.get("payment_document_type") ?? "").trim(),
+  );
+  const file = formData.get("file");
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!requestId) throw new Error("Choose the payment request this document belongs to.");
+  if (!(file instanceof File)) throw new Error("File is required.");
+
+  validatePaymentDocumentFile(file);
+
+  const { data: paymentRequest, error: paymentRequestError } = await supabase
+    .from("payment_requests")
+    .select("id, trip_id")
+    .eq("id", requestId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (paymentRequestError || !paymentRequest) {
+    throw new Error(paymentRequestError?.message ?? "Payment request not found for this trip.");
+  }
+
+  const { data: userProfile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (profileError || !userProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const safeFileName =
+    file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/_+/g, "_") || "payment-document";
+  const storagePath = `${tripId}/payments/${requestId}/${crypto.randomUUID()}-${safeFileName}`;
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+  const encryptedFileBuffer = encryptBuffer(fileBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from("trip-documents")
+    .upload(storagePath, encryptedFileBuffer, {
+      contentType: "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { error: insertError } = await supabase
+    .from("trip_documents")
+    .insert({
+      trip_id: tripId,
+      file_name: file.name,
+      storage_path: storagePath,
+      mime_type: file.type || null,
+      file_size_bytes: file.size,
+      visibility: "internal",
+      component_id: null,
+      component_type: null,
+      attach_to_commission: false,
+      uploaded_by_user_profile_id: userProfile.id,
+      payment_request_id: requestId,
+      payment_document_type: paymentDocumentType,
+      is_encrypted: true,
+      encryption_algorithm: "aes-256-gcm",
+    });
+
+  if (insertError) {
+    await supabase.storage.from("trip-documents").remove([storagePath]);
+    throw new Error(
+      getPaymentDocumentSchemaErrorMessage(insertError) ??
+        insertError.message,
+    );
+  }
+
+  revalidatePath(`/admin/payment-requests/${requestId}`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+}
+
 async function deleteTripPaymentLedgerEntry(formData: FormData) {
   "use server";
 
@@ -4735,6 +4911,12 @@ export default async function AdminTripEditorPage({
   const hasAnsweredInsurance =
     hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at) ||
     Boolean(insuranceWaiverNote);
+  const insuranceDecisionLabel = getInsuranceDecisionLabel(
+    trip.insurance_decision,
+    insuranceWaiverNote?.content,
+  );
+  const insuranceDecisionIsDeclined = insuranceDecisionLabel === "Declined";
+  const insuranceDecisionDate = trip.insurance_decision_at ?? insuranceWaiverNote?.created_at ?? null;
   const hasMinorTravelDocument = clientDocumentRows.some(
     (document) =>
       document.document_type === "minor_permission" ||
@@ -5174,7 +5356,32 @@ export default async function AdminTripEditorPage({
           </div>
         ) : null}
 
-        {!hasAnsweredInsurance ? (
+        {hasAnsweredInsurance ? (
+          <div
+            className="card"
+            style={{
+              border: `1px solid ${insuranceDecisionIsDeclined ? "#fed7aa" : "#bbf7d0"}`,
+              background: insuranceDecisionIsDeclined ? "#fff7ed" : "#f0fdf4",
+              color: insuranceDecisionIsDeclined ? "#9a3412" : "#166534",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: 900 }}>
+                  Travel Insurance: {insuranceDecisionLabel}
+                </p>
+                <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+                  The primary client answered the travel insurance waiver
+                  {insuranceDecisionDate ? ` on ${formatDate(insuranceDecisionDate, "the saved date")}` : ""}.
+                  A copy of the waiver is saved with the trip documents.
+                </p>
+              </div>
+              <Link href="#document-readiness" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>
+                View Documents
+              </Link>
+            </div>
+          </div>
+        ) : (
           <div
             className="card"
             style={{
@@ -5201,7 +5408,7 @@ export default async function AdminTripEditorPage({
               ) : null}
             </div>
           </div>
-        ) : null}
+        )}
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 
@@ -7390,7 +7597,7 @@ export default async function AdminTripEditorPage({
               <div>
                 <h3 style={{ margin: 0 }}>Payment Request Documents</h3>
                 <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
-                  Upload encrypted payment receipts and authorization forms from the linked payment request.
+                  Upload encrypted payment receipts and authorization forms directly to a linked payment request.
                 </p>
               </div>
               <Link href="/admin/payment-requests" className="btn btn-outline" style={{ whiteSpace: "nowrap" }}>
@@ -7408,39 +7615,78 @@ export default async function AdminTripEditorPage({
                 No payment requests exist for this trip yet. Clients can request a payment link from their trip page, then receipts and authorization forms can be uploaded from that payment request.
               </div>
             ) : (
-              <div style={{ width: "100%", overflowX: "auto" }}>
-                <table className="table" style={{ minWidth: 820 }}>
-                  <thead>
-                    <tr>
-                      <th>Requested</th>
-                      <th>Amount</th>
-                      <th>Payment Date</th>
-                      <th>Status</th>
-                      <th>Completed</th>
-                      <th>Documents</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paymentRequestRows.map((request) => (
-                      <tr key={request.id}>
-                        <td>{formatDate(request.requested_at, "Not provided")}</td>
-                        <td style={{ fontWeight: 900 }}>{formatMoney(request.requested_amount)}</td>
-                        <td>{formatDate(request.requested_payment_date, "Not set")}</td>
-                        <td>
-                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: "#f0f7f8", color: "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
-                            {request.status ?? "new"}
-                          </span>
-                        </td>
-                        <td>{formatDate(request.completed_at, "Not completed")}</td>
-                        <td>
-                          <Link href={`/admin/payment-requests/${request.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}>
-                            Upload Receipts/Forms
-                          </Link>
-                        </td>
+              <div className="stack">
+                <form action={uploadTripPaymentDocument} encType="multipart/form-data" className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
+                  <input type="hidden" name="trip_id" value={trip.id} />
+                  <div>
+                    <h4 style={{ margin: 0 }}>Upload Receipt or Authorization</h4>
+                    <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                      Files are encrypted before storage and kept internal to the agency.
+                    </p>
+                  </div>
+                  <div className="grid grid-3">
+                    <label>
+                      <span className="label">Payment Request</span>
+                      <select className="select" name="request_id" defaultValue={paymentRequestRows[0]?.id ?? ""} required>
+                        {paymentRequestRows.map((request) => (
+                          <option key={request.id} value={request.id}>
+                            {formatDate(request.requested_at, "Requested")} - {formatMoney(request.requested_amount)} - {request.status ?? "new"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="label">Document Type</span>
+                      <select className="select" name="payment_document_type" defaultValue="receipt" required>
+                        {paymentDocumentTypes.map((type) => (
+                          <option key={type} value={type}>{getPaymentDocumentTypeLabel(type)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="label">File</span>
+                      <input className="input" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" required />
+                    </label>
+                  </div>
+                  <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+                    Upload Payment Document
+                  </button>
+                </form>
+
+                <div style={{ width: "100%", overflowX: "auto" }}>
+                  <table className="table" style={{ minWidth: 820 }}>
+                    <thead>
+                      <tr>
+                        <th>Requested</th>
+                        <th>Amount</th>
+                        <th>Payment Date</th>
+                        <th>Status</th>
+                        <th>Completed</th>
+                        <th>Documents</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {paymentRequestRows.map((request) => (
+                        <tr key={request.id}>
+                          <td>{formatDate(request.requested_at, "Not provided")}</td>
+                          <td style={{ fontWeight: 900 }}>{formatMoney(request.requested_amount)}</td>
+                          <td>{formatDate(request.requested_payment_date, "Not set")}</td>
+                          <td>
+                            <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: "#f0f7f8", color: "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
+                              {request.status ?? "new"}
+                            </span>
+                          </td>
+                          <td>{formatDate(request.completed_at, "Not completed")}</td>
+                          <td>
+                            <Link href={`/admin/payment-requests/${request.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}>
+                              View Documents
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
