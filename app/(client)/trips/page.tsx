@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { tripMemberIdentityFilter } from "@/lib/travel-circle-access";
 
 type ClientAccountRow = {
   id: string;
@@ -420,7 +421,7 @@ export default async function TripsPage() {
     .select(
       "id, trip_id, client_account_id, role, invite_status, can_view_trip, created_at, trips(id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status, balance_due, final_payment_due_date, deposit_amount, deposit_due_date, deposit_paid)",
     )
-    .eq("client_account_id", clientAccount.id)
+    .or(tripMemberIdentityFilter(clientAccount.id, clientAccount.email))
     .eq("invite_status", "active")
     .eq("can_view_trip", true)
     .neq("role", "owner")

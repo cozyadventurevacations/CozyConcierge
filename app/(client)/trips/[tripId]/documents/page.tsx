@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
 
 type ClientAccount = {
   id: string;
@@ -38,6 +40,21 @@ type TripAccess = {
   isTravelCompanion: boolean;
   role: string | null;
 };
+
+function createSupabaseAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+  if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
 
 function formatDate(value: string | null | undefined, fallback = "Not set") {
   if (!value) return fallback;
@@ -232,9 +249,10 @@ export default async function ClientTripDocumentsPage({
   params: Promise<{ tripId: string }>;
 }) {
   const { tripId } = await params;
-  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const { clientAccount } = await getCurrentClientAccount();
+  const supabaseAdmin = createSupabaseAdminClient();
 
-  const { data: trip, error: tripError } = await supabase
+  const { data: trip, error: tripError } = await supabaseAdmin
     .from("trips")
     .select(
       "id, client_account_id, trip_name, destinations, departure_date, return_date, trip_status",
@@ -265,15 +283,13 @@ export default async function ClientTripDocumentsPage({
   };
 
   if (!isLeadClient) {
-    const { data: tripMember, error: tripMemberError } = await supabase
-      .from("trip_members" as any)
-      .select("id, role, can_view_trip, can_view_shared_documents, invite_status")
-      .eq("trip_id", tripId)
-      .eq("client_account_id", clientAccount.id)
-      .eq("invite_status", "active")
-      .eq("can_view_trip", true)
-      .eq("can_view_shared_documents", true)
-      .maybeSingle();
+    const { data: tripMember, error: tripMemberError } = await findActiveTripMemberAccess({
+      supabase: supabaseAdmin,
+      tripId,
+      clientAccountId: clientAccount.id,
+      email: clientAccount.email,
+      select: "id, role, can_view_trip, can_view_shared_documents, invite_status",
+    });
 
     if (tripMemberError) {
       return (
@@ -288,7 +304,7 @@ export default async function ClientTripDocumentsPage({
       );
     }
 
-    if (!tripMember) {
+    if (!tripMember || tripMember.can_view_trip !== true || tripMember.can_view_shared_documents !== true) {
       return (
         <PageShell title="Trip Documents" subtitle="We could not load this trip.">
           <div className="card">
@@ -312,7 +328,7 @@ export default async function ClientTripDocumentsPage({
     ? ["client", "client_travel_circle"]
     : ["travel_circle", "client_travel_circle"];
 
-  const { data: documents, error: documentsError } = await supabase
+  const { data: documents, error: documentsError } = await supabaseAdmin
     .from("trip_documents")
     .select("id, trip_id, file_name, storage_path, visibility, component_type, created_at")
     .eq("trip_id", tripId)
@@ -336,7 +352,7 @@ export default async function ClientTripDocumentsPage({
 
   const documentsWithUrls: DocumentWithUrl[] = await Promise.all(
     documentRows.map(async (doc) => {
-      const { data } = await supabase.storage
+      const { data } = await supabaseAdmin.storage
         .from("trip-documents")
         .createSignedUrl(doc.storage_path, 60 * 60);
 

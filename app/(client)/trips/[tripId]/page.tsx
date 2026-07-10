@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
+import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
 import { TripDetailClient } from "./trip-detail-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -347,7 +348,8 @@ async function getCurrentClientAccount() {
 
 async function requireTripCircleManager(tripId: string) {
   const { supabase, clientAccount } = await getCurrentClientAccount();
-  const { data: trip, error: tripError } = await supabase
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data: trip, error: tripError } = await supabaseAdmin
     .from("trips")
     .select("id, client_account_id, trip_name, destinations, departure_date")
     .eq("id", tripId)
@@ -359,13 +361,13 @@ async function requireTripCircleManager(tripId: string) {
     return { supabase, clientAccount, trip };
   }
 
-  const { data: managerAccess, error: managerAccessError } = await supabase
-    .from("trip_members" as any)
-    .select("id, can_manage_companions, invite_status")
-    .eq("trip_id", tripId)
-    .eq("client_account_id", clientAccount.id)
-    .eq("invite_status", "active")
-    .maybeSingle();
+  const { data: managerAccess, error: managerAccessError } = await findActiveTripMemberAccess({
+    supabase: supabaseAdmin,
+    tripId,
+    clientAccountId: clientAccount.id,
+    email: clientAccount.email,
+    select: "id, can_manage_companions, invite_status",
+  });
 
   if (managerAccessError) throw new Error(managerAccessError.message);
   if (!managerAccess || managerAccess.can_manage_companions !== true) {
@@ -480,7 +482,7 @@ async function removeTravelCompanion(formData: FormData) {
 async function attachClientUploadToTrip(formData: FormData) {
   "use server";
 
-  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const { clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
@@ -501,13 +503,13 @@ async function attachClientUploadToTrip(formData: FormData) {
 
   const isPrimaryClient = trip.client_account_id === clientAccount.id;
   if (!isPrimaryClient) {
-    const { data: memberAccess, error: memberAccessError } = await supabase
-      .from("trip_members" as any)
-      .select("id, can_view_trip, can_upload_own_documents, invite_status")
-      .eq("trip_id", tripId)
-      .eq("client_account_id", clientAccount.id)
-      .eq("invite_status", "active")
-      .maybeSingle();
+    const { data: memberAccess, error: memberAccessError } = await findActiveTripMemberAccess({
+      supabase: supabaseAdmin,
+      tripId,
+      clientAccountId: clientAccount.id,
+      email: clientAccount.email,
+      select: "id, can_view_trip, can_upload_own_documents, invite_status",
+    });
 
     if (memberAccessError) throw new Error(memberAccessError.message);
     if (
@@ -785,7 +787,7 @@ export default async function TripDetailPage({
   const advisorEmail = "jeremyb@cozyadventurevacations.com";
   const agencyWebsite = "https://www.cozyadventurevacations.com";
 
-  const { data: trip, error: tripError } = await supabase
+  const { data: trip, error: tripError } = await supabaseAdmin
     .from("trips")
     .select("*")
     .eq("id", tripId)
@@ -816,13 +818,13 @@ export default async function TripDetailPage({
   let canAttachClientDocuments = isPrimaryClient;
 
   if (!isPrimaryClient) {
-    const { data: memberAccess } = await supabase
-      .from("trip_members" as any)
-      .select("id, can_view_trip, can_view_shared_documents, can_upload_own_documents, can_manage_companions, invite_status")
-      .eq("trip_id", tripId)
-      .eq("client_account_id", clientAccount.id)
-      .eq("invite_status", "active")
-      .maybeSingle();
+    const { data: memberAccess } = await findActiveTripMemberAccess({
+      supabase: supabaseAdmin,
+      tripId,
+      clientAccountId: clientAccount.id,
+      email: clientAccount.email,
+      select: "id, can_view_trip, can_view_shared_documents, can_upload_own_documents, can_manage_companions, invite_status",
+    });
 
     if (!memberAccess || memberAccess.can_view_trip === false) {
       return (

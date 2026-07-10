@@ -5,6 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
 
 function fmtDate(value: string | null | undefined, fallback = "Not provided") {
   if (!value) return fallback;
@@ -117,47 +118,47 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 
 export default async function TripPrintSummaryPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
-  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const { clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
-  const { data: trip, error: tripError } = await supabase.from("trips").select("*").eq("id", tripId).single();
+  const { data: trip, error: tripError } = await supabaseAdmin.from("trips").select("*").eq("id", tripId).single();
   if (tripError || !trip) redirect("/trips");
 
   if (trip.client_account_id !== clientAccount.id) {
-    const { data: memberAccess, error: memberError } = await supabase
-      .from("trip_members" as any)
-      .select("id, can_view_trip, invite_status")
-      .eq("trip_id", tripId)
-      .eq("client_account_id", clientAccount.id)
-      .eq("invite_status", "active")
-      .maybeSingle();
+    const { data: memberAccess, error: memberError } = await findActiveTripMemberAccess({
+      supabase: supabaseAdmin,
+      tripId,
+      clientAccountId: clientAccount.id,
+      email: clientAccount.email,
+      select: "id, can_view_trip, invite_status",
+    });
 
-    if (memberError || !memberAccess?.can_view_trip) redirect("/trips");
+    if (memberError || memberAccess?.can_view_trip !== true) redirect("/trips");
   }
 
   const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, rentalCarResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
-    supabase.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).in("visibility", ["client", "client_travel_circle"]).order("created_at", { ascending: false }),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
-    supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
-    supabase.from("trip_proposals").select("planning_fee").eq("trip_id", tripId).maybeSingle(),
+    supabaseAdmin.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).in("visibility", ["client", "client_travel_circle"]).order("created_at", { ascending: false }),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "air").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "transfer").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
+    supabaseAdmin.from("trip_proposals").select("planning_fee").eq("trip_id", tripId).maybeSingle(),
   ]);
 
   const [hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails] = await Promise.all([
-    hotelResult.data ? supabase.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    cruiseResult.data ? supabase.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    transferResult.data ? supabase.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    rentalCarResult.data ? supabase.from("rental_car_components").select("*").eq("component_id", rentalCarResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
-    activityResult.data ? supabase.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    hotelResult.data ? supabaseAdmin.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    cruiseResult.data ? supabaseAdmin.from("cruise_components").select("*").eq("component_id", cruiseResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    transferResult.data ? supabaseAdmin.from("transfer_components").select("*").eq("component_id", transferResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    rentalCarResult.data ? supabaseAdmin.from("rental_car_components").select("*").eq("component_id", rentalCarResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
+    activityResult.data ? supabaseAdmin.from("activity_components").select("*").eq("component_id", activityResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   let flightSegments: any[] = [];
   if (airResult.data) {
-    const { data: segments } = await supabase.from("flight_segments").select("*").eq("air_component_id", airResult.data.id).order("segment_order", { ascending: true });
+    const { data: segments } = await supabaseAdmin.from("flight_segments").select("*").eq("air_component_id", airResult.data.id).order("segment_order", { ascending: true });
     flightSegments = segments ?? [];
   }
 
