@@ -276,6 +276,32 @@ function finalPaymentEmail(
 
 // ─── Duplicate Prevention ─────────────────────────────────────────────────────
 
+function depositDueEmail(
+  client: { preferred_name?: string | null; first_name?: string | null },
+  tripName: string,
+  depositDueDate: string,
+  depositAmount: number | null
+) {
+  const name = preferredName(client);
+  const depositText = depositAmount
+    ? `<p>Your deposit amount is <strong>$${depositAmount.toLocaleString()}</strong>.</p>`
+    : "";
+
+  return {
+    subject: `Action Required - Deposit Due for ${tripName}`,
+    html: emailWrapper(`
+      <h2 style="color: #2c5f8a; margin: 0 0 12px;">Hi ${name},</h2>
+      <p>This is a friendly reminder that the deposit for <strong>${tripName}</strong> is due on <strong>${formatDate(depositDueDate)}</strong>.</p>
+      ${depositText}
+      <p><strong>Please complete your deposit before the due date</strong> so your booking stays protected with the supplier.</p>
+      <p>To make your payment, please log into your <a href="${PORTAL_URL}/trips" style="color: #2c5f8a;">secure client portal</a> where you can review your payment details and use your payment link.</p>
+      <p>Please do not reply to this email with credit card numbers or financial information. All payments are handled securely through your client portal.</p>
+      <p>If you have questions about your deposit or payment options, please reach out and I&apos;ll be happy to help!</p>
+      <p style="margin-top: 20px;">Warm regards,<br/><strong>Jeremy</strong><br/>Cozy Adventure Vacations<br/><em>Memories Await!</em></p>
+    `),
+  };
+}
+
 async function alreadySent(
   supabase: ReturnType<typeof getSupabaseAdminClient>,
   clientAccountId: string,
@@ -544,6 +570,24 @@ export async function GET(request: Request) {
   const tenDaysOut = new Date(today);
   tenDaysOut.setDate(tenDaysOut.getDate() + 10);
   const tenDaysOutStr = tenDaysOut.toISOString().split("T")[0];
+
+  const { data: depositTrips } = await supabase
+    .from("trips")
+    .select("id, trip_name, deposit_due_date, deposit_amount, deposit_paid, client_account_id, client_accounts(id, first_name, preferred_name, email, notify_payment_reminders)")
+    .eq("deposit_due_date", tenDaysOutStr)
+    .or("deposit_paid.is.null,deposit_paid.eq.false")
+    .neq("trip_status", "cancelled");
+
+  for (const trip of depositTrips ?? []) {
+    const client = Array.isArray(trip.client_accounts) ? trip.client_accounts[0] : trip.client_accounts;
+    if (!client?.email || !trip.deposit_due_date) continue;
+    if (!wantsPaymentReminders(client)) {
+      skipped.push(`deposit-due:${trip.id} (payment reminders disabled)`);
+      continue;
+    }
+    const { subject, html } = depositDueEmail(client, trip.trip_name ?? "Your Trip", trip.deposit_due_date, trip.deposit_amount ?? null);
+    await sendEmail(client.email, subject, html, `deposit-due:${trip.id}`, client.id, trip.id, "deposit_due_10_day");
+  }
 
   const { data: paymentTrips } = await supabase
     .from("trips")

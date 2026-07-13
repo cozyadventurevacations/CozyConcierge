@@ -1,4 +1,5 @@
 export type EmailAutomationType =
+  | "deposit_due_10_day"
   | "final_payment_10_day"
   | "pre_travel_30_day"
   | "pre_travel_7_day"
@@ -17,6 +18,13 @@ export type EmailAutomationTemplate = {
 };
 
 export const emailAutomationTemplates: EmailAutomationTemplate[] = [
+  {
+    template: "Deposit Due Reminder",
+    type: "deposit_due_10_day",
+    defaultEnabled: true,
+    trigger: "10 days before deposit due date",
+    category: "payments",
+  },
   {
     template: "Final Payment Reminder",
     type: "final_payment_10_day",

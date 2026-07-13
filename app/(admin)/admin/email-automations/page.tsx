@@ -188,6 +188,7 @@ async function buildUpcomingEmails({
   }
 
   const targetDates = {
+    depositDue: toIsoDate(addDays(today, 10)),
     finalPayment: toIsoDate(addDays(today, 10)),
     preTravel30: toIsoDate(addDays(today, 30)),
     preTravel7: toIsoDate(addDays(today, 7)),
@@ -197,6 +198,7 @@ async function buildUpcomingEmails({
   };
 
   const [
+    depositDue,
     finalPayments,
     preTravel30,
     preTravel7,
@@ -205,6 +207,12 @@ async function buildUpcomingEmails({
     passportDocs,
     clients,
   ] = await Promise.all([
+    supabase
+      .from("trips")
+      .select("id, trip_name, deposit_due_date, deposit_amount, deposit_paid, client_accounts(first_name, last_name, preferred_name, email)")
+      .eq("deposit_due_date", targetDates.depositDue)
+      .or("deposit_paid.is.null,deposit_paid.eq.false")
+      .neq("trip_status", "cancelled"),
     supabase
       .from("trips")
       .select("id, trip_name, final_payment_due_date, balance_due, client_accounts(first_name, last_name, preferred_name, email)")
@@ -257,6 +265,7 @@ async function buildUpcomingEmails({
     }
   }
 
+  pushTripEmail(depositDue.data, "deposit_due_10_day", "Deposit due in 10 days", "deposit_due_date");
   pushTripEmail(finalPayments.data, "final_payment_10_day", "Final payment due in 10 days", "final_payment_due_date");
   pushTripEmail(preTravel30.data, "pre_travel_30_day", "Departure in 30 days", "departure_date");
   pushTripEmail(preTravel7.data, "pre_travel_7_day", "Departure in 7 days", "departure_date");

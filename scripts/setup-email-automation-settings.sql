@@ -17,6 +17,7 @@ with check (current_user_is_admin());
 
 insert into public.email_automation_settings (email_type, enabled)
 values
+  ('deposit_due_10_day', true),
   ('final_payment_10_day', true),
   ('pre_travel_30_day', true),
   ('pre_travel_7_day', true),

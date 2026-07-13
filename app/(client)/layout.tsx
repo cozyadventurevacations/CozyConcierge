@@ -229,7 +229,14 @@ export default async function ClientLayout({
             fontSize: 12,
           }}
         >
-          Cozy Concierge · Powered by Cozy Adventure Vacations ·{" "}
+          Cozy Concierge | Powered by Cozy Adventure Vacations |{" "}
+          <Link
+            href="/terms-and-conditions"
+            style={{ color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+          >
+            Terms and Conditions
+          </Link>
+          {" "}|{" "}
           <a
             href="https://www.cozyadventurevacations.com"
             target="_blank"

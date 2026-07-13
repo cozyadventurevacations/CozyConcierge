@@ -12,7 +12,10 @@ type TripRow = {
   destinations: string | null;
   trip_status: string | null;
   final_payment_due_date?: string | null;
+  deposit_due_date?: string | null;
+  deposit_paid?: boolean | null;
   balance_due?: number | null;
+  deposit_amount?: number | null;
 };
 
 type ClientFollowUpRow = {
@@ -461,6 +464,7 @@ export default async function AdminDashboardPage({
     paymentRequestsResult,
     departuresResult,
     upcomingDeparturesResult,
+    depositsDue21Result,
     finalPaymentsDue21Result,
     upcomingClientFollowUpsResult,
     openClientFollowUpsResult,
@@ -491,6 +495,14 @@ export default async function AdminDashboardPage({
       .gte("departure_date", todayStr)
       .order("departure_date", { ascending: true })
       .limit(8),
+    supabase
+      .from("trips")
+      .select("id, trip_name, destinations, departure_date, return_date, trip_status, deposit_due_date, deposit_amount, deposit_paid")
+      .eq("deposit_paid", false)
+      .gte("deposit_due_date", todayStr)
+      .lte("deposit_due_date", in21DaysStr)
+      .order("deposit_due_date", { ascending: true })
+      .limit(10),
     supabase
       .from("trips")
       .select("id, trip_name, destinations, departure_date, return_date, trip_status, final_payment_due_date, balance_due")
@@ -555,6 +567,7 @@ export default async function AdminDashboardPage({
   ]);
 
   const upcomingDepartures = (upcomingDeparturesResult.data ?? []) as TripRow[];
+  const depositsDue21 = (depositsDue21Result.data ?? []) as TripRow[];
   const finalPaymentsDue21 = (finalPaymentsDue21Result.data ?? []) as TripRow[];
   const upcomingClientFollowUps = (upcomingClientFollowUpsResult.data ?? []) as ClientFollowUpRow[];
   const privateMessageThreads = (privateMessageThreadsResult.data ?? []) as MessageThreadRow[];
@@ -573,6 +586,10 @@ export default async function AdminDashboardPage({
     (sum, trip) => sum + Number(trip.balance_due ?? 0),
     0,
   );
+  const depositsDue21Total = depositsDue21.reduce(
+    (sum, trip) => sum + Number(trip.deposit_amount ?? 0),
+    0,
+  );
 
   const unreadPrivateCount = unreadPrivateMessageThreadsResult.count ?? 0;
   const openFollowUpsCount = openClientFollowUpsResult.count ?? 0;
@@ -583,6 +600,10 @@ export default async function AdminDashboardPage({
     finalPaymentsDue21.length === 1
       ? `/admin/trips/${finalPaymentsDue21[0].id}`
       : "/admin/dashboard#final-payments-due";
+  const tripRemindersHref =
+    depositsDue21.length + finalPaymentsDue21.length === 1
+      ? `/admin/trips/${[...depositsDue21, ...finalPaymentsDue21][0].id}#advisor-reminders`
+      : "/admin/trip-reminders";
   const privateMessagesHref =
     privateMessageThreads.length === 1
       ? `/admin/messages?threadId=${privateMessageThreads[0].id}&type=private`
@@ -600,6 +621,7 @@ export default async function AdminDashboardPage({
     Number(departuresResult.count ?? 0) +
     Number(newQuoteRequestsResult.count ?? 0) +
     Number(paymentRequestsResult.count ?? 0) +
+    depositsDue21.length +
     finalPaymentsDue21.length +
     deletionRequestCount +
     cruiseWatchAttentionCount;
@@ -684,6 +706,13 @@ export default async function AdminDashboardPage({
 
       {/* Summary grid */}
       <div className="grid grid-3">
+        <SummaryCard
+          title="Trip Reminders"
+          value={depositsDue21.length + finalPaymentsDue21.length}
+          subtitle={`${formatMoney(depositsDue21Total + finalPaymentsDue21Total)} due within 21 days`}
+          href={tripRemindersHref}
+          tone={depositsDue21.length + finalPaymentsDue21.length > 0 ? "warning" : "neutral"}
+        />
         <SummaryCard
           title="Final Payments Due Soon"
           value={finalPaymentsDue21.length}

@@ -572,6 +572,7 @@ function QuickActions({ nextTripId }: { nextTripId: string | null }) {
     { label: "My Trips", href: "/trips" },
     { label: "Messages", href: "/messages" },
     { label: "My Profile", href: "/profile" },
+    { label: "Terms", href: "/terms-and-conditions" },
     ...(nextTripId ? [{ label: "Open Next Trip", href: `/trips/${nextTripId}` }] : []),
   ];
 

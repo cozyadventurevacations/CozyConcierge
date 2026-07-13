@@ -13,6 +13,7 @@ import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
+import { labelForEmailAutomationType } from "@/lib/email-automations/config";
 import { encryptBuffer } from "@/lib/encryption";
 import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
@@ -160,6 +161,19 @@ function getPaymentDocumentSchemaErrorMessage(error: { message?: string } | null
   return null;
 }
 
+function getTripReminderSchemaErrorMessage(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  if (
+    message.includes("trip_reminders") ||
+    message.includes("schema cache") ||
+    message.includes("Could not find")
+  ) {
+    return "Custom trip reminders are not fully set up in Supabase yet. Run scripts/setup-trip-reminders.sql in the Supabase SQL Editor to enable custom reminders.";
+  }
+
+  return null;
+}
+
 function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | null | undefined) {
   const message = String(error?.message ?? "");
   if (
@@ -266,6 +280,42 @@ type PaymentRequestSummaryRow = {
   requested_payment_date: string | null;
   requested_at: string | null;
   completed_at: string | null;
+};
+
+type TripReminderRow = {
+  id: string;
+  trip_id: string;
+  reminder_type: string | null;
+  title: string | null;
+  notes: string | null;
+  reminder_date: string | null;
+  is_completed: boolean | null;
+  completed_at: string | null;
+  created_at: string | null;
+};
+
+type TripEmailLogRow = {
+  id: string;
+  email_type: string;
+  scheduled_send_date: string | null;
+  sent_at: string | null;
+  status: "sent" | "failed" | string | null;
+  error_message: string | null;
+};
+
+type AutomationSettingRow = {
+  email_type: string;
+  enabled: boolean | null;
+};
+
+type ScheduledTripEmail = {
+  emailType: string;
+  sendDate: string;
+  triggerDate: string;
+  reason: string;
+  enabled: boolean;
+  sentLog: TripEmailLogRow | null;
+  failedLog: TripEmailLogRow | null;
 };
 
 type TripMilestoneRow = {
@@ -466,6 +516,28 @@ function getExpectedCommission(row: CommissionRow) {
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function parseDateOnly(value: string | null | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateOnlyString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateString(value: string | null | undefined, days: number) {
+  const date = parseDateOnly(value);
+  if (!date) return null;
+
+  date.setDate(date.getDate() + days);
+  return toDateOnlyString(date);
 }
 
 function requireAllowedValue(
@@ -4555,6 +4627,70 @@ async function uploadTripPaymentDocument(formData: FormData) {
   revalidatePath(`/admin/trips/${tripId}/documents`);
 }
 
+async function createTripReminder(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const reminderType = requireAllowedValue(
+    String(formData.get("reminder_type") ?? "custom").trim(),
+    ["custom", "deposit", "final_payment", "document", "task", "other"],
+    "custom",
+  );
+  const title = String(formData.get("title") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  const reminderDate = String(formData.get("reminder_date") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!title) throw new Error("Reminder title is required.");
+  if (!reminderDate) throw new Error("Reminder date is required.");
+
+  const { error } = await supabase.from("trip_reminders" as any).insert({
+    trip_id: tripId,
+    reminder_type: reminderType,
+    title,
+    notes,
+    reminder_date: reminderDate,
+    is_completed: false,
+  });
+
+  if (error) {
+    throw new Error(getTripReminderSchemaErrorMessage(error) ?? error.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trip-reminders");
+  revalidatePath("/admin/dashboard");
+}
+
+async function updateTripReminderStatus(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const reminderId = String(formData.get("reminder_id") ?? "").trim();
+  const isCompleted = String(formData.get("is_completed") ?? "") === "true";
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!reminderId) throw new Error("Missing reminder ID.");
+
+  const { error } = await supabase
+    .from("trip_reminders" as any)
+    .update({ is_completed: isCompleted })
+    .eq("id", reminderId)
+    .eq("trip_id", tripId);
+
+  if (error) {
+    throw new Error(getTripReminderSchemaErrorMessage(error) ?? error.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/trip-reminders");
+  revalidatePath("/admin/dashboard");
+}
+
 async function deleteTripPaymentLedgerEntry(formData: FormData) {
   "use server";
 
@@ -4808,6 +4944,24 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("requested_at", { ascending: false });
 
+  const { data: tripReminders, error: tripRemindersError } = await supabase
+    .from("trip_reminders" as any)
+    .select("id, trip_id, reminder_type, title, notes, reminder_date, is_completed, completed_at, created_at")
+    .eq("trip_id", tripId)
+    .order("is_completed", { ascending: true })
+    .order("reminder_date", { ascending: true });
+
+  const { data: tripEmailLogs } = await supabase
+    .from("email_automation_log")
+    .select("id, email_type, scheduled_send_date, sent_at, status, error_message")
+    .eq("trip_id", tripId)
+    .order("scheduled_send_date", { ascending: false })
+    .limit(100);
+
+  const { data: automationSettings } = await supabase
+    .from("email_automation_settings")
+    .select("email_type, enabled");
+
   const { data: clientDocuments, error: clientDocumentsError } = await supabase
     .from("client_documents")
     .select("id, document_type, document_title, file_name, created_at")
@@ -4871,6 +5025,96 @@ export default async function AdminTripEditorPage({
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
   const tripPaymentLedgerRows = (tripPaymentLedger ?? []) as TripPaymentLedgerRow[];
   const paymentRequestRows = (paymentRequests ?? []) as PaymentRequestSummaryRow[];
+  const tripReminderSetupMessage = getTripReminderSchemaErrorMessage(tripRemindersError);
+  const tripReminderRows = tripReminderSetupMessage ? [] : ((tripReminders ?? []) as TripReminderRow[]);
+  const openTripReminderRows = tripReminderRows.filter((reminder) => !reminder.is_completed);
+  const todayStr = todayDateString();
+  const depositReminderNeeded = trip.deposit_paid !== true && Boolean(trip.deposit_due_date);
+  const finalPaymentReminderNeeded = Number(trip.balance_due ?? 0) > 0 && Boolean(trip.final_payment_due_date);
+  const automaticTripReminderCount =
+    (depositReminderNeeded ? 1 : 0) + (finalPaymentReminderNeeded ? 1 : 0);
+  const tripEmailLogRows = (tripEmailLogs ?? []) as TripEmailLogRow[];
+  const automationSettingRows = (automationSettings ?? []) as AutomationSettingRow[];
+  const automationSettingsMap = new Map(
+    automationSettingRows.map((setting) => [setting.email_type, setting]),
+  );
+  const isTripEmailAutomationEnabled = (emailType: string) =>
+    automationSettingsMap.get(emailType)?.enabled !== false && trip.trip_status !== "cancelled";
+  const findTripEmailLog = (emailType: string, sendDate: string, status: string) =>
+    tripEmailLogRows.find(
+      (log) =>
+        log.email_type === emailType &&
+        log.scheduled_send_date === sendDate &&
+        log.status === status,
+    ) ?? null;
+  const scheduledTripEmails: ScheduledTripEmail[] = [];
+
+  function pushScheduledTripEmail({
+    emailType,
+    sendDate,
+    triggerDate,
+    reason,
+    shouldShow = true,
+  }: {
+    emailType: string;
+    sendDate: string | null;
+    triggerDate: string | null | undefined;
+    reason: string;
+    shouldShow?: boolean;
+  }) {
+    if (!shouldShow || !sendDate || !triggerDate) return;
+
+    scheduledTripEmails.push({
+      emailType,
+      sendDate,
+      triggerDate,
+      reason,
+      enabled: isTripEmailAutomationEnabled(emailType),
+      sentLog: findTripEmailLog(emailType, sendDate, "sent"),
+      failedLog: findTripEmailLog(emailType, sendDate, "failed"),
+    });
+  }
+
+  pushScheduledTripEmail({
+    emailType: "deposit_due_10_day",
+    sendDate: addDaysToDateString(trip.deposit_due_date, -10),
+    triggerDate: trip.deposit_due_date,
+    reason: `Deposit due ${formatDate(trip.deposit_due_date, "not set")}`,
+    shouldShow: depositReminderNeeded,
+  });
+  pushScheduledTripEmail({
+    emailType: "final_payment_10_day",
+    sendDate: addDaysToDateString(trip.final_payment_due_date, -10),
+    triggerDate: trip.final_payment_due_date,
+    reason: `Final payment due ${formatDate(trip.final_payment_due_date, "not set")}`,
+    shouldShow: finalPaymentReminderNeeded,
+  });
+  pushScheduledTripEmail({
+    emailType: "pre_travel_30_day",
+    sendDate: addDaysToDateString(trip.departure_date, -30),
+    triggerDate: trip.departure_date,
+    reason: `Departure ${formatDate(trip.departure_date, "not set")}`,
+  });
+  pushScheduledTripEmail({
+    emailType: "pre_travel_7_day",
+    sendDate: addDaysToDateString(trip.departure_date, -7),
+    triggerDate: trip.departure_date,
+    reason: `Departure ${formatDate(trip.departure_date, "not set")}`,
+  });
+  pushScheduledTripEmail({
+    emailType: "post_travel_7_day",
+    sendDate: addDaysToDateString(trip.return_date, 7),
+    triggerDate: trip.return_date,
+    reason: `Return ${formatDate(trip.return_date, "not set")}`,
+  });
+  pushScheduledTripEmail({
+    emailType: "post_travel_60_day",
+    sendDate: addDaysToDateString(trip.return_date, 60),
+    triggerDate: trip.return_date,
+    reason: `Return ${formatDate(trip.return_date, "not set")}`,
+  });
+
+  scheduledTripEmails.sort((a, b) => a.sendDate.localeCompare(b.sendDate));
   const clientDocumentRows = (clientDocuments ?? []) as ClientDocumentRow[];
   const attachedTripDocumentRows = (attachedTripDocuments ?? []) as TripAttachedDocumentRow[];
   const tripDocumentRows = (tripDocuments ?? []) as any[];
@@ -5411,6 +5655,247 @@ export default async function AdminTripEditorPage({
         )}
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
+
+        <span id="advisor-reminders" />
+        <div className="card stack" style={{ border: "1px solid #dbeafe", background: "#f8fbff" }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
+                Advisor Reminders
+              </p>
+              <h2 style={{ margin: "6px 0 0" }}>Important trip dates</h2>
+              <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
+                Deposit due, final payment, and custom trip reminders for your internal workflow.
+              </p>
+            </div>
+            <Link href="/admin/trip-reminders" className="btn btn-outline" style={{ whiteSpace: "nowrap" }}>
+              Reminder Center
+            </Link>
+          </div>
+
+          <div className="grid grid-4">
+            <div className="card" style={{ background: "#ffffff" }}>
+              <span className="label">Automatic Reminders</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{automaticTripReminderCount}</p>
+            </div>
+            <div className="card" style={{ background: "#ffffff" }}>
+              <span className="label">Scheduled Emails</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{scheduledTripEmails.length}</p>
+            </div>
+            <div className="card" style={{ background: "#ffffff" }}>
+              <span className="label">Custom Open</span>
+              <p style={{ margin: "8px 0 0", fontSize: 24, fontWeight: 900 }}>{openTripReminderRows.length}</p>
+            </div>
+            <div className="card" style={{ background: "#ffffff" }}>
+              <span className="label">Next Date</span>
+              <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 900 }}>
+                {depositReminderNeeded
+                  ? formatDate(trip.deposit_due_date, "Not set")
+                  : finalPaymentReminderNeeded
+                    ? formatDate(trip.final_payment_due_date, "Not set")
+                    : openTripReminderRows[0]?.reminder_date
+                      ? formatDate(openTripReminderRows[0].reminder_date, "Not set")
+                      : "None"}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-2">
+            {depositReminderNeeded ? (
+              <div className="card" style={{ border: `1px solid ${trip.deposit_due_date && trip.deposit_due_date < todayStr ? "#fecdd3" : "#fed7aa"}`, background: trip.deposit_due_date && trip.deposit_due_date < todayStr ? "#fff1f2" : "#fff7ed" }}>
+                <span className="label">Deposit</span>
+                <p style={{ margin: "8px 0 0", fontWeight: 900 }}>
+                  {trip.deposit_due_date && trip.deposit_due_date < todayStr ? "Past due" : "Due"} {formatDate(trip.deposit_due_date, "Not set")}
+                </p>
+                <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+                  Deposit amount: {formatMoney(trip.deposit_amount)}
+                </p>
+              </div>
+            ) : null}
+
+            {finalPaymentReminderNeeded ? (
+              <div className="card" style={{ border: `1px solid ${trip.final_payment_due_date && trip.final_payment_due_date < todayStr ? "#fecdd3" : "#fed7aa"}`, background: trip.final_payment_due_date && trip.final_payment_due_date < todayStr ? "#fff1f2" : "#fff7ed" }}>
+                <span className="label">Final Payment</span>
+                <p style={{ margin: "8px 0 0", fontWeight: 900 }}>
+                  {trip.final_payment_due_date && trip.final_payment_due_date < todayStr ? "Past due" : "Due"} {formatDate(trip.final_payment_due_date, "Not set")}
+                </p>
+                <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+                  Balance due: {formatMoney(trip.balance_due)}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Scheduled Client Emails</h3>
+                <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.5 }}>
+                  Calculated from this trip&apos;s deposit, payment, departure, and return dates.
+                </p>
+              </div>
+              <Link href="/admin/email-automations" className="btn btn-outline" style={{ whiteSpace: "nowrap" }}>
+                Email Automations
+              </Link>
+            </div>
+
+            {scheduledTripEmails.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                No client-facing automated emails are scheduled yet. Add deposit, final payment, departure, or return dates to create the schedule.
+              </p>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 900 }}>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Send Date</th>
+                      <th>Email</th>
+                      <th>Trigger</th>
+                      <th>Last Activity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scheduledTripEmails.map((email) => {
+                      const statusLabel = email.sentLog
+                        ? "Sent"
+                        : email.failedLog
+                          ? "Failed"
+                          : !email.enabled
+                            ? "Paused"
+                            : email.sendDate < todayStr
+                              ? "Missed"
+                              : email.sendDate === todayStr
+                                ? "Due Today"
+                                : "Scheduled";
+                      const statusTone =
+                        statusLabel === "Sent"
+                          ? "good"
+                          : statusLabel === "Failed" || statusLabel === "Missed"
+                            ? "danger"
+                            : statusLabel === "Due Today"
+                              ? "warning"
+                              : "neutral";
+                      const latestLog = email.sentLog ?? email.failedLog;
+
+                      return (
+                        <tr key={`${email.emailType}:${email.sendDate}`}>
+                          <td>
+                            <CommandStatusBadge tone={statusTone}>{statusLabel}</CommandStatusBadge>
+                          </td>
+                          <td>{formatDate(email.sendDate, "Not set")}</td>
+                          <td>
+                            <strong>{labelForEmailAutomationType(email.emailType)}</strong>
+                            {!email.enabled ? (
+                              <span style={{ display: "block", color: "#991b1b", fontSize: 12, marginTop: 3 }}>
+                                Automation is paused or trip is cancelled.
+                              </span>
+                            ) : null}
+                          </td>
+                          <td style={{ color: "#64748b" }}>{email.reason}</td>
+                          <td style={{ color: "#64748b", fontSize: 13 }}>
+                            {latestLog?.sent_at
+                              ? formatDate(latestLog.sent_at, "Logged")
+                              : latestLog?.error_message
+                                ? latestLog.error_message
+                                : "No log yet"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {tripReminderSetupMessage ? (
+            <div className="card" style={{ border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412" }}>
+              <p style={{ margin: 0, fontWeight: 800 }}>{tripReminderSetupMessage}</p>
+            </div>
+          ) : tripRemindersError ? (
+            <div className="card">
+              <p><strong>Error loading trip reminders:</strong></p>
+              <pre>{JSON.stringify(tripRemindersError, null, 2)}</pre>
+            </div>
+          ) : (
+            <>
+              <form action={createTripReminder} className="card stack" style={{ background: "#ffffff" }}>
+                <input type="hidden" name="trip_id" value={trip.id} />
+                <h3 style={{ margin: 0 }}>Add Custom Reminder</h3>
+                <div className="grid grid-3">
+                  <label>
+                    <span className="label">Reminder Type</span>
+                    <select className="select" name="reminder_type" defaultValue="custom">
+                      <option value="custom">Custom</option>
+                      <option value="deposit">Deposit</option>
+                      <option value="final_payment">Final Payment</option>
+                      <option value="document">Document</option>
+                      <option value="task">Task</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span className="label">Reminder Date</span>
+                    <input className="input" type="date" name="reminder_date" required />
+                  </label>
+                  <label>
+                    <span className="label">Title</span>
+                    <input className="input" name="title" placeholder="Check passport names" required />
+                  </label>
+                </div>
+                <label>
+                  <span className="label">Notes</span>
+                  <textarea className="textarea" name="notes" placeholder="Anything you want to remember for this trip." />
+                </label>
+                <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+                  Add Reminder
+                </button>
+              </form>
+
+              {tripReminderRows.length === 0 ? (
+                <p style={{ margin: 0, color: "#64748b" }}>No custom reminders yet.</p>
+              ) : (
+                <div style={{ width: "100%", overflowX: "auto" }}>
+                  <table className="table" style={{ minWidth: 840 }}>
+                    <thead>
+                      <tr>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Reminder</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tripReminderRows.map((reminder) => (
+                        <tr key={reminder.id}>
+                          <td>{reminder.is_completed ? "Completed" : "Open"}</td>
+                          <td>{formatDate(reminder.reminder_date, "Not set")}</td>
+                          <td>{reminder.reminder_type ?? "custom"}</td>
+                          <td>
+                            <strong>{reminder.title ?? "Trip reminder"}</strong>
+                            {reminder.notes ? <span style={{ display: "block", color: "#64748b", fontSize: 12 }}>{reminder.notes}</span> : null}
+                          </td>
+                          <td>
+                            <form action={updateTripReminderStatus}>
+                              <input type="hidden" name="trip_id" value={trip.id} />
+                              <input type="hidden" name="reminder_id" value={reminder.id} />
+                              <input type="hidden" name="is_completed" value={reminder.is_completed ? "false" : "true"} />
+                              <button type="submit" className="btn btn-outline" style={{ padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap" }}>
+                                {reminder.is_completed ? "Reopen" : "Complete"}
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         <div
           className="card stack"
