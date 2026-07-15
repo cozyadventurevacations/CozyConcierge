@@ -610,6 +610,233 @@ async function requestTripDeletion(formData: FormData) {
   redirect(`/trips/${tripId}?deletion=requested`);
 }
 
+async function saveInsuranceDecisionForClient({
+  supabase,
+  clientAccount,
+  tripId,
+  decision,
+}: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  clientAccount: any;
+  tripId: string;
+  decision: "accepted" | "declined";
+}) {
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id, trip_name, destinations, departure_date")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+
+  if (trip.client_account_id !== clientAccount.id) {
+    throw new Error("Only the primary traveler can answer the insurance question.");
+  }
+
+  const decisionAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      insurance_decision: decision,
+      insurance_decision_at: decisionAt,
+      insurance_decision_by_client_account_id: clientAccount.id,
+    })
+    .eq("id", tripId);
+
+  if (error) throw new Error(error.message);
+
+  const decisionLabel =
+    decision === "accepted"
+      ? "accepted travel insurance coverage review"
+      : "declined travel insurance coverage review";
+  const clientName =
+    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
+    clientAccount.email ||
+    "Client";
+  const waiverDocument = buildInsuranceWaiverDocument({
+    clientName,
+    clientEmail: clientAccount.email ?? null,
+    tripName: trip.trip_name ?? "Trip",
+    destinations: trip.destinations ?? null,
+    departureDate: trip.departure_date ?? null,
+    decision,
+    decisionLabel,
+    recordedAt: decisionAt,
+  });
+  const waiverContent = waiverDocument.plainText;
+
+  const supabaseAdmin = createSupabaseAdminClient();
+  const waiverFileName = "travel-insurance-waiver.html";
+  const waiverStoragePath = `${tripId}/generated/${waiverFileName}`;
+  const waiverBytes = new TextEncoder().encode(waiverDocument.html);
+
+  const { error: waiverUploadError } = await supabaseAdmin.storage
+    .from("trip-documents")
+    .upload(waiverStoragePath, waiverBytes, {
+      contentType: "text/html; charset=utf-8",
+      upsert: true,
+    });
+
+  if (waiverUploadError) throw new Error(waiverUploadError.message);
+
+  const { data: existingWaiver, error: existingWaiverError } = await supabaseAdmin
+    .from("trip_notes")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("note_type", "insurance_waiver")
+    .maybeSingle();
+
+  if (existingWaiverError) throw new Error(existingWaiverError.message);
+
+  if (existingWaiver) {
+    const { error: waiverUpdateError } = await supabaseAdmin
+      .from("trip_notes")
+      .update({
+        title: "Travel Insurance Waiver",
+        content: waiverContent,
+        updated_at: decisionAt,
+      })
+      .eq("id", existingWaiver.id);
+
+    if (waiverUpdateError) throw new Error(waiverUpdateError.message);
+  } else {
+    const { error: waiverInsertError } = await supabaseAdmin
+      .from("trip_notes")
+      .insert({
+        trip_id: tripId,
+        note_type: "insurance_waiver",
+        title: "Travel Insurance Waiver",
+        content: waiverContent,
+      });
+
+    if (waiverInsertError) throw new Error(waiverInsertError.message);
+  }
+
+  const { data: existingWaiverDocument, error: existingWaiverDocumentError } =
+    await supabaseAdmin
+      .from("trip_documents")
+      .select("id")
+      .eq("trip_id", tripId)
+      .eq("storage_path", waiverStoragePath)
+      .maybeSingle();
+
+  if (existingWaiverDocumentError) throw new Error(existingWaiverDocumentError.message);
+
+  const waiverDocumentPayload = {
+    trip_id: tripId,
+    file_name: waiverFileName,
+    storage_path: waiverStoragePath,
+    mime_type: "text/html; charset=utf-8",
+    file_size_bytes: waiverBytes.byteLength,
+    visibility: "client_travel_circle",
+    component_id: null,
+    component_type: "insurance",
+    attach_to_commission: false,
+  };
+
+  if (existingWaiverDocument) {
+    const { error: waiverDocumentUpdateError } = await supabaseAdmin
+      .from("trip_documents")
+      .update(waiverDocumentPayload)
+      .eq("id", existingWaiverDocument.id);
+
+    if (waiverDocumentUpdateError) throw new Error(waiverDocumentUpdateError.message);
+  } else {
+    const { error: waiverDocumentInsertError } = await supabaseAdmin
+      .from("trip_documents")
+      .insert(waiverDocumentPayload);
+
+    if (waiverDocumentInsertError) throw new Error(waiverDocumentInsertError.message);
+  }
+
+  const { error: milestoneUpdateError } = await supabaseAdmin
+    .from("trip_milestones" as any)
+    .update({
+      is_completed: true,
+      completed_at: decisionAt,
+      updated_at: decisionAt,
+    })
+    .eq("trip_id", tripId)
+    .eq("title", insuranceAnsweredMilestoneTitle);
+
+  if (milestoneUpdateError) throw new Error(milestoneUpdateError.message);
+}
+
+async function recordProposalDecision(formData: FormData) {
+  "use server";
+
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const proposalId = String(formData.get("proposal_id") ?? "").trim();
+  const decision = String(formData.get("proposal_decision") ?? "").trim();
+  const insuranceDecision = String(formData.get("insurance_decision") ?? "").trim();
+  const clientResponseNote = String(formData.get("client_response_note") ?? "").trim() || null;
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!proposalId) throw new Error("Missing proposal ID.");
+  if (decision !== "approved" && decision !== "declined") {
+    throw new Error("Choose approve or decline for this proposal.");
+  }
+  if (insuranceDecision && insuranceDecision !== "accepted" && insuranceDecision !== "declined") {
+    throw new Error("Choose yes or no for travel insurance.");
+  }
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found.");
+  if (trip.client_account_id !== clientAccount.id) {
+    throw new Error("Only the primary traveler can approve this proposal.");
+  }
+
+  const { data: proposal, error: proposalError } = await supabase
+    .from("trip_proposals" as any)
+    .select("id, trip_id, proposal_status, client_visible")
+    .eq("id", proposalId)
+    .eq("trip_id", tripId)
+    .single();
+
+  if (proposalError || !proposal) throw new Error("Proposal not found.");
+  if (proposal.client_visible === false || proposal.proposal_status === "draft") {
+    throw new Error("This proposal is not available for client approval yet.");
+  }
+
+  if (insuranceDecision === "accepted" || insuranceDecision === "declined") {
+    await saveInsuranceDecisionForClient({
+      supabase,
+      clientAccount,
+      tripId,
+      decision: insuranceDecision,
+    });
+  }
+
+  const decisionAt = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("trip_proposals" as any)
+    .update({
+      proposal_status: decision,
+      client_decision: decision,
+      client_decision_at: decisionAt,
+      client_decision_by_client_account_id: clientAccount.id,
+      client_response_note: clientResponseNote,
+      updated_at: decisionAt,
+    })
+    .eq("id", proposalId)
+    .eq("trip_id", tripId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/trips/${tripId}/documents`);
+  redirect(`/trips/${tripId}`);
+}
+
 async function recordInsuranceDecision(formData: FormData) {
   "use server";
 
@@ -1104,7 +1331,11 @@ export default async function TripDetailPage({
   const calculatedTripTotal = roundMoney(
     componentPriceTotal + Number(proposalResult.data?.planning_fee ?? 0),
   );
-  const proposalForClient = proposalResult.data
+  const rawProposalStatus = String((proposalResult.data as any)?.proposal_status ?? "draft");
+  const isProposalClientVisible =
+    Boolean((proposalResult.data as any)?.client_visible) ||
+    ["sent", "approved", "declined"].includes(rawProposalStatus);
+  const proposalForClient = proposalResult.data && isProposalClientVisible
     ? {
         ...proposalResult.data,
         total_price: calculatedTripTotal,
@@ -1130,6 +1361,7 @@ export default async function TripDetailPage({
   const shouldAskInsurance =
     isPrimaryClient &&
     hasInsuranceBeenOffered &&
+    !proposalForClient &&
     !hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at);
 
   return (
@@ -1195,6 +1427,7 @@ export default async function TripDetailPage({
         onInviteCompanion={inviteTravelCompanion}
         onRemoveCompanion={removeTravelCompanion}
         onAttachClientDocument={attachClientUploadToTrip}
+        onProposalDecision={recordProposalDecision}
       />
 
       {isPrimaryClient && (

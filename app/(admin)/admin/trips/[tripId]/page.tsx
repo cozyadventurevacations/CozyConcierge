@@ -3223,6 +3223,8 @@ async function updateTrip(formData: FormData) {
   const proposalUpdates = {
     planning_fee: planningFee,
     total_price: 0,
+    proposal_status: String(formData.get("proposal_status") ?? "draft").trim() || "draft",
+    client_visible: formData.get("client_visible") === "on",
     proposal_title: String(formData.get("proposal_title") ?? "").trim() || null,
     proposal_welcome_text:
       String(formData.get("proposal_welcome_text") ?? "").trim() || null,
@@ -5198,6 +5200,7 @@ export default async function AdminTripEditorPage({
     { label: "Air", component: air.component },
     { label: "Cruise", component: cruise.component },
     { label: "Transfer", component: transfer.component },
+    { label: "Rental Car", component: rentalCar.component },
     { label: "Activity", component: activity.component },
     { label: "Insurance", component: insurance.component },
   ];
@@ -8241,7 +8244,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="proposal" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal ? "Started" : "Empty"} tone={proposal ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal?.client_decision === "approved" ? "Approved" : proposal?.client_visible ? "Published" : proposal ? "Draft" : "Empty"} tone={proposal?.client_decision === "approved" ? "good" : proposal?.client_visible ? "neutral" : proposal ? "warning" : "neutral"} />}>
           <div className="grid grid-2">
             <label>
               <span className="label">Planning Fee</span>
@@ -8271,6 +8274,40 @@ export default async function AdminTripEditorPage({
               </p>
             </div>
 
+            <label>
+              <span className="label">Proposal Status</span>
+              <select className="select" name="proposal_status" defaultValue={proposal?.proposal_status ?? "draft"}>
+                <option value="draft">Draft - hidden from client</option>
+                <option value="sent">Sent - awaiting client response</option>
+                <option value="approved">Approved</option>
+                <option value="declined">Declined / needs changes</option>
+              </select>
+            </label>
+
+            <label
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                padding: "12px",
+                border: "1px solid #e6f0f2",
+                borderRadius: 12,
+                background: "#ffffff",
+              }}
+            >
+              <input
+                type="checkbox"
+                name="client_visible"
+                defaultChecked={Boolean(proposal?.client_visible) || ["sent", "approved", "declined"].includes(String(proposal?.proposal_status ?? ""))}
+              />
+              <span>
+                <span className="label" style={{ display: "block" }}>Show proposal to client</span>
+                <span style={{ display: "block", marginTop: 2, color: "#64748b", fontSize: 13 }}>
+                  Published proposals appear as a client portal tab with approval controls.
+                </span>
+              </span>
+            </label>
+
             <label style={{ gridColumn: "1 / -1" }}>
               <span className="label">Proposal Title</span>
               <input
@@ -8298,6 +8335,28 @@ export default async function AdminTripEditorPage({
               defaultValue={proposal?.proposal_closing_text ?? ""}
             />
           </label>
+
+          <div className="card stack" style={{ border: "1px solid #e6f0f2", background: "#f7fbfc" }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>Client Proposal Response</p>
+              <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+                Once the lead traveler responds, this record tells you whether to move forward with booking or revise the options.
+              </p>
+            </div>
+            <div className="grid grid-3">
+              <SnapshotRow label="Decision" value={proposal?.client_decision ?? "Not answered"} />
+              <SnapshotRow label="Answered" value={formatDate(proposal?.client_decision_at)} />
+              <SnapshotRow label="Insurance" value={insuranceDecisionLabel} />
+            </div>
+            {proposal?.client_response_note ? (
+              <div>
+                <span className="label">Client Note</span>
+                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                  {proposal.client_response_note}
+                </p>
+              </div>
+            ) : null}
+          </div>
         
 
           <SectionSaveButton label="Proposal" />

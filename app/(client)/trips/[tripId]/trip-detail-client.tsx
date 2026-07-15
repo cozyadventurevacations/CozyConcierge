@@ -25,6 +25,8 @@ type TripRow = {
 deposit_amount: number | null;
 deposit_due_date: string | null;
 deposit_paid: boolean | null;
+  insurance_decision?: string | null;
+  insurance_decision_at?: string | null;
 };
 
 type ProposalRow = {
@@ -34,6 +36,11 @@ type ProposalRow = {
   proposal_closing_text: string | null;
   planning_fee: number | null;
   total_price: number | null;
+  proposal_status?: string | null;
+  client_visible?: boolean | null;
+  client_decision?: string | null;
+  client_decision_at?: string | null;
+  client_response_note?: string | null;
 };
 
 type TripNoteRow = {
@@ -216,6 +223,7 @@ type TripDetailClientProps = {
   onInviteCompanion: (formData: FormData) => Promise<void>;
   onRemoveCompanion: (formData: FormData) => Promise<void>;
   onAttachClientDocument: (formData: FormData) => Promise<void>;
+  onProposalDecision: (formData: FormData) => Promise<void>;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -506,15 +514,16 @@ function TravelCompanionBadge({ role }: { role: string }) {
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
-const TABS = [
+const BASE_TABS = [
   { id: "overview", label: "Overview" },
+  { id: "proposal", label: "Proposal" },
   { id: "itinerary", label: "Itinerary" },
   { id: "documents", label: "Documents" },
   { id: "travel-circle", label: "Travel Circle" },
   { id: "help", label: "Help" },
 ] as const;
 
-type TabId = typeof TABS[number]["id"];
+type TabId = typeof BASE_TABS[number]["id"];
 
 // ─── Tab panels ───────────────────────────────────────────────────────────────
 
@@ -542,6 +551,27 @@ function formatProposalDate(value: string | null | undefined) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function getProposalStatusLabel(status: string | null | undefined, decision: string | null | undefined) {
+  if (decision === "approved") return "Approved";
+  if (decision === "declined") return "Declined";
+  if (status === "sent") return "Awaiting your response";
+  if (status === "approved") return "Approved";
+  if (status === "declined") return "Declined";
+  return "Draft";
+}
+
+function hasAnsweredInsuranceDecision(trip: TripRow) {
+  const normalized = String(trip.insurance_decision ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  return Boolean(
+    trip.insurance_decision_at ||
+      ["accepted", "accept", "yes", "declined", "decline", "no", "waived", "coverage_accepted", "coverage_declined"].includes(normalized),
+  );
 }
 
 function ProposalPaymentDetails({ trip }: { trip: TripRow }) {
@@ -728,6 +758,84 @@ function TravelReadinessChecklist({
           })}
         </div>
       </div>
+    </SectionCard>
+  );
+}
+
+function ProposalDecisionCard({
+  trip,
+  proposal,
+  isPrimaryClient,
+  onProposalDecision,
+}: {
+  trip: TripRow;
+  proposal: ProposalRow;
+  isPrimaryClient: boolean;
+  onProposalDecision: (formData: FormData) => Promise<void>;
+}) {
+  const decision = proposal.client_decision ?? null;
+  const isDecided = decision === "approved" || decision === "declined";
+  const needsInsuranceDecision = isPrimaryClient && !hasAnsweredInsuranceDecision(trip);
+
+  return (
+    <SectionCard
+      eyebrow="Client Approval"
+      title={isDecided ? `Proposal ${getProposalStatusLabel(proposal.proposal_status, decision)}` : "Approve This Proposal"}
+      subtitle={isDecided ? "Your advisor has your response on file." : "Approve when these options look good, or decline and tell your advisor what needs to change."}
+    >
+      {isDecided ? (
+        <div className="grid grid-2">
+          <InfoItem label="Decision" value={getProposalStatusLabel(proposal.proposal_status, decision)} />
+          <InfoItem label="Recorded" value={fmtDateTime(proposal.client_decision_at, "Not provided")} />
+          {proposal.client_response_note && <InfoItem label="Note" value={proposal.client_response_note} />}
+        </div>
+      ) : isPrimaryClient ? (
+        <form action={onProposalDecision} className="stack">
+          <input type="hidden" name="trip_id" value={trip.id} />
+          <input type="hidden" name="proposal_id" value={proposal.id} />
+
+          {needsInsuranceDecision && (
+            <div className="card stack" style={{ border: "1px solid #fed7aa", background: "#fff7ed" }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: 900, color: "#9a3412" }}>Travel Insurance</p>
+                <p style={{ margin: "6px 0 0", color: "#9a3412", lineHeight: 1.6, fontSize: 14 }}>
+                  Choose whether you want Cozy Adventure Vacations to review travel insurance coverage options for this trip.
+                </p>
+              </div>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", color: "#7c2d12", fontWeight: 800 }}>
+                <input type="radio" name="insurance_decision" value="accepted" required />
+                Yes, review travel insurance coverage options.
+              </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", color: "#7c2d12", fontWeight: 800 }}>
+                <input type="radio" name="insurance_decision" value="declined" required />
+                I decline travel insurance coverage review for this trip.
+              </label>
+            </div>
+          )}
+
+          <label>
+            <span className="label">Optional note to your advisor</span>
+            <textarea
+              className="textarea"
+              name="client_response_note"
+              placeholder="Add any changes, questions, or approval notes."
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button type="submit" name="proposal_decision" value="approved" className="btn btn-primary">
+              Approve Proposal
+            </button>
+            <button type="submit" name="proposal_decision" value="declined" className="btn btn-outline" formNoValidate>
+              Decline / Request Changes
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+          Only the lead traveler can approve or decline this proposal.
+        </p>
+      )}
     </SectionCard>
   );
 }
@@ -996,6 +1104,77 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
           </div>
         </SectionCard>
       )}
+    </div>
+  );
+}
+
+function ProposalTab({
+  trip,
+  proposal,
+  isPrimaryClient,
+  hotel,
+  flight,
+  cruise,
+  transfer,
+  rentalCar,
+  activity,
+  insurance,
+  timelineGroups,
+  onProposalDecision,
+}: {
+  trip: TripRow;
+  proposal: ProposalRow;
+  isPrimaryClient: boolean;
+  hotel: HotelData;
+  flight: FlightData;
+  cruise: CruiseData;
+  transfer: TransferData;
+  rentalCar: RentalCarData;
+  activity: ActivityData;
+  insurance: InsuranceData;
+  timelineGroups: TimelineGroup[];
+  onProposalDecision: (formData: FormData) => Promise<void>;
+}) {
+  const proposalTitle = proposal.proposal_title || `${trip.trip_name ?? "Trip"} Proposal`;
+
+  return (
+    <div className="stack">
+      <SectionCard eyebrow="Proposal" title={proposalTitle} subtitle={getProposalStatusLabel(proposal.proposal_status, proposal.client_decision)}>
+        <div className="grid grid-3">
+          <PriceItem label="Planning Fee" value={proposal.planning_fee} />
+          <PriceItem label="Proposal Total" value={proposal.total_price} />
+          <InfoItem label="Travel Dates" value={`${fmtDate(trip.departure_date, "TBD")} to ${fmtDate(trip.return_date, "TBD")}`} />
+        </div>
+        {proposal.proposal_welcome_text && (
+          <p className="preserve-formatting" style={{ margin: 0, lineHeight: 1.7, color: "#374151" }}>{proposal.proposal_welcome_text}</p>
+        )}
+      </SectionCard>
+
+      <ItineraryTab
+        timelineGroups={timelineGroups}
+        hotel={hotel}
+        flight={flight}
+        cruise={cruise}
+        transfer={transfer}
+        rentalCar={rentalCar}
+        activity={activity}
+        insurance={insurance}
+      />
+
+      <ProposalPaymentDetails trip={trip} />
+
+      {proposal.proposal_closing_text && (
+        <SectionCard eyebrow="Advisor Note" title="Proposal Notes">
+          <p className="preserve-formatting" style={{ margin: 0, lineHeight: 1.7, color: "#374151" }}>{proposal.proposal_closing_text}</p>
+        </SectionCard>
+      )}
+
+      <ProposalDecisionCard
+        trip={trip}
+        proposal={proposal}
+        isPrimaryClient={isPrimaryClient}
+        onProposalDecision={onProposalDecision}
+      />
     </div>
   );
 }
@@ -1270,11 +1449,13 @@ export function TripDetailClient({
   onInviteCompanion,
   onRemoveCompanion,
   onAttachClientDocument,
+  onProposalDecision,
 }: TripDetailClientProps) {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const tabs = proposal ? BASE_TABS : BASE_TABS.filter((tab) => tab.id !== "proposal");
 
-  const activeLabel = TABS.find((t) => t.id === activeTab)?.label ?? "Overview";
+  const activeLabel = tabs.find((t) => t.id === activeTab)?.label ?? "Overview";
 
   return (
     <div className="stack">
@@ -1303,7 +1484,7 @@ export function TripDetailClient({
 
       {/* Tab bar — desktop */}
       <div style={{ display: "flex", gap: 4, borderBottom: "2px solid #e6f0f2", overflowX: "auto" }} className="desktop-tabs">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -1336,7 +1517,7 @@ export function TripDetailClient({
         </button>
         {mobileMenuOpen && (
           <div style={{ border: "1px solid #e6f0f2", borderRadius: 12, background: "#fff", overflow: "hidden", marginTop: 4 }}>
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }}
@@ -1359,6 +1540,22 @@ export function TripDetailClient({
       {/* Tab content */}
       {activeTab === "overview" && (
         <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} />
+      )}
+      {activeTab === "proposal" && proposal && (
+        <ProposalTab
+          trip={trip}
+          proposal={proposal}
+          isPrimaryClient={isPrimaryClient}
+          hotel={hotel}
+          flight={flight}
+          cruise={cruise}
+          transfer={transfer}
+          rentalCar={rentalCar}
+          activity={activity}
+          insurance={insurance}
+          timelineGroups={timelineGroups}
+          onProposalDecision={onProposalDecision}
+        />
       )}
       {activeTab === "itinerary" && (
         <ItineraryTab timelineGroups={timelineGroups} hotel={hotel} flight={flight} cruise={cruise} transfer={transfer} rentalCar={rentalCar} activity={activity} insurance={insurance} />
