@@ -1121,14 +1121,22 @@ export default async function TripDetailPage({
 
   let outboundSegment: any = null;
   let returnSegment: any = null;
+  let flightSegments: any[] = [];
   if (airResult.data) {
     const { data: segments } = await supabaseAdmin
       .from("flight_segments")
       .select("*")
       .eq("air_component_id", airResult.data.id)
       .order("segment_order", { ascending: true });
-    outboundSegment = segments?.find((s: any) => s.direction === "outbound") ?? null;
-    returnSegment = segments?.find((s: any) => s.direction === "return") ?? null;
+    flightSegments = segments ?? [];
+    outboundSegment =
+      flightSegments.find((s: any) => s.direction === "outbound" && s.segment_order === 1) ??
+      flightSegments.find((s: any) => s.direction === "outbound") ??
+      null;
+    returnSegment =
+      flightSegments.find((s: any) => s.direction === "return" && s.segment_order === 1) ??
+      flightSegments.find((s: any) => s.direction === "return") ??
+      null;
   }
 
   const [clientDocumentsResult, linkedClientDocumentsResult] = await Promise.all([
@@ -1189,8 +1197,12 @@ export default async function TripDetailPage({
   const rawEvents: (TimelineEvent | null)[] = [
     hotelDetails.data?.check_in_date ? { dateValue: hotelDetails.data.check_in_date, icon: "🏨", title: "Hotel Check-in", details: hotelDetails.data.hotel_name ?? "Hotel stay begins" } : null,
     hotelDetails.data?.check_out_date ? { dateValue: hotelDetails.data.check_out_date, icon: "🧳", title: "Hotel Check-out", details: hotelDetails.data.hotel_name ?? "Hotel stay ends" } : null,
-    outboundSegment?.departure_datetime ? { dateValue: outboundSegment.departure_datetime, icon: "✈️", title: "Outbound Flight", details: `${outboundSegment.departure_airport_code ?? "?"} → ${outboundSegment.destination_airport_code ?? "?"}` } : null,
-    returnSegment?.departure_datetime ? { dateValue: returnSegment.departure_datetime, icon: "🛬", title: "Return Flight", details: `${returnSegment.departure_airport_code ?? "?"} → ${returnSegment.destination_airport_code ?? "?"}` } : null,
+    ...flightSegments.map((segment: any) => segment.departure_datetime ? {
+      dateValue: segment.departure_datetime,
+      icon: segment.direction === "return" ? "🛬" : "✈️",
+      title: `${segment.direction === "return" ? "Return" : "Outbound"} ${Number(segment.segment_order ?? 1) > 1 ? "Connection" : "Flight"}`,
+      details: `${segment.departure_airport_code ?? "?"} → ${segment.destination_airport_code ?? "?"}`,
+    } : null),
     transferDetails.data?.pickup_datetime ? { dateValue: transferDetails.data.pickup_datetime, icon: "🚗", title: "Transfer Pickup", details: `${transferDetails.data.pickup_location ?? "Pickup"} → ${transferDetails.data.dropoff_location ?? "Dropoff"}` } : null,
     activityDetails.data?.activity_datetime ? { dateValue: activityDetails.data.activity_datetime, icon: "🎟️", title: activityDetails.data.activity_name ?? "Activity", details: activityDetails.data.location ?? "Scheduled activity" } : null,
     cruiseDetails.data?.sailing_date ? { dateValue: cruiseDetails.data.sailing_date, icon: "🚢", title: "Cruise Sailing", details: `${cruiseDetails.data.ship_name ?? "Cruise"}${cruiseDetails.data.departure_port ? ` from ${cruiseDetails.data.departure_port}` : ""}` } : null,
@@ -1239,26 +1251,32 @@ export default async function TripDetailPage({
     supplier: hotelResult.data.supplier_name ?? null,
   } : null;
 
+  const mapFlightSegment = (segment: any) => ({
+    route: `${segment.departure_airport_code ?? "?"} → ${segment.destination_airport_code ?? "?"}`,
+    flight: `${segment.carrier ?? ""} ${segment.flight_number ?? ""}`.trim() || "Not provided",
+    departure: fmtDateTime(segment.departure_datetime) ?? "Not provided",
+    arrival: fmtDateTime(segment.arrival_datetime) ?? "Not provided",
+    cabinClass: segment.cabin_class ?? null,
+    seat: segment.seat_assignment ?? null,
+  });
+
+  const outboundFlightSegments = flightSegments
+    .filter((segment: any) => segment.direction === "outbound")
+    .map(mapFlightSegment);
+  const returnFlightSegments = flightSegments
+    .filter((segment: any) => segment.direction === "return")
+    .map(mapFlightSegment);
+
   const flight = airResult.data && airDetails.data ? {
     flightType: airDetails.data.flight_type ?? null,
     supplier: airResult.data.supplier_name ?? outboundSegment?.carrier ?? null,
     travelerCount: airDetails.data.traveler_count ?? null, rateClass: airDetails.data.rate_class ?? null,
     airlineLocator: airDetails.data.airline_locator ?? null, confirmationNumber: airResult.data.confirmation_number ?? null,
     totalPrice: airResult.data.total_price ?? null, bookingStatus: airResult.data.booking_status ?? null,
-    outbound: outboundSegment ? {
-      route: `${outboundSegment.departure_airport_code ?? "?"} → ${outboundSegment.destination_airport_code ?? "?"}`,
-      flight: `${outboundSegment.carrier ?? ""} ${outboundSegment.flight_number ?? ""}`.trim() || "Not provided",
-      departure: fmtDateTime(outboundSegment.departure_datetime) ?? "Not provided",
-      arrival: fmtDateTime(outboundSegment.arrival_datetime) ?? "Not provided",
-      cabinClass: outboundSegment.cabin_class ?? null, seat: outboundSegment.seat_assignment ?? null,
-    } : null,
-    returnFlight: returnSegment ? {
-      route: `${returnSegment.departure_airport_code ?? "?"} → ${returnSegment.destination_airport_code ?? "?"}`,
-      flight: `${returnSegment.carrier ?? ""} ${returnSegment.flight_number ?? ""}`.trim() || "Not provided",
-      departure: fmtDateTime(returnSegment.departure_datetime) ?? "Not provided",
-      arrival: fmtDateTime(returnSegment.arrival_datetime) ?? "Not provided",
-      cabinClass: returnSegment.cabin_class ?? null, seat: returnSegment.seat_assignment ?? null,
-    } : null,
+    outbound: outboundSegment ? mapFlightSegment(outboundSegment) : null,
+    outboundSegments: outboundFlightSegments,
+    returnFlight: returnSegment ? mapFlightSegment(returnSegment) : null,
+    returnSegments: returnFlightSegments,
   } : null;
 
   const cruise = cruiseResult.data && cruiseDetails.data ? {

@@ -119,6 +119,14 @@ type FlightData = {
     cabinClass: string | null;
     seat: string | null;
   } | null;
+  outboundSegments?: {
+    route: string;
+    flight: string;
+    departure: string;
+    arrival: string;
+    cabinClass: string | null;
+    seat: string | null;
+  }[];
   returnFlight: {
     route: string;
     flight: string;
@@ -127,6 +135,14 @@ type FlightData = {
     cabinClass: string | null;
     seat: string | null;
   } | null;
+  returnSegments?: {
+    route: string;
+    flight: string;
+    departure: string;
+    arrival: string;
+    cabinClass: string | null;
+    seat: string | null;
+  }[];
 } | null;
 
 type CruiseData = {
@@ -985,32 +1001,36 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Confirmation" value={flight.confirmationNumber} />
                   <PriceItem label="Total" value={flight.totalPrice} />
                 </div>
-                {flight.outbound && (
-                  <div className="card stack" style={{ background: "#f7fbfc" }}>
-                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>Outbound</p>
+                {(flight.outboundSegments?.length ? flight.outboundSegments : flight.outbound ? [flight.outbound] : []).map((segment, index) => (
+                  <div key={`outbound-${index}`} className="card stack" style={{ background: "#f7fbfc" }}>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>
+                      Outbound {index === 0 ? "Flight" : "Connection"}
+                    </p>
                     <div className="grid grid-2">
-                      <InfoItem label="Route" value={flight.outbound.route} />
-                      <InfoItem label="Flight" value={flight.outbound.flight} />
-                      <InfoItem label="Departure" value={flight.outbound.departure} />
-                      <InfoItem label="Arrival" value={flight.outbound.arrival} />
-                      <InfoItem label="Cabin" value={flight.outbound.cabinClass} />
-                      <InfoItem label="Seat" value={flight.outbound.seat} />
+                      <InfoItem label="Route" value={segment.route} />
+                      <InfoItem label="Flight" value={segment.flight} />
+                      <InfoItem label="Departure" value={segment.departure} />
+                      <InfoItem label="Arrival" value={segment.arrival} />
+                      <InfoItem label="Cabin" value={segment.cabinClass} />
+                      <InfoItem label="Seat" value={segment.seat} />
                     </div>
                   </div>
-                )}
-                {flight.returnFlight && (
-                  <div className="card stack" style={{ background: "#f7fbfc" }}>
-                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>Return</p>
+                ))}
+                {(flight.returnSegments?.length ? flight.returnSegments : flight.returnFlight ? [flight.returnFlight] : []).map((segment, index) => (
+                  <div key={`return-${index}`} className="card stack" style={{ background: "#f7fbfc" }}>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent-dark)" }}>
+                      Return {index === 0 ? "Flight" : "Connection"}
+                    </p>
                     <div className="grid grid-2">
-                      <InfoItem label="Route" value={flight.returnFlight.route} />
-                      <InfoItem label="Flight" value={flight.returnFlight.flight} />
-                      <InfoItem label="Departure" value={flight.returnFlight.departure} />
-                      <InfoItem label="Arrival" value={flight.returnFlight.arrival} />
-                      <InfoItem label="Cabin" value={flight.returnFlight.cabinClass} />
-                      <InfoItem label="Seat" value={flight.returnFlight.seat} />
+                      <InfoItem label="Route" value={segment.route} />
+                      <InfoItem label="Flight" value={segment.flight} />
+                      <InfoItem label="Departure" value={segment.departure} />
+                      <InfoItem label="Arrival" value={segment.arrival} />
+                      <InfoItem label="Cabin" value={segment.cabinClass} />
+                      <InfoItem label="Seat" value={segment.seat} />
                     </div>
                   </div>
-                )}
+                ))}
               </Collapsible>
             )}
 

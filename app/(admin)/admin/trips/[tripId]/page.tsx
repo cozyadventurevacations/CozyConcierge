@@ -3459,6 +3459,22 @@ async function updateTrip(formData: FormData) {
     String(formData.get("outbound_cabin_class") ?? "").trim() || null;
   const outboundSeatAssignment =
     String(formData.get("outbound_seat_assignment") ?? "").trim() || null;
+  const outboundConnectionDepartureAirport =
+    String(formData.get("outbound_connection_departure_airport_code") ?? "").trim() || null;
+  const outboundConnectionDestinationAirport =
+    String(formData.get("outbound_connection_destination_airport_code") ?? "").trim() || null;
+  const outboundConnectionDepartureDatetime =
+    String(formData.get("outbound_connection_departure_datetime") ?? "").trim() || null;
+  const outboundConnectionArrivalDatetime =
+    String(formData.get("outbound_connection_arrival_datetime") ?? "").trim() || null;
+  const outboundConnectionFlightNumber =
+    String(formData.get("outbound_connection_flight_number") ?? "").trim() || null;
+  const outboundConnectionCarrier =
+    String(formData.get("outbound_connection_carrier") ?? "").trim() || null;
+  const outboundConnectionCabinClass =
+    String(formData.get("outbound_connection_cabin_class") ?? "").trim() || null;
+  const outboundConnectionSeatAssignment =
+    String(formData.get("outbound_connection_seat_assignment") ?? "").trim() || null;
 
   const returnDepartureAirport =
     String(formData.get("return_departure_airport_code") ?? "").trim() || null;
@@ -3476,6 +3492,22 @@ async function updateTrip(formData: FormData) {
     String(formData.get("return_cabin_class") ?? "").trim() || null;
   const returnSeatAssignment =
     String(formData.get("return_seat_assignment") ?? "").trim() || null;
+  const returnConnectionDepartureAirport =
+    String(formData.get("return_connection_departure_airport_code") ?? "").trim() || null;
+  const returnConnectionDestinationAirport =
+    String(formData.get("return_connection_destination_airport_code") ?? "").trim() || null;
+  const returnConnectionDepartureDatetime =
+    String(formData.get("return_connection_departure_datetime") ?? "").trim() || null;
+  const returnConnectionArrivalDatetime =
+    String(formData.get("return_connection_arrival_datetime") ?? "").trim() || null;
+  const returnConnectionFlightNumber =
+    String(formData.get("return_connection_flight_number") ?? "").trim() || null;
+  const returnConnectionCarrier =
+    String(formData.get("return_connection_carrier") ?? "").trim() || null;
+  const returnConnectionCabinClass =
+    String(formData.get("return_connection_cabin_class") ?? "").trim() || null;
+  const returnConnectionSeatAssignment =
+    String(formData.get("return_connection_seat_assignment") ?? "").trim() || null;
 
   const hasAnyAirValue =
     airSupplierId ||
@@ -3485,11 +3517,21 @@ async function updateTrip(formData: FormData) {
     outboundDepartureDatetime ||
     outboundArrivalDatetime ||
     outboundFlightNumber ||
+    outboundConnectionDepartureAirport ||
+    outboundConnectionDestinationAirport ||
+    outboundConnectionDepartureDatetime ||
+    outboundConnectionArrivalDatetime ||
+    outboundConnectionFlightNumber ||
     returnDepartureAirport ||
     returnDestinationAirport ||
     returnDepartureDatetime ||
     returnArrivalDatetime ||
     returnFlightNumber ||
+    returnConnectionDepartureAirport ||
+    returnConnectionDestinationAirport ||
+    returnConnectionDepartureDatetime ||
+    returnConnectionArrivalDatetime ||
+    returnConnectionFlightNumber ||
     airAirlineLocator ||
     airConfirmationNumber;
 
@@ -3582,6 +3624,7 @@ async function updateTrip(formData: FormData) {
 
     const upsertSegment = async (
       direction: "outbound" | "return",
+      segmentOrder: number,
       values: {
         departure_airport_code: string | null;
         destination_airport_code: string | null;
@@ -3593,28 +3636,43 @@ async function updateTrip(formData: FormData) {
         seat_assignment: string | null;
       },
     ) => {
+      const hasAnySegmentValue = Object.values(values).some((value) => Boolean(value));
       const hasSegment =
         values.departure_airport_code &&
         values.destination_airport_code &&
         values.departure_datetime &&
         values.arrival_datetime;
 
-      if (!hasSegment) return;
-
       const { data: existingSegment, error: existingSegmentError } = await supabase
         .from("flight_segments")
         .select("id")
         .eq("air_component_id", componentId)
         .eq("direction", direction)
-        .eq("segment_order", 1)
+        .eq("segment_order", segmentOrder)
         .maybeSingle();
 
       if (existingSegmentError) throw new Error(existingSegmentError.message);
 
+      if (!hasAnySegmentValue) {
+        if (existingSegment) {
+          const { error } = await supabase
+            .from("flight_segments")
+            .delete()
+            .eq("id", existingSegment.id);
+
+          if (error) throw new Error(error.message);
+        }
+        return;
+      }
+
+      if (!hasSegment) {
+        throw new Error("Complete departure airport, destination airport, departure time, and arrival time for each flight leg you enter.");
+      }
+
       const segmentPayload = {
         air_component_id: componentId,
         direction,
-        segment_order: 1,
+        segment_order: segmentOrder,
         departure_airport_code: values.departure_airport_code,
         destination_airport_code: values.destination_airport_code,
         departure_datetime: values.departure_datetime,
@@ -3639,7 +3697,7 @@ async function updateTrip(formData: FormData) {
       }
     };
 
-    await upsertSegment("outbound", {
+    await upsertSegment("outbound", 1, {
       departure_airport_code: outboundDepartureAirport,
       destination_airport_code: outboundDestinationAirport,
       departure_datetime: outboundDepartureDatetime,
@@ -3650,8 +3708,19 @@ async function updateTrip(formData: FormData) {
       seat_assignment: outboundSeatAssignment,
     });
 
+    await upsertSegment("outbound", 2, {
+      departure_airport_code: outboundConnectionDepartureAirport,
+      destination_airport_code: outboundConnectionDestinationAirport,
+      departure_datetime: outboundConnectionDepartureDatetime,
+      arrival_datetime: outboundConnectionArrivalDatetime,
+      flight_number: outboundConnectionFlightNumber,
+      carrier: outboundConnectionCarrier,
+      cabin_class: outboundConnectionCabinClass,
+      seat_assignment: outboundConnectionSeatAssignment,
+    });
+
     if (airFlightType === "round_trip") {
-      await upsertSegment("return", {
+      await upsertSegment("return", 1, {
         departure_airport_code: returnDepartureAirport,
         destination_airport_code: returnDestinationAirport,
         departure_datetime: returnDepartureDatetime,
@@ -3660,6 +3729,17 @@ async function updateTrip(formData: FormData) {
         carrier: returnCarrier,
         cabin_class: returnCabinClass,
         seat_assignment: returnSeatAssignment,
+      });
+
+      await upsertSegment("return", 2, {
+        departure_airport_code: returnConnectionDepartureAirport,
+        destination_airport_code: returnConnectionDestinationAirport,
+        departure_datetime: returnConnectionDepartureDatetime,
+        arrival_datetime: returnConnectionArrivalDatetime,
+        flight_number: returnConnectionFlightNumber,
+        carrier: returnConnectionCarrier,
+        cabin_class: returnConnectionCabinClass,
+        seat_assignment: returnConnectionSeatAssignment,
       });
     }
   }
@@ -4897,7 +4977,9 @@ export default async function AdminTripEditorPage({
   const insurance = await loadComponent("insurance", "insurance_components");
 
   let outboundSegment: any = null;
+  let outboundConnectionSegment: any = null;
   let returnSegment: any = null;
+  let returnConnectionSegment: any = null;
 
   if (air.component) {
     const { data: loadedSegments } = await supabase
@@ -4907,9 +4989,17 @@ export default async function AdminTripEditorPage({
       .order("segment_order", { ascending: true });
 
     outboundSegment =
-      loadedSegments?.find((segment) => segment.direction === "outbound") ?? null;
+      loadedSegments?.find((segment) => segment.direction === "outbound" && segment.segment_order === 1) ??
+      loadedSegments?.find((segment) => segment.direction === "outbound") ??
+      null;
+    outboundConnectionSegment =
+      loadedSegments?.find((segment) => segment.direction === "outbound" && segment.segment_order === 2) ?? null;
     returnSegment =
-      loadedSegments?.find((segment) => segment.direction === "return") ?? null;
+      loadedSegments?.find((segment) => segment.direction === "return" && segment.segment_order === 1) ??
+      loadedSegments?.find((segment) => segment.direction === "return") ??
+      null;
+    returnConnectionSegment =
+      loadedSegments?.find((segment) => segment.direction === "return" && segment.segment_order === 2) ?? null;
   }
 
   const { data: tripNotes } = await supabase
@@ -6759,6 +6849,89 @@ export default async function AdminTripEditorPage({
           </div>
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Outbound Connecting Flight</h3>
+
+            <div className="grid grid-2">
+              <AirportPicker
+                label="Departure Airport"
+                name="outbound_connection_departure_airport_code"
+                defaultValue={outboundConnectionSegment?.departure_airport_code ?? ""}
+              />
+
+              <AirportPicker
+                label="Destination Airport"
+                name="outbound_connection_destination_airport_code"
+                defaultValue={outboundConnectionSegment?.destination_airport_code ?? ""}
+              />
+
+              <label>
+                <span className="label">Departure Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="outbound_connection_departure_datetime"
+                  defaultValue={
+                    outboundConnectionSegment?.departure_datetime
+                      ? new Date(outboundConnectionSegment.departure_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Arrival Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="outbound_connection_arrival_datetime"
+                  defaultValue={
+                    outboundConnectionSegment?.arrival_datetime
+                      ? new Date(outboundConnectionSegment.arrival_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Flight Number</span>
+                <input
+                  className="input"
+                  name="outbound_connection_flight_number"
+                  defaultValue={outboundConnectionSegment?.flight_number ?? ""}
+                />
+              </label>
+
+              <AirlinePicker
+                label="Carrier"
+                name="outbound_connection_carrier"
+                defaultValue={outboundConnectionSegment?.carrier ?? ""}
+              />
+
+              <label>
+                <span className="label">Cabin Class</span>
+                <input
+                  className="input"
+                  name="outbound_connection_cabin_class"
+                  defaultValue={outboundConnectionSegment?.cabin_class ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Seat Assignment</span>
+                <input
+                  className="input"
+                  name="outbound_connection_seat_assignment"
+                  defaultValue={outboundConnectionSegment?.seat_assignment ?? ""}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Return Flight</h3>
 
             <div className="grid grid-2">
@@ -6836,6 +7009,89 @@ export default async function AdminTripEditorPage({
                   className="input"
                   name="return_seat_assignment"
                   defaultValue={returnSegment?.seat_assignment ?? ""}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Return Connecting Flight</h3>
+
+            <div className="grid grid-2">
+              <AirportPicker
+                label="Departure Airport"
+                name="return_connection_departure_airport_code"
+                defaultValue={returnConnectionSegment?.departure_airport_code ?? ""}
+              />
+
+              <AirportPicker
+                label="Destination Airport"
+                name="return_connection_destination_airport_code"
+                defaultValue={returnConnectionSegment?.destination_airport_code ?? ""}
+              />
+
+              <label>
+                <span className="label">Departure Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="return_connection_departure_datetime"
+                  defaultValue={
+                    returnConnectionSegment?.departure_datetime
+                      ? new Date(returnConnectionSegment.departure_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Arrival Date & Time</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  name="return_connection_arrival_datetime"
+                  defaultValue={
+                    returnConnectionSegment?.arrival_datetime
+                      ? new Date(returnConnectionSegment.arrival_datetime)
+                          .toISOString()
+                          .slice(0, 16)
+                      : ""
+                  }
+                />
+              </label>
+
+              <label>
+                <span className="label">Flight Number</span>
+                <input
+                  className="input"
+                  name="return_connection_flight_number"
+                  defaultValue={returnConnectionSegment?.flight_number ?? ""}
+                />
+              </label>
+
+              <AirlinePicker
+                label="Carrier"
+                name="return_connection_carrier"
+                defaultValue={returnConnectionSegment?.carrier ?? ""}
+              />
+
+              <label>
+                <span className="label">Cabin Class</span>
+                <input
+                  className="input"
+                  name="return_connection_cabin_class"
+                  defaultValue={returnConnectionSegment?.cabin_class ?? ""}
+                />
+              </label>
+
+              <label>
+                <span className="label">Seat Assignment</span>
+                <input
+                  className="input"
+                  name="return_connection_seat_assignment"
+                  defaultValue={returnConnectionSegment?.seat_assignment ?? ""}
                 />
               </label>
             </div>
