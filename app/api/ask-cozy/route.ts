@@ -64,7 +64,9 @@ type TravelRequestDraft = {
   client_preferred_airport?: string | null;
   air_preferred_airline?: string | null;
   air_departure_airport?: string | null;
+  hotel_preferred_chain?: string | null;
   cruise_line_preference?: string | null;
+  rental_car_preferred_company?: string | null;
   theme_park_preference?: string | null;
   departure_date?: string | null;
   return_date?: string | null;
@@ -135,7 +137,9 @@ Travel request behavior:
 - Required details for submission are destination, departure date, return date or flexible date window, number of travelers, travel type, client name, email, phone number, address, date of birth, and preferred airport.
 - Helpful optional details include traveler ages, budget, preferred contact method, Zoom availability, must-dos, must-avoids, accessibility needs, pace, supplier preferences, room/cabin style, and celebration notes.
 - For air requests, capture preferred airline and preferred departure airport when the client provides them.
+- For hotel requests, capture preferred hotel chain when the client provides one.
 - For cruise requests, capture cruise line preference. Carnival should not be offered because Cozy Adventure Vacations does not sell Carnival cruises; "Any" is acceptable.
+- For rental car requests, capture preferred rental car company when the client provides one.
 - For theme park requests, capture the preferred park when the client provides it, including Walt Disney World Florida, Disneyland California, Universal Studios Orlando, Universal Studios California, SeaWorld Orlando, Busch Gardens Tampa Bay, LEGOLAND Florida, Dollywood, Cedar Point, Six Flags Magic Mountain, or another park the client names.
 - When the client says they are ready to submit, do not claim it is submitted unless the system confirms the request was created.
 
@@ -581,7 +585,7 @@ async function extractTravelRequestDraft({
         content: [
           "Extract a Cozy Concierge travel request draft from the conversation.",
           "Return only JSON with these keys:",
-          "full_name, email, phone_number, preferred_contact_method, client_address_line_1, client_address_line_2, client_city, client_state, client_postal_code, client_date_of_birth, client_preferred_airport, air_preferred_airline, air_departure_airport, cruise_line_preference, theme_park_preference, departure_date, return_date, optional_travel_dates, number_of_travelers, traveler_ages, travel_types_requested, destinations, budget, trip_vision_notes, zoom_call_availability.",
+          "full_name, email, phone_number, preferred_contact_method, client_address_line_1, client_address_line_2, client_city, client_state, client_postal_code, client_date_of_birth, client_preferred_airport, air_preferred_airline, air_departure_airport, hotel_preferred_chain, cruise_line_preference, rental_car_preferred_company, theme_park_preference, departure_date, return_date, optional_travel_dates, number_of_travelers, traveler_ages, travel_types_requested, destinations, budget, trip_vision_notes, zoom_call_availability.",
           "Use YYYY-MM-DD dates only when explicit. If dates are flexible or not exact, put that in optional_travel_dates and leave exact date fields null.",
           "Use YYYY-MM-DD for client_date_of_birth only when explicit.",
           "travel_types_requested must use only: tour, cruise, air, hotel, transfer, theme_park, rental_car, rail, vacation_package, insurance, activity.",
@@ -638,7 +642,9 @@ function normalizeTravelRequestDraft({
     client_preferred_airport: normalizeText(draft.client_preferred_airport) || clientAccount.preferred_airport,
     air_preferred_airline: normalizeText(draft.air_preferred_airline) || null,
     air_departure_airport: normalizeText(draft.air_departure_airport) || normalizeText(draft.client_preferred_airport) || clientAccount.preferred_airport,
+    hotel_preferred_chain: normalizeText(draft.hotel_preferred_chain) || null,
     cruise_line_preference: normalizeCruiseLinePreference(draft.cruise_line_preference),
+    rental_car_preferred_company: normalizeText(draft.rental_car_preferred_company) || null,
     theme_park_preference: normalizeText(draft.theme_park_preference) || null,
     departure_date: normalizeDate(draft.departure_date),
     return_date: normalizeDate(draft.return_date),
@@ -863,7 +869,9 @@ export async function POST(request: Request) {
         client_preferred_airport: normalizedDraft.client_preferred_airport,
         air_preferred_airline: normalizedDraft.travel_types_requested.includes("air") ? normalizedDraft.air_preferred_airline : null,
         air_departure_airport: normalizedDraft.travel_types_requested.includes("air") ? normalizedDraft.air_departure_airport : null,
+        hotel_preferred_chain: normalizedDraft.travel_types_requested.includes("hotel") ? normalizedDraft.hotel_preferred_chain : null,
         cruise_line_preference: normalizedDraft.travel_types_requested.includes("cruise") ? normalizedDraft.cruise_line_preference || "Any" : null,
+        rental_car_preferred_company: normalizedDraft.travel_types_requested.includes("rental_car") ? normalizedDraft.rental_car_preferred_company : null,
         theme_park_preference: normalizedDraft.travel_types_requested.includes("theme_park") ? normalizedDraft.theme_park_preference : null,
         departure_date: normalizedDraft.departure_date,
         return_date: normalizedDraft.return_date,

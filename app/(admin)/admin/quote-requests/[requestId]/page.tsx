@@ -44,7 +44,9 @@ type QuoteRequestRow = {
   client_preferred_airport: string | null;
   air_preferred_airline: string | null;
   air_departure_airport: string | null;
+  hotel_preferred_chain: string | null;
   cruise_line_preference: string | null;
+  rental_car_preferred_company: string | null;
   theme_park_preference: string | null;
   departure_date: string | null;
   return_date: string | null;
@@ -285,9 +287,21 @@ function RequestedComponents({
           );
         }
 
+        if (type === "hotel") {
+          componentDetails.push(
+            <InfoItem key="hotel-chain" label="Preferred Hotel Chain" value={request.hotel_preferred_chain ?? "Not provided"} />,
+          );
+        }
+
         if (type === "cruise") {
           componentDetails.push(
             <InfoItem key="cruise-line" label="Cruise Line Preference" value={request.cruise_line_preference ?? "Any"} />,
+          );
+        }
+
+        if (type === "rental_car") {
+          componentDetails.push(
+            <InfoItem key="rental-car-company" label="Preferred Rental Car Company" value={request.rental_car_preferred_company ?? "Not provided"} />,
           );
         }
 

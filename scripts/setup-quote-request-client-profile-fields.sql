@@ -8,5 +8,7 @@ alter table public.quote_requests
   add column if not exists client_preferred_airport text,
   add column if not exists air_preferred_airline text,
   add column if not exists air_departure_airport text,
+  add column if not exists hotel_preferred_chain text,
   add column if not exists cruise_line_preference text,
+  add column if not exists rental_car_preferred_company text,
   add column if not exists theme_park_preference text;

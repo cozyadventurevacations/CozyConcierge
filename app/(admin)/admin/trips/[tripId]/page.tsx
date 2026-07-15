@@ -5714,8 +5714,17 @@ export default async function AdminTripEditorPage({
   const outboundSavedConnectionCount = outboundConnectionSegments.filter(Boolean).length;
   const returnSavedConnectionCount = returnConnectionSegments.filter(Boolean).length;
   const connectionIndexes = [0, 1, 2];
-  const formatDateTimeInputValue = (value: string | null | undefined) =>
-    value ? new Date(value).toISOString().slice(0, 16) : "";
+  const tripDepartureDate = typeof trip.departure_date === "string" ? trip.departure_date : null;
+  const tripReturnDate = typeof trip.return_date === "string" ? trip.return_date : null;
+  const withTripStartDate = (value: string | null | undefined) => value ?? tripDepartureDate ?? "";
+  const withTripEndDate = (value: string | null | undefined) => value ?? tripReturnDate ?? "";
+  const formatDateTimeInputValue = (
+    value: string | null | undefined,
+    fallbackDate?: string | null,
+  ) => {
+    if (value) return new Date(value).toISOString().slice(0, 16);
+    return fallbackDate ? `${fallbackDate}T00:00` : "";
+  };
   const getConnectionFieldPrefix = (direction: "outbound" | "return", index: number) =>
     index === 0 ? `${direction}_connection` : `${direction}_connection_${index + 1}`;
   const renderConnectionFlightFields = (
@@ -5725,6 +5734,7 @@ export default async function AdminTripEditorPage({
   ) => {
     const prefix = getConnectionFieldPrefix(direction, index);
     const labelPrefix = direction === "outbound" ? "Outbound" : "Return";
+    const fallbackDate = direction === "outbound" ? tripDepartureDate : tripReturnDate;
 
     return (
       <div key={`${direction}-connection-${index}`} className="card stack" style={{ background: "#f7fbfc" }}>
@@ -5749,7 +5759,7 @@ export default async function AdminTripEditorPage({
               className="input"
               type="datetime-local"
               name={`${prefix}_departure_datetime`}
-              defaultValue={formatDateTimeInputValue(segment?.departure_datetime)}
+              defaultValue={formatDateTimeInputValue(segment?.departure_datetime, segment ? fallbackDate : null)}
             />
           </label>
 
@@ -5759,7 +5769,7 @@ export default async function AdminTripEditorPage({
               className="input"
               type="datetime-local"
               name={`${prefix}_arrival_datetime`}
-              defaultValue={formatDateTimeInputValue(segment?.arrival_datetime)}
+              defaultValue={formatDateTimeInputValue(segment?.arrival_datetime, segment ? fallbackDate : null)}
             />
           </label>
 
@@ -6777,8 +6787,8 @@ export default async function AdminTripEditorPage({
               endName="hotel_check_out_date"
               startLabel="Check-in"
               endLabel="Check-out"
-              startDefaultValue={hotel.details?.check_in_date}
-              endDefaultValue={hotel.details?.check_out_date}
+              startDefaultValue={withTripStartDate(hotel.details?.check_in_date)}
+              endDefaultValue={withTripEndDate(hotel.details?.check_out_date)}
             />
 
             <label>
@@ -7001,13 +7011,7 @@ export default async function AdminTripEditorPage({
                   className="input"
                   type="datetime-local"
                   name="outbound_departure_datetime"
-                  defaultValue={
-                    outboundSegment?.departure_datetime
-                      ? new Date(outboundSegment.departure_datetime)
-                          .toISOString()
-                          .slice(0, 16)
-                      : ""
-                  }
+                  defaultValue={formatDateTimeInputValue(outboundSegment?.departure_datetime, tripDepartureDate)}
                 />
               </label>
 
@@ -7017,13 +7021,7 @@ export default async function AdminTripEditorPage({
                   className="input"
                   type="datetime-local"
                   name="outbound_arrival_datetime"
-                  defaultValue={
-                    outboundSegment?.arrival_datetime
-                      ? new Date(outboundSegment.arrival_datetime)
-                          .toISOString()
-                          .slice(0, 16)
-                      : ""
-                  }
+                  defaultValue={formatDateTimeInputValue(outboundSegment?.arrival_datetime, tripDepartureDate)}
                 />
               </label>
 
@@ -7102,13 +7100,7 @@ export default async function AdminTripEditorPage({
                   className="input"
                   type="datetime-local"
                   name="return_departure_datetime"
-                  defaultValue={
-                    returnSegment?.departure_datetime
-                      ? new Date(returnSegment.departure_datetime)
-                          .toISOString()
-                          .slice(0, 16)
-                      : ""
-                  }
+                  defaultValue={formatDateTimeInputValue(returnSegment?.departure_datetime, tripReturnDate)}
                 />
               </label>
 
@@ -7118,13 +7110,7 @@ export default async function AdminTripEditorPage({
                   className="input"
                   type="datetime-local"
                   name="return_arrival_datetime"
-                  defaultValue={
-                    returnSegment?.arrival_datetime
-                      ? new Date(returnSegment.arrival_datetime)
-                          .toISOString()
-                          .slice(0, 16)
-                      : ""
-                  }
+                  defaultValue={formatDateTimeInputValue(returnSegment?.arrival_datetime, tripReturnDate)}
                 />
               </label>
 
@@ -7260,8 +7246,8 @@ export default async function AdminTripEditorPage({
               endName="cruise_return_date"
               startLabel="Sailing Date"
               endLabel="Return Date"
-              startDefaultValue={cruise.details?.sailing_date}
-              endDefaultValue={cruise.details?.return_date}
+              startDefaultValue={withTripStartDate(cruise.details?.sailing_date)}
+              endDefaultValue={withTripEndDate(cruise.details?.return_date)}
             />
 
             <label>
@@ -7515,13 +7501,7 @@ export default async function AdminTripEditorPage({
                 className="input"
                 type="datetime-local"
                 name="transfer_pickup_datetime"
-                defaultValue={
-                  transfer.details?.pickup_datetime
-                    ? new Date(transfer.details.pickup_datetime)
-                        .toISOString()
-                        .slice(0, 16)
-                    : ""
-                }
+                defaultValue={formatDateTimeInputValue(transfer.details?.pickup_datetime, tripDepartureDate)}
               />
             </label>
 
@@ -7733,13 +7713,7 @@ export default async function AdminTripEditorPage({
                 className="input"
                 type="datetime-local"
                 name="rental_car_pickup_datetime"
-                defaultValue={
-                  rentalCar.details?.pickup_datetime
-                    ? new Date(rentalCar.details.pickup_datetime)
-                        .toISOString()
-                        .slice(0, 16)
-                    : ""
-                }
+                defaultValue={formatDateTimeInputValue(rentalCar.details?.pickup_datetime, tripDepartureDate)}
               />
             </label>
 
@@ -7749,13 +7723,7 @@ export default async function AdminTripEditorPage({
                 className="input"
                 type="datetime-local"
                 name="rental_car_return_datetime"
-                defaultValue={
-                  rentalCar.details?.return_datetime
-                    ? new Date(rentalCar.details.return_datetime)
-                        .toISOString()
-                        .slice(0, 16)
-                    : ""
-                }
+                defaultValue={formatDateTimeInputValue(rentalCar.details?.return_datetime, tripReturnDate)}
               />
             </label>
 
@@ -7946,13 +7914,7 @@ export default async function AdminTripEditorPage({
                 className="input"
                 type="datetime-local"
                 name="activity_datetime"
-                defaultValue={
-                  activity.details?.activity_datetime
-                    ? new Date(activity.details.activity_datetime)
-                        .toISOString()
-                        .slice(0, 16)
-                    : ""
-                }
+                defaultValue={formatDateTimeInputValue(activity.details?.activity_datetime, tripDepartureDate)}
               />
             </label>
 
@@ -8150,8 +8112,8 @@ export default async function AdminTripEditorPage({
               endName="insurance_coverage_end_date"
               startLabel="Coverage Start Date"
               endLabel="Coverage End Date"
-              startDefaultValue={insurance.details?.coverage_start_date}
-              endDefaultValue={insurance.details?.coverage_end_date}
+              startDefaultValue={withTripStartDate(insurance.details?.coverage_start_date)}
+              endDefaultValue={withTripEndDate(insurance.details?.coverage_end_date)}
             />
 
             <label>
@@ -9132,8 +9094,8 @@ export default async function AdminTripEditorPage({
               }
             >
               <SnapshotRow label="Hotel" value={hotel.details?.hotel_name ?? hotel.component?.display_name ?? "Not provided"} />
-              <SnapshotRow label="Check-in" value={formatDate(hotel.details?.check_in_date, "Not provided")} />
-              <SnapshotRow label="Check-out" value={formatDate(hotel.details?.check_out_date, "Not provided")} />
+              <SnapshotRow label="Check-in" value={formatDate(hotel.details?.check_in_date ?? tripDepartureDate, "Not provided")} />
+              <SnapshotRow label="Check-out" value={formatDate(hotel.details?.check_out_date ?? tripReturnDate, "Not provided")} />
               <SnapshotRow label="Room" value={hotel.details?.room_category ?? "Not provided"} />
               <SnapshotRow label="Confirm #" value={hotel.component?.confirmation_number ?? "Missing"} />
             </SnapshotCard>
@@ -9164,6 +9126,8 @@ export default async function AdminTripEditorPage({
                     : "Not provided"
                 }
               />
+              <SnapshotRow label="Outbound Date" value={formatDate(outboundSegment?.departure_datetime ?? tripDepartureDate, "Not provided")} />
+              <SnapshotRow label="Return Date" value={formatDate(returnSegment?.departure_datetime ?? tripReturnDate, "Not provided")} />
               <SnapshotRow label="Locator" value={air.details?.airline_locator ?? "Not provided"} />
               <SnapshotRow label="Confirm #" value={air.component?.confirmation_number ?? "Missing"} />
             </SnapshotCard>
@@ -9179,8 +9143,8 @@ export default async function AdminTripEditorPage({
             >
               <SnapshotRow label="Line" value={cruise.details?.cruise_line ?? cruise.component?.supplier_name ?? "Not provided"} />
               <SnapshotRow label="Ship" value={cruise.details?.ship_name ?? "Not provided"} />
-              <SnapshotRow label="Sailing" value={formatDate(cruise.details?.sailing_date, "Not provided")} />
-              <SnapshotRow label="Return" value={formatDate(cruise.details?.return_date, "Not provided")} />
+              <SnapshotRow label="Sailing" value={formatDate(cruise.details?.sailing_date ?? tripDepartureDate, "Not provided")} />
+              <SnapshotRow label="Return" value={formatDate(cruise.details?.return_date ?? tripReturnDate, "Not provided")} />
               <SnapshotRow label="Confirm #" value={cruise.component?.confirmation_number ?? "Missing"} />
             </SnapshotCard>
 
@@ -9194,10 +9158,28 @@ export default async function AdminTripEditorPage({
               }
             >
               <SnapshotRow label="Supplier" value={transfer.details?.supplier_name ?? transfer.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Pickup Date" value={formatDate(transfer.details?.pickup_datetime ?? tripDepartureDate, "Not provided")} />
               <SnapshotRow label="Pickup" value={transfer.details?.pickup_location ?? "Not provided"} />
               <SnapshotRow label="Drop-off" value={transfer.details?.dropoff_location ?? "Not provided"} />
               <SnapshotRow label="Vehicle" value={transfer.details?.vehicle_type ?? "Not provided"} />
               <SnapshotRow label="Confirm #" value={transfer.component?.confirmation_number ?? "Missing"} />
+            </SnapshotCard>
+
+            <SnapshotCard
+              title="Rental Car"
+              href="#rental_car-component"
+              status={
+                <CommandStatusBadge tone={rentalCar.component ? "neutral" : "warning"}>
+                  {rentalCar.component ? rentalCar.component.booking_status ?? "added" : "not added"}
+                </CommandStatusBadge>
+              }
+            >
+              <SnapshotRow label="Company" value={rentalCar.details?.rental_company ?? rentalCar.component?.supplier_name ?? "Not provided"} />
+              <SnapshotRow label="Pickup Date" value={formatDate(rentalCar.details?.pickup_datetime ?? tripDepartureDate, "Not provided")} />
+              <SnapshotRow label="Return Date" value={formatDate(rentalCar.details?.return_datetime ?? tripReturnDate, "Not provided")} />
+              <SnapshotRow label="Pickup" value={rentalCar.details?.pickup_location ?? "Not provided"} />
+              <SnapshotRow label="Return" value={rentalCar.details?.return_location ?? "Not provided"} />
+              <SnapshotRow label="Confirm #" value={rentalCar.component?.confirmation_number ?? "Missing"} />
             </SnapshotCard>
 
             <SnapshotCard
@@ -9211,7 +9193,7 @@ export default async function AdminTripEditorPage({
             >
               <SnapshotRow label="Activity" value={activity.details?.activity_name ?? activity.component?.display_name ?? "Not provided"} />
               <SnapshotRow label="Supplier" value={activity.details?.supplier_name ?? activity.component?.supplier_name ?? "Not provided"} />
-              <SnapshotRow label="Date/Time" value={activity.details?.activity_datetime ? formatDate(activity.details.activity_datetime) : "Not provided"} />
+              <SnapshotRow label="Date/Time" value={formatDate(activity.details?.activity_datetime ?? tripDepartureDate, "Not provided")} />
               <SnapshotRow label="Location" value={activity.details?.location ?? "Not provided"} />
               <SnapshotRow label="Confirm #" value={activity.component?.confirmation_number ?? "Missing"} />
             </SnapshotCard>
@@ -9229,7 +9211,7 @@ export default async function AdminTripEditorPage({
               <SnapshotRow label="Plan" value={insurance.details?.plan_name ?? "Not provided"} />
               <SnapshotRow label="Policy #" value={insurance.details?.policy_number ?? insurance.component?.confirmation_number ?? "Missing"} />
               <SnapshotRow label="Premium" value={insurance.details?.premium_amount ? formatMoney(Number(insurance.details.premium_amount)) : "Not provided"} />
-              <SnapshotRow label="Coverage" value={insurance.details?.coverage_start_date || insurance.details?.coverage_end_date ? `${formatDate(insurance.details?.coverage_start_date, "?")} to ${formatDate(insurance.details?.coverage_end_date, "?")}` : "Not provided"} />
+              <SnapshotRow label="Coverage" value={tripDepartureDate || tripReturnDate || insurance.details?.coverage_start_date || insurance.details?.coverage_end_date ? `${formatDate(insurance.details?.coverage_start_date ?? tripDepartureDate, "?")} to ${formatDate(insurance.details?.coverage_end_date ?? tripReturnDate, "?")}` : "Not provided"} />
             </SnapshotCard>
 
             <SnapshotCard

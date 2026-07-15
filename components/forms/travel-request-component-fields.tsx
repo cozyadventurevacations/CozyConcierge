@@ -95,7 +95,9 @@ export function TravelRequestComponentFields({
   }
 
   const includesAir = selectedTypes.includes("air");
+  const includesHotel = selectedTypes.includes("hotel");
   const includesCruise = selectedTypes.includes("cruise");
+  const includesRentalCar = selectedTypes.includes("rental_car");
   const includesThemePark = selectedTypes.includes("theme_park");
 
   return (
@@ -165,6 +167,38 @@ export function TravelRequestComponentFields({
                 </option>
               ))}
             </select>
+          </label>
+        </ComponentDetailCard>
+      ) : null}
+
+      {includesHotel ? (
+        <ComponentDetailCard
+          title="Hotel Preferences"
+          helper="Optional, but helpful if you already have a hotel brand or loyalty preference."
+        >
+          <label className="stack-sm">
+            <span className="label">Preferred Hotel Chain</span>
+            <input
+              className="input"
+              name="hotel_preferred_chain"
+              placeholder="Marriott, Hilton, Hyatt, Disney Resorts..."
+            />
+          </label>
+        </ComponentDetailCard>
+      ) : null}
+
+      {includesRentalCar ? (
+        <ComponentDetailCard
+          title="Rental Car Preferences"
+          helper="Optional. Share a preferred rental car company or loyalty brand if you have one."
+        >
+          <label className="stack-sm">
+            <span className="label">Preferred Rental Car Company</span>
+            <input
+              className="input"
+              name="rental_car_preferred_company"
+              placeholder="Enterprise, National, Hertz, Alamo..."
+            />
           </label>
         </ComponentDetailCard>
       ) : null}

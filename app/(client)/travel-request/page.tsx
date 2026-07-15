@@ -95,7 +95,9 @@ async function submitTravelRequest(formData: FormData) {
   const clientPreferredAirport = cleanFormText(formData, "client_preferred_airport");
   const airPreferredAirline = cleanFormText(formData, "air_preferred_airline");
   const airDepartureAirport = cleanFormText(formData, "air_departure_airport");
+  const hotelPreferredChain = cleanFormText(formData, "hotel_preferred_chain");
   const cruiseLinePreference = cleanFormText(formData, "cruise_line_preference");
+  const rentalCarPreferredCompany = cleanFormText(formData, "rental_car_preferred_company");
   const themeParkPreference = cleanFormText(formData, "theme_park_preference");
   const departureDate = String(formData.get("departure_date") ?? "").trim();
   const returnDate = String(formData.get("return_date") ?? "").trim();
@@ -127,7 +129,9 @@ async function submitTravelRequest(formData: FormData) {
     client_preferred_airport: clientPreferredAirport,
     air_preferred_airline: travelTypesRequested.includes("air") ? airPreferredAirline || null : null,
     air_departure_airport: travelTypesRequested.includes("air") ? airDepartureAirport || clientPreferredAirport : null,
+    hotel_preferred_chain: travelTypesRequested.includes("hotel") ? hotelPreferredChain || null : null,
     cruise_line_preference: travelTypesRequested.includes("cruise") ? cruiseLinePreference || "Any" : null,
+    rental_car_preferred_company: travelTypesRequested.includes("rental_car") ? rentalCarPreferredCompany || null : null,
     theme_park_preference: travelTypesRequested.includes("theme_park") ? themeParkPreference || null : null,
     departure_date: departureDate,
     return_date: returnDate,
