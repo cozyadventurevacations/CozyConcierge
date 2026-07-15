@@ -12,9 +12,11 @@ import { HotelLibraryPicker } from "@/components/forms/hotel-library-picker";
 import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { sendProposalSharedEmail } from "@/lib/email/proposal-shared";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { labelForEmailAutomationType } from "@/lib/email-automations/config";
 import { encryptBuffer } from "@/lib/encryption";
+import { AiRewriteTextarea } from "./ai-rewrite-textarea";
 import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
 const allowedTripStatuses = [
@@ -3234,11 +3236,27 @@ async function updateTrip(formData: FormData) {
 
   const { data: existingProposal, error: existingProposalError } = await supabase
     .from("trip_proposals")
-    .select("id")
+    .select("id, proposal_status, client_visible")
     .eq("trip_id", tripId)
     .maybeSingle();
 
   if (existingProposalError) throw new Error(existingProposalError.message);
+
+  const isProposalEffectivelyVisible = (proposal: {
+    proposal_status?: string | null;
+    client_visible?: boolean | null;
+  }) =>
+    Boolean(proposal.client_visible) ||
+    ["sent", "approved", "declined"].includes(String(proposal.proposal_status ?? ""));
+
+  const wasProposalVisible = existingProposal
+    ? isProposalEffectivelyVisible(existingProposal)
+    : false;
+  const willProposalBeVisible = isProposalEffectivelyVisible(proposalUpdates);
+  const shouldSendProposalSharedEmail =
+    willProposalBeVisible &&
+    !wasProposalVisible &&
+    String(proposalUpdates.proposal_status ?? "") === "sent";
 
   if (existingProposal) {
     const { error: proposalError } = await supabase
@@ -3258,6 +3276,21 @@ async function updateTrip(formData: FormData) {
       });
 
     if (insertProposalError) throw new Error(insertProposalError.message);
+  }
+
+  if (shouldSendProposalSharedEmail) {
+    const clientName =
+      `${mainClient.first_name ?? ""} ${mainClient.last_name ?? ""}`.trim() ||
+      mainClient.email;
+
+    await sendProposalSharedEmail({
+      to: mainClient.email,
+      clientName,
+      tripId,
+      tripName: String(formData.get("trip_name") ?? "").trim() || "Your Trip",
+      destinations: String(formData.get("destinations") ?? "").trim() || null,
+      departureDate: String(formData.get("departure_date") ?? "").trim() || null,
+    });
   }
 
   async function upsertTripComponent(
@@ -6750,41 +6783,13 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Room Description</span>
-            <textarea
-              className="textarea"
-              name="hotel_room_description"
-              defaultValue={hotel.details?.room_description ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Room Description" name="hotel_room_description" defaultValue={hotel.details?.room_description ?? ""} />
 
-          <label>
-            <span className="label">Hotel Description</span>
-            <textarea
-              className="textarea"
-              name="hotel_description"
-              defaultValue={hotel.details?.hotel_description ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Hotel Description" name="hotel_description" defaultValue={hotel.details?.hotel_description ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="hotel_terms_and_conditions"
-              defaultValue={hotel.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="hotel_terms_and_conditions" defaultValue={hotel.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="hotel_cancellation_policy"
-              defaultValue={hotel.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="hotel_cancellation_policy" defaultValue={hotel.component?.cancellation_policy ?? ""} />
         
 
           <SectionSaveButton label="Hotel Component" />
@@ -6911,23 +6916,9 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="air_terms_and_conditions"
-              defaultValue={air.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="air_terms_and_conditions" defaultValue={air.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="air_cancellation_policy"
-              defaultValue={air.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="air_cancellation_policy" defaultValue={air.component?.cancellation_policy ?? ""} />
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Outbound Flight</h3>
@@ -7394,32 +7385,11 @@ export default async function AdminTripEditorPage({
             )}
           </div>
 
-          <label>
-            <span className="label">Cruise Description</span>
-            <textarea
-              className="textarea"
-              name="cruise_description"
-              defaultValue={cruise.details?.cruise_description ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cruise Description" name="cruise_description" defaultValue={cruise.details?.cruise_description ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="cruise_terms_and_conditions"
-              defaultValue={cruise.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="cruise_terms_and_conditions" defaultValue={cruise.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="cruise_cancellation_policy"
-              defaultValue={cruise.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="cruise_cancellation_policy" defaultValue={cruise.component?.cancellation_policy ?? ""} />
         
 
           <SectionSaveButton label="Cruise Component" />
@@ -7596,32 +7566,11 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Transfer Notes</span>
-            <textarea
-              className="textarea"
-              name="transfer_notes"
-              defaultValue={transfer.details?.transfer_notes ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Transfer Notes" name="transfer_notes" defaultValue={transfer.details?.transfer_notes ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="transfer_terms_and_conditions"
-              defaultValue={transfer.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="transfer_terms_and_conditions" defaultValue={transfer.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="transfer_cancellation_policy"
-              defaultValue={transfer.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="transfer_cancellation_policy" defaultValue={transfer.component?.cancellation_policy ?? ""} />
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Commissions</h3>
@@ -7648,14 +7597,7 @@ export default async function AdminTripEditorPage({
               </label>
             </div>
 
-            <label>
-              <span className="label">Commission Notes</span>
-              <textarea
-                className="textarea"
-                name="transfer_commission_notes"
-                defaultValue={transfer.details?.commission_notes ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea label="Commission Notes" name="transfer_commission_notes" defaultValue={transfer.details?.commission_notes ?? ""} />
           </div>
         
 
@@ -7829,32 +7771,11 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Rental Notes</span>
-            <textarea
-              className="textarea"
-              name="rental_car_notes"
-              defaultValue={rentalCar.details?.rental_notes ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Rental Notes" name="rental_car_notes" defaultValue={rentalCar.details?.rental_notes ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="rental_car_terms_and_conditions"
-              defaultValue={rentalCar.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="rental_car_terms_and_conditions" defaultValue={rentalCar.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="rental_car_cancellation_policy"
-              defaultValue={rentalCar.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="rental_car_cancellation_policy" defaultValue={rentalCar.component?.cancellation_policy ?? ""} />
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Commissions</h3>
@@ -7881,14 +7802,7 @@ export default async function AdminTripEditorPage({
               </label>
             </div>
 
-            <label>
-              <span className="label">Commission Notes</span>
-              <textarea
-                className="textarea"
-                name="rental_car_commission_notes"
-                defaultValue={rentalCar.details?.commission_notes ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea label="Commission Notes" name="rental_car_commission_notes" defaultValue={rentalCar.details?.commission_notes ?? ""} />
           </div>
 
           <SectionSaveButton label="Rental Car Component" />
@@ -8056,32 +7970,11 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Activity Notes</span>
-            <textarea
-              className="textarea"
-              name="activity_notes"
-              defaultValue={activity.details?.activity_notes ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Activity Notes" name="activity_notes" defaultValue={activity.details?.activity_notes ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="activity_terms_and_conditions"
-              defaultValue={activity.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="activity_terms_and_conditions" defaultValue={activity.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="activity_cancellation_policy"
-              defaultValue={activity.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="activity_cancellation_policy" defaultValue={activity.component?.cancellation_policy ?? ""} />
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Commissions</h3>
@@ -8108,14 +8001,7 @@ export default async function AdminTripEditorPage({
               </label>
             </div>
 
-            <label>
-              <span className="label">Commission Notes</span>
-              <textarea
-                className="textarea"
-                name="activity_commission_notes"
-                defaultValue={activity.details?.commission_notes ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea label="Commission Notes" name="activity_commission_notes" defaultValue={activity.details?.commission_notes ?? ""} />
           </div>
         
 
@@ -8241,32 +8127,11 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Insurance Notes</span>
-            <textarea
-              className="textarea"
-              name="insurance_notes"
-              defaultValue={insurance.details?.insurance_notes ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Insurance Notes" name="insurance_notes" defaultValue={insurance.details?.insurance_notes ?? ""} />
 
-          <label>
-            <span className="label">Terms and Conditions</span>
-            <textarea
-              className="textarea"
-              name="insurance_terms_and_conditions"
-              defaultValue={insurance.component?.terms_and_conditions ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Terms and Conditions" name="insurance_terms_and_conditions" defaultValue={insurance.component?.terms_and_conditions ?? ""} />
 
-          <label>
-            <span className="label">Cancellation Policy</span>
-            <textarea
-              className="textarea"
-              name="insurance_cancellation_policy"
-              defaultValue={insurance.component?.cancellation_policy ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea label="Cancellation Policy" name="insurance_cancellation_policy" defaultValue={insurance.component?.cancellation_policy ?? ""} />
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Commissions</h3>
@@ -8293,14 +8158,7 @@ export default async function AdminTripEditorPage({
               </label>
             </div>
 
-            <label>
-              <span className="label">Commission Notes</span>
-              <textarea
-                className="textarea"
-                name="insurance_commission_notes"
-                defaultValue={insurance.details?.commission_notes ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea label="Commission Notes" name="insurance_commission_notes" defaultValue={insurance.details?.commission_notes ?? ""} />
           </div>
         
 
@@ -8608,23 +8466,17 @@ export default async function AdminTripEditorPage({
             </label>
           </div>
 
-          <label>
-            <span className="label">Proposal Welcome Text</span>
-            <textarea
-              className="textarea"
-              name="proposal_welcome_text"
-              defaultValue={proposal?.proposal_welcome_text ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea
+            label="Proposal Welcome Text"
+            name="proposal_welcome_text"
+            defaultValue={proposal?.proposal_welcome_text ?? ""}
+          />
 
-          <label>
-            <span className="label">Proposal Closing Text</span>
-            <textarea
-              className="textarea"
-              name="proposal_closing_text"
-              defaultValue={proposal?.proposal_closing_text ?? ""}
-            />
-          </label>
+          <AiRewriteTextarea
+            label="Proposal Closing Text"
+            name="proposal_closing_text"
+            defaultValue={proposal?.proposal_closing_text ?? ""}
+          />
 
           <div className="card stack" style={{ border: "1px solid #e6f0f2", background: "#f7fbfc" }}>
             <div>
@@ -9415,14 +9267,11 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Content</span>
-              <textarea
-                className="textarea"
-                name="internal_note_content"
-                defaultValue={internalNote?.content ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea
+              label="Content"
+              name="internal_note_content"
+              defaultValue={internalNote?.content ?? ""}
+            />
           </div>
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
@@ -9437,14 +9286,11 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Content</span>
-              <textarea
-                className="textarea"
-                name="client_note_content"
-                defaultValue={clientNote?.content ?? ""}
-              />
-            </label>
+            <AiRewriteTextarea
+              label="Content"
+              name="client_note_content"
+              defaultValue={clientNote?.content ?? ""}
+            />
           </div>
 
           <div className="card stack" style={{ background: "#f0f7f8" }}>
@@ -9467,15 +9313,12 @@ export default async function AdminTripEditorPage({
               />
             </label>
 
-            <label>
-              <span className="label">Reminder Content</span>
-              <textarea
-                className="textarea"
-                name="client_reminder_content"
-                defaultValue={clientReminder?.content ?? ""}
-                placeholder="Example: Please confirm passport validity, bring your cruise boarding documents, and keep your transfer voucher handy."
-              />
-            </label>
+            <AiRewriteTextarea
+              label="Reminder Content"
+              name="client_reminder_content"
+              defaultValue={clientReminder?.content ?? ""}
+              placeholder="Example: Please confirm passport validity, bring your cruise boarding documents, and keep your transfer voucher handy."
+            />
           </div>
         
 
