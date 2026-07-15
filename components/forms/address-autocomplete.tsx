@@ -32,6 +32,7 @@ type AddressAutocompleteProps = {
   fieldNames?: AddressFieldNames;
   addressLine1Label?: string;
   helperText?: string;
+  required?: boolean;
 };
 
 export function AddressAutocomplete({
@@ -43,6 +44,7 @@ export function AddressAutocomplete({
   fieldNames,
   addressLine1Label = "Address Line 1",
   helperText = "Start typing your address, then choose the best match from the list.",
+  required = false,
 }: AddressAutocompleteProps) {
   const names = {
     addressLine1: fieldNames?.addressLine1 ?? "address_line_1",
@@ -256,6 +258,7 @@ export function AddressAutocomplete({
           onKeyDown={handleAddressLine1KeyDown}
           placeholder="Start typing your street address"
           autoComplete="address-line1"
+          required={required}
         />
 
         <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13 }}>
@@ -328,6 +331,7 @@ export function AddressAutocomplete({
             value={city}
             onChange={(event) => setCity(event.target.value)}
             autoComplete="address-level2"
+            required={required}
           />
         </label>
 
@@ -339,6 +343,7 @@ export function AddressAutocomplete({
             value={state}
             onChange={(event) => setState(event.target.value)}
             autoComplete="address-level1"
+            required={required}
           />
         </label>
 
@@ -350,6 +355,7 @@ export function AddressAutocomplete({
             value={postalCode}
             onChange={(event) => setPostalCode(event.target.value)}
             autoComplete="postal-code"
+            required={required}
           />
         </label>
       </div>

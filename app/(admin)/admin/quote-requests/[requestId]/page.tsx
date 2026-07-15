@@ -35,6 +35,17 @@ type QuoteRequestRow = {
   email: string | null;
   phone_number: string | null;
   preferred_contact_method: string | null;
+  client_address_line_1: string | null;
+  client_address_line_2: string | null;
+  client_city: string | null;
+  client_state: string | null;
+  client_postal_code: string | null;
+  client_date_of_birth: string | null;
+  client_preferred_airport: string | null;
+  air_preferred_airline: string | null;
+  air_departure_airport: string | null;
+  cruise_line_preference: string | null;
+  theme_park_preference: string | null;
   departure_date: string | null;
   return_date: string | null;
   destinations: string | null;
@@ -95,6 +106,19 @@ function formatDateTime(value: string | null | undefined, fallback = "Not provid
 
 function formatTravelType(value: string) {
   return travelComponentLabels[value] ?? value.replaceAll("_", " ");
+}
+
+function formatAddress(request: QuoteRequestRow) {
+  const cityStatePostal = [
+    [request.client_city, request.client_state].filter(Boolean).join(", "),
+    request.client_postal_code,
+  ].filter(Boolean).join(" ");
+
+  return [
+    request.client_address_line_1,
+    request.client_address_line_2,
+    cityStatePostal,
+  ].filter(Boolean).join("\n");
 }
 
 function formatTravelerAges(value: unknown) {
@@ -251,33 +275,57 @@ function RequestedComponents({
 
   return (
     <div className="stack">
-      {travelTypes.map((type) => (
-        <CollapsibleSection key={type} title={formatTravelType(type)}>
-          <div className="grid grid-2">
-            <InfoItem label="Requested Component" value={formatTravelType(type)} />
-            <InfoItem label="Destination(s)" value={request.destinations} />
-            <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
-            <InfoItem label="Return Date" value={formatDate(request.return_date)} />
-            <InfoItem label="Number of Travelers" value={request.number_of_travelers} />
-            <InfoItem label="Traveler Ages" value={formatTravelerAges(request.traveler_ages)} />
-            <InfoItem label="Budget" value={request.budget ?? "Not provided"} />
+      {travelTypes.map((type) => {
+        const componentDetails = [];
+
+        if (type === "air") {
+          componentDetails.push(
+            <InfoItem key="airline" label="Preferred Airline" value={request.air_preferred_airline ?? "Not provided"} />,
+            <InfoItem key="departure-airport" label="Preferred Departure Airport" value={request.air_departure_airport ?? request.client_preferred_airport ?? "Not provided"} />,
+          );
+        }
+
+        if (type === "cruise") {
+          componentDetails.push(
+            <InfoItem key="cruise-line" label="Cruise Line Preference" value={request.cruise_line_preference ?? "Any"} />,
+          );
+        }
+
+        if (type === "theme_park") {
+          componentDetails.push(
+            <InfoItem key="theme-park" label="Theme Park Preference" value={request.theme_park_preference ?? "Not provided"} />,
+          );
+        }
+
+        return (
+          <CollapsibleSection key={type} title={formatTravelType(type)}>
+            <div className="grid grid-2">
+              <InfoItem label="Requested Component" value={formatTravelType(type)} />
+              <InfoItem label="Destination(s)" value={request.destinations} />
+              <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
+              <InfoItem label="Return Date" value={formatDate(request.return_date)} />
+              <InfoItem label="Number of Travelers" value={request.number_of_travelers} />
+              <InfoItem label="Traveler Ages" value={formatTravelerAges(request.traveler_ages)} />
+              <InfoItem label="Budget" value={request.budget ?? "Not provided"} />
+              <InfoItem
+                label="Optional Travel Dates"
+                value={request.optional_travel_dates ?? "Not provided"}
+              />
+              {componentDetails}
+            </div>
+
             <InfoItem
-              label="Optional Travel Dates"
-              value={request.optional_travel_dates ?? "Not provided"}
+              label="Trip Vision Notes"
+              value={request.trip_vision_notes ?? "Not provided"}
             />
-          </div>
 
-          <InfoItem
-            label="Trip Vision Notes"
-            value={request.trip_vision_notes ?? "Not provided"}
-          />
-
-          <InfoItem
-            label="Zoom Call Availability"
-            value={request.zoom_call_availability ?? "Not provided"}
-          />
-        </CollapsibleSection>
-      ))}
+            <InfoItem
+              label="Zoom Call Availability"
+              value={request.zoom_call_availability ?? "Not provided"}
+            />
+          </CollapsibleSection>
+        );
+      })}
     </div>
   );
 }
@@ -584,6 +632,9 @@ export default async function AdminQuoteRequestDetailPage({
             label="Preferred Contact Method"
             value={request.preferred_contact_method}
           />
+          <InfoItem label="Date of Birth" value={formatDate(request.client_date_of_birth)} />
+          <InfoItem label="Preferred Airport" value={request.client_preferred_airport ?? "Not provided"} />
+          <InfoItem label="Address" value={formatAddress(request) || "Not provided"} />
           <InfoItem label="Departure Date" value={formatDate(request.departure_date)} />
           <InfoItem label="Return Date" value={formatDate(request.return_date)} />
           <InfoItem label="Number of Travelers" value={request.number_of_travelers} />

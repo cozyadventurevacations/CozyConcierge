@@ -19,12 +19,14 @@ export function AirportPicker({
   name,
   defaultValue,
   helper,
+  required = false,
   placeholder = "Search by airport code, city, or airport name",
 }: {
   label: string;
   name: string;
   defaultValue?: string | null;
   helper?: string;
+  required?: boolean;
   placeholder?: string;
 }) {
   const [searchValue, setSearchValue] = useState(defaultValue ?? "");
@@ -106,6 +108,7 @@ export function AirportPicker({
           onFocus={() => setHasFocus(true)}
           placeholder={placeholder}
           autoComplete="off"
+          required={required}
         />
       </label>
 

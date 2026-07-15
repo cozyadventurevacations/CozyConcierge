@@ -8,6 +8,13 @@ type ClientAccount = {
   last_name: string | null;
   email: string | null;
   phone_primary: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  date_of_birth: string | null;
+  preferred_airport: string | null;
 };
 
 type SafeTripContext = {
@@ -48,6 +55,17 @@ type TravelRequestDraft = {
   email?: string | null;
   phone_number?: string | null;
   preferred_contact_method?: string | null;
+  client_address_line_1?: string | null;
+  client_address_line_2?: string | null;
+  client_city?: string | null;
+  client_state?: string | null;
+  client_postal_code?: string | null;
+  client_date_of_birth?: string | null;
+  client_preferred_airport?: string | null;
+  air_preferred_airline?: string | null;
+  air_departure_airport?: string | null;
+  cruise_line_preference?: string | null;
+  theme_park_preference?: string | null;
   departure_date?: string | null;
   return_date?: string | null;
   optional_travel_dates?: string | null;
@@ -79,7 +97,8 @@ Primary role:
 - Explain travel concepts in plain language.
 - Suggest what clients should ask their travel advisor.
 - Help clients think through packing, documents, accessibility needs, family travel, group travel, cruises, theme parks, resorts, destination planning, and trip-readiness checklists.
-- Help clients build a complete travel request by gathering the same practical details as the Travel Request form: destination, dates, flexible windows, travelers, ages, travel type, budget, trip vision, and call availability.
+- Help clients build a complete travel request by gathering the same practical details as the Travel Request form: destination, dates, flexible windows, travelers, ages, travel type, budget, trip vision, client address, date of birth, preferred airport, and call availability.
+- Travel request submissions require the client's address, date of birth, and preferred airport. Use profile details already provided by the system when available; otherwise ask the client for the missing items before submission.
 - If the client says they are ready to submit a travel request, gather any missing required details first, then submit it only when enough details are available.
 - Encourage clients to use Concierge Messages for booking-specific, account-specific, document-specific, payment-specific, passport-specific, or urgent advisor questions.
 
@@ -113,8 +132,11 @@ Supplier idea behavior:
 
 Travel request behavior:
 - When the client wants help starting a travel request, act like a friendly intake assistant and ask for one to three missing details at a time.
-- Required details for submission are destination, departure date, return date or flexible date window, number of travelers, travel type, client name, email, and phone number.
+- Required details for submission are destination, departure date, return date or flexible date window, number of travelers, travel type, client name, email, phone number, address, date of birth, and preferred airport.
 - Helpful optional details include traveler ages, budget, preferred contact method, Zoom availability, must-dos, must-avoids, accessibility needs, pace, supplier preferences, room/cabin style, and celebration notes.
+- For air requests, capture preferred airline and preferred departure airport when the client provides them.
+- For cruise requests, capture cruise line preference. Carnival should not be offered because Cozy Adventure Vacations does not sell Carnival cruises; "Any" is acceptable.
+- For theme park requests, capture the preferred park when the client provides it, including Walt Disney World Florida, Disneyland California, Universal Studios Orlando, Universal Studios California, SeaWorld Orlando, Busch Gardens Tampa Bay, LEGOLAND Florida, Dollywood, Cedar Point, Six Flags Magic Mountain, or another park the client names.
 - When the client says they are ready to submit, do not claim it is submitted unless the system confirms the request was created.
 
 Important limitations:
@@ -234,7 +256,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email, phone_primary")
+    .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
     .ilike("email", userEmail)
     .maybeSingle();
 
@@ -265,7 +287,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByProfile, error: clientProfileError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email, phone_primary")
+    .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
     .eq("user_profile_id", userProfile.id)
     .maybeSingle();
 
@@ -494,6 +516,20 @@ function normalizeTravelTypes(value: unknown) {
     .filter((type, index, types) => allowedTravelTypes.includes(type) && types.indexOf(type) === index);
 }
 
+function normalizeCruiseLinePreference(value: unknown) {
+  const preference = normalizeText(value);
+
+  if (!preference) {
+    return null;
+  }
+
+  if (/carnival/i.test(preference)) {
+    return "Any";
+  }
+
+  return preference;
+}
+
 function buildTravelRequestSummary({
   draft,
   transcript,
@@ -532,6 +568,9 @@ async function extractTravelRequestDraft({
     `Client name from account: ${getClientDisplayName(clientAccount) || "Not provided"}`,
     `Client email from account: ${clientAccount.email ?? "Not provided"}`,
     `Client phone from account: ${clientAccount.phone_primary ?? "Not provided"}`,
+    `Client address from account: ${[clientAccount.address_line_1, clientAccount.address_line_2, clientAccount.city, clientAccount.state, clientAccount.postal_code].filter(Boolean).join(", ") || "Not provided"}`,
+    `Client date of birth from account: ${clientAccount.date_of_birth ?? "Not provided"}`,
+    `Client preferred airport from account: ${clientAccount.preferred_airport ?? "Not provided"}`,
   ].join("\n");
 
   const response = await client.responses.create({
@@ -542,10 +581,12 @@ async function extractTravelRequestDraft({
         content: [
           "Extract a Cozy Concierge travel request draft from the conversation.",
           "Return only JSON with these keys:",
-          "full_name, email, phone_number, preferred_contact_method, departure_date, return_date, optional_travel_dates, number_of_travelers, traveler_ages, travel_types_requested, destinations, budget, trip_vision_notes, zoom_call_availability.",
+          "full_name, email, phone_number, preferred_contact_method, client_address_line_1, client_address_line_2, client_city, client_state, client_postal_code, client_date_of_birth, client_preferred_airport, air_preferred_airline, air_departure_airport, cruise_line_preference, theme_park_preference, departure_date, return_date, optional_travel_dates, number_of_travelers, traveler_ages, travel_types_requested, destinations, budget, trip_vision_notes, zoom_call_availability.",
           "Use YYYY-MM-DD dates only when explicit. If dates are flexible or not exact, put that in optional_travel_dates and leave exact date fields null.",
+          "Use YYYY-MM-DD for client_date_of_birth only when explicit.",
           "travel_types_requested must use only: tour, cruise, air, hotel, transfer, theme_park, rental_car, rail, vacation_package, insurance, activity.",
-          "Use client account defaults for name, email, and phone when the conversation does not override them.",
+          "For cruise_line_preference, never use Carnival. Use Any if the client has no cruise line preference.",
+          "Use client account defaults for name, email, phone, address, date of birth, and preferred airport when the conversation does not override them.",
           "Do not invent destination, dates, traveler count, budget, or travel type.",
         ].join("\n"),
       },
@@ -588,6 +629,17 @@ function normalizeTravelRequestDraft({
     preferred_contact_method: allowedContactMethods.includes(normalizeText(draft.preferred_contact_method))
       ? normalizeText(draft.preferred_contact_method)
       : "email",
+    client_address_line_1: normalizeText(draft.client_address_line_1) || clientAccount.address_line_1,
+    client_address_line_2: normalizeText(draft.client_address_line_2) || clientAccount.address_line_2,
+    client_city: normalizeText(draft.client_city) || clientAccount.city,
+    client_state: normalizeText(draft.client_state) || clientAccount.state,
+    client_postal_code: normalizeText(draft.client_postal_code) || clientAccount.postal_code,
+    client_date_of_birth: normalizeDate(draft.client_date_of_birth) || clientAccount.date_of_birth,
+    client_preferred_airport: normalizeText(draft.client_preferred_airport) || clientAccount.preferred_airport,
+    air_preferred_airline: normalizeText(draft.air_preferred_airline) || null,
+    air_departure_airport: normalizeText(draft.air_departure_airport) || normalizeText(draft.client_preferred_airport) || clientAccount.preferred_airport,
+    cruise_line_preference: normalizeCruiseLinePreference(draft.cruise_line_preference),
+    theme_park_preference: normalizeText(draft.theme_park_preference) || null,
     departure_date: normalizeDate(draft.departure_date),
     return_date: normalizeDate(draft.return_date),
     optional_travel_dates: normalizeText(draft.optional_travel_dates) || null,
@@ -607,6 +659,9 @@ function getMissingTravelRequestFields(draft: ReturnType<typeof normalizeTravelR
   if (!draft.full_name) missing.push("your name");
   if (!draft.email) missing.push("your email");
   if (!draft.phone_number) missing.push("your phone number");
+  if (!draft.client_address_line_1 || !draft.client_city || !draft.client_state || !draft.client_postal_code) missing.push("your address");
+  if (!draft.client_date_of_birth) missing.push("your date of birth");
+  if (!draft.client_preferred_airport) missing.push("your preferred airport");
   if (!draft.destinations) missing.push("destination");
   if (!draft.departure_date) missing.push("departure date");
   if (!draft.return_date) missing.push("return date");
@@ -799,6 +854,17 @@ export async function POST(request: Request) {
         email: normalizedDraft.email,
         phone_number: normalizedDraft.phone_number,
         preferred_contact_method: normalizedDraft.preferred_contact_method,
+        client_address_line_1: normalizedDraft.client_address_line_1,
+        client_address_line_2: normalizedDraft.client_address_line_2 || null,
+        client_city: normalizedDraft.client_city,
+        client_state: normalizedDraft.client_state,
+        client_postal_code: normalizedDraft.client_postal_code,
+        client_date_of_birth: normalizedDraft.client_date_of_birth,
+        client_preferred_airport: normalizedDraft.client_preferred_airport,
+        air_preferred_airline: normalizedDraft.travel_types_requested.includes("air") ? normalizedDraft.air_preferred_airline : null,
+        air_departure_airport: normalizedDraft.travel_types_requested.includes("air") ? normalizedDraft.air_departure_airport : null,
+        cruise_line_preference: normalizedDraft.travel_types_requested.includes("cruise") ? normalizedDraft.cruise_line_preference || "Any" : null,
+        theme_park_preference: normalizedDraft.travel_types_requested.includes("theme_park") ? normalizedDraft.theme_park_preference : null,
         departure_date: normalizedDraft.departure_date,
         return_date: normalizedDraft.return_date,
         optional_travel_dates: normalizedDraft.optional_travel_dates,

@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
+import { AirportPicker } from "@/components/forms/airport-picker";
+import { TravelRequestComponentFields } from "@/components/forms/travel-request-component-fields";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -23,6 +26,10 @@ const allowedTravelTypes = travelTypes.map((type) => type.value);
 const askCozyTravelRequestPrompt =
   "Help me build a complete travel request. Ask me for the destination, dates, travelers, travel type, budget, trip vision, and anything Jeremy needs. When I say I am ready, submit the travel request for Jeremy to review.";
 
+function cleanFormText(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
+
 async function getCurrentClientAccount() {
   const supabase = await createServerSupabaseClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -34,7 +41,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email, phone_primary")
+    .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
     .ilike("email", userEmail)
     .maybeSingle();
 
@@ -52,7 +59,7 @@ async function getCurrentClientAccount() {
 
   const { data: clientAccountByProfile, error: clientProfileError } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, email, phone_primary")
+    .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
     .eq("user_profile_id", userProfile.id)
     .maybeSingle();
 
@@ -79,6 +86,17 @@ async function submitTravelRequest(formData: FormData) {
   const fullName = String(formData.get("full_name") ?? "").trim() || `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase() || clientAccount.email;
   const phoneNumber = String(formData.get("phone_number") ?? "").trim() || clientAccount.phone_primary;
+  const clientAddressLine1 = cleanFormText(formData, "client_address_line_1");
+  const clientAddressLine2 = cleanFormText(formData, "client_address_line_2");
+  const clientCity = cleanFormText(formData, "client_city");
+  const clientState = cleanFormText(formData, "client_state");
+  const clientPostalCode = cleanFormText(formData, "client_postal_code");
+  const clientDateOfBirth = cleanFormText(formData, "client_date_of_birth");
+  const clientPreferredAirport = cleanFormText(formData, "client_preferred_airport");
+  const airPreferredAirline = cleanFormText(formData, "air_preferred_airline");
+  const airDepartureAirport = cleanFormText(formData, "air_departure_airport");
+  const cruiseLinePreference = cleanFormText(formData, "cruise_line_preference");
+  const themeParkPreference = cleanFormText(formData, "theme_park_preference");
   const departureDate = String(formData.get("departure_date") ?? "").trim();
   const returnDate = String(formData.get("return_date") ?? "").trim();
   const destinations = String(formData.get("destinations") ?? "").trim();
@@ -86,6 +104,9 @@ async function submitTravelRequest(formData: FormData) {
   if (!fullName) throw new Error("Name is required.");
   if (!email) throw new Error("Email is required.");
   if (!phoneNumber) throw new Error("Phone number is required.");
+  if (!clientAddressLine1 || !clientCity || !clientState || !clientPostalCode) throw new Error("Address is required.");
+  if (!clientDateOfBirth) throw new Error("Date of birth is required.");
+  if (!clientPreferredAirport) throw new Error("Preferred airport is required.");
   if (!departureDate) throw new Error("Departure date is required.");
   if (!returnDate) throw new Error("Return date is required.");
   if (!destinations) throw new Error("Destination is required.");
@@ -97,6 +118,17 @@ async function submitTravelRequest(formData: FormData) {
     email,
     phone_number: phoneNumber,
     preferred_contact_method: preferredContactMethod,
+    client_address_line_1: clientAddressLine1,
+    client_address_line_2: clientAddressLine2 || null,
+    client_city: clientCity,
+    client_state: clientState,
+    client_postal_code: clientPostalCode,
+    client_date_of_birth: clientDateOfBirth,
+    client_preferred_airport: clientPreferredAirport,
+    air_preferred_airline: travelTypesRequested.includes("air") ? airPreferredAirline || null : null,
+    air_departure_airport: travelTypesRequested.includes("air") ? airDepartureAirport || clientPreferredAirport : null,
+    cruise_line_preference: travelTypesRequested.includes("cruise") ? cruiseLinePreference || "Any" : null,
+    theme_park_preference: travelTypesRequested.includes("theme_park") ? themeParkPreference || null : null,
     departure_date: departureDate,
     return_date: returnDate,
     optional_travel_dates: String(formData.get("optional_travel_dates") ?? "").trim() || null,
@@ -264,7 +296,40 @@ export default async function TravelRequestPage({
           </div>
         </IntakeSection>
 
-        <IntakeSection step="2" title="Trip Basics" helper="Share the dates and travelers. Flexible windows are welcome.">
+        <IntakeSection step="2" title="Client Travel Profile" helper="These details are required for a planning request and are filled from your profile when available.">
+          <AddressAutocomplete
+            addressLine1Default={clientAccount.address_line_1}
+            addressLine2Default={clientAccount.address_line_2}
+            cityDefault={clientAccount.city}
+            stateDefault={clientAccount.state}
+            postalCodeDefault={clientAccount.postal_code}
+            fieldNames={{
+              addressLine1: "client_address_line_1",
+              addressLine2: "client_address_line_2",
+              city: "client_city",
+              state: "client_state",
+              postalCode: "client_postal_code",
+            }}
+            helperText="If this is already saved in your profile, it will be filled in here. Otherwise, please add it before submitting."
+            required
+          />
+
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Date of Birth</span>
+              <input className="input" type="date" name="client_date_of_birth" defaultValue={clientAccount.date_of_birth ?? ""} required />
+            </label>
+            <AirportPicker
+              label="Preferred Airport"
+              name="client_preferred_airport"
+              defaultValue={clientAccount.preferred_airport}
+              helper="Search by code, city, or name. e.g. ORD, Chicago, Orlando."
+              required
+            />
+          </div>
+        </IntakeSection>
+
+        <IntakeSection step="3" title="Trip Basics" helper="Share the dates and travelers. Flexible windows are welcome.">
           <div className="grid grid-2">
             <label className="stack-sm"><span className="label">Departure Date</span><input className="input" type="date" name="departure_date" defaultValue={prefilledDepartureDate} required /></label>
             <label className="stack-sm"><span className="label">Return Date</span><input className="input" type="date" name="return_date" defaultValue={prefilledReturnDate} required /></label>
@@ -274,18 +339,11 @@ export default async function TravelRequestPage({
           <label className="stack-sm"><span className="label">Optional Travel Dates</span><textarea className="textarea" name="optional_travel_dates" rows={3} placeholder="Flexible dates, alternate travel windows, school breaks, or dates to avoid" /></label>
         </IntakeSection>
 
-        <IntakeSection step="3" title="Type of Travel" helper="Choose everything that might apply. Your advisor can narrow it down later.">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-            {travelTypes.map((type) => (
-              <label key={type.value} style={{ display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "1px solid #e6f0f2", borderRadius: 12, background: "#ffffff", cursor: "pointer", lineHeight: 1.35, fontWeight: 800, color: "var(--accent-dark)" }}>
-                <input type="checkbox" name="travel_types_requested" value={type.value} />
-                <span>{type.label}</span>
-              </label>
-            ))}
-          </div>
+        <IntakeSection step="4" title="Type of Travel" helper="Choose everything that might apply. Your advisor can narrow it down later.">
+          <TravelRequestComponentFields travelTypes={travelTypes} defaultDepartureAirport={clientAccount.preferred_airport} />
         </IntakeSection>
 
-        <IntakeSection step="4" title="Destination, Budget & Vision" helper="The more personality you add here, the better the first round of ideas can be.">
+        <IntakeSection step="5" title="Destination, Budget & Vision" helper="The more personality you add here, the better the first round of ideas can be.">
           <div className="grid grid-2">
             <label className="stack-sm"><span className="label">Destination(s)</span><input className="input" name="destinations" defaultValue={prefilledDestination} placeholder="Alaska cruise, Walt Disney World, Italy" required /></label>
             <label className="stack-sm"><span className="label">Budget</span><select className="select" name="budget" defaultValue=""><option value="">Select a budget range</option><option value="Under $2,500">Under $2,500</option><option value="$2,500-$5,000">$2,500-$5,000</option><option value="$5,000-$10,000">$5,000-$10,000</option><option value="$10,000+">$10,000+</option><option value="Prefer to discuss">Prefer to discuss</option></select></label>
