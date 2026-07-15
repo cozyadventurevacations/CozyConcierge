@@ -1950,6 +1950,59 @@ function combineExtractedFlightDateTime(
   return `${date} ${timeMatch ? timeMatch[1] : time}`;
 }
 
+function parseLocalDateTimeParts(value: string | null | undefined) {
+  const match = String(value ?? "").match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/,
+  );
+
+  if (!match) return null;
+
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second ?? 0),
+  );
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLocalDateTimeInputValue(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, "0");
+
+  return [
+    value.getFullYear(),
+    "-",
+    pad(value.getMonth() + 1),
+    "-",
+    pad(value.getDate()),
+    "T",
+    pad(value.getHours()),
+    ":",
+    pad(value.getMinutes()),
+  ].join("");
+}
+
+function normalizeFlightArrivalDateTime(
+  departureDateTime: string | null,
+  arrivalDateTime: string | null,
+) {
+  if (!departureDateTime || !arrivalDateTime) return arrivalDateTime;
+
+  const departure = parseLocalDateTimeParts(departureDateTime);
+  const arrival = parseLocalDateTimeParts(arrivalDateTime);
+
+  if (!departure || !arrival || arrival.getTime() > departure.getTime()) {
+    return arrivalDateTime;
+  }
+
+  arrival.setDate(arrival.getDate() + 1);
+  return formatLocalDateTimeInputValue(arrival);
+}
+
 function getExtractedFlightSegment(
   value: unknown,
   index: number,
@@ -2090,7 +2143,10 @@ async function upsertExtractedFlightSegment(
     departure_airport_code: segment.departure_airport_code,
     destination_airport_code: segment.destination_airport_code,
     departure_datetime: segment.departure_datetime,
-    arrival_datetime: segment.arrival_datetime,
+    arrival_datetime: normalizeFlightArrivalDateTime(
+      segment.departure_datetime,
+      segment.arrival_datetime,
+    ),
     flight_number: segment.flight_number,
     carrier: segment.carrier,
     airline_locator: airlineLocator,
@@ -3761,7 +3817,10 @@ async function updateTrip(formData: FormData) {
         departure_airport_code: values.departure_airport_code,
         destination_airport_code: values.destination_airport_code,
         departure_datetime: values.departure_datetime,
-        arrival_datetime: values.arrival_datetime,
+        arrival_datetime: normalizeFlightArrivalDateTime(
+          values.departure_datetime,
+          values.arrival_datetime,
+        ),
         flight_number: values.flight_number,
         carrier: values.carrier,
         airline_locator: airAirlineLocator,
