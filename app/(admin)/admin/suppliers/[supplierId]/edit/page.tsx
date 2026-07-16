@@ -11,6 +11,7 @@ const supplierTypes = [
   "Transfer Company",
   "Rental Car",
   "Airline",
+  "Air Consolidator",
   "Insurance",
   "Theme Park",
   "Activity / Excursion",

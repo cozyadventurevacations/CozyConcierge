@@ -76,6 +76,7 @@
     if (lower.includes("tour")) return "Tour Operator";
     if (lower.includes("transfer") || lower.includes("transport")) return "Transfer Company";
     if (lower.includes("insurance")) return "Insurance";
+    if (lower.includes("air consolidator") || lower.includes("consolidator")) return "Air Consolidator";
     if (lower.includes("airline") || lower.includes("air ")) return "Airline";
     if (lower.includes("car rental") || lower.includes("rental car")) return "Rental Car";
     if (lower.includes("destination management") || lower.includes("dmc")) return "Destination Management Company";

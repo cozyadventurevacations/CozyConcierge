@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { AirportPicker } from "@/components/forms/airport-picker";
 import { AirlinePicker } from "@/components/forms/airline-picker";
+import { AirConnectionFlightsControl } from "@/components/forms/air-connection-flights-control";
 import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { HotelLibraryPicker } from "@/components/forms/hotel-library-picker";
 import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
@@ -5759,7 +5760,7 @@ export default async function AdminTripEditorPage({
               className="input"
               type="datetime-local"
               name={`${prefix}_departure_datetime`}
-              defaultValue={formatDateTimeInputValue(segment?.departure_datetime, segment ? fallbackDate : null)}
+              defaultValue={formatDateTimeInputValue(segment?.departure_datetime, fallbackDate)}
             />
           </label>
 
@@ -5769,7 +5770,7 @@ export default async function AdminTripEditorPage({
               className="input"
               type="datetime-local"
               name={`${prefix}_arrival_datetime`}
-              defaultValue={formatDateTimeInputValue(segment?.arrival_datetime, segment ? fallbackDate : null)}
+              defaultValue={formatDateTimeInputValue(segment?.arrival_datetime, fallbackDate)}
             />
           </label>
 
@@ -7060,23 +7061,16 @@ export default async function AdminTripEditorPage({
             </div>
           </div>
 
-          <label>
-            <span className="label">Outbound Connecting Flights</span>
-            <select
-              className="select"
-              name="outbound_connection_count"
-              defaultValue={String(outboundSavedConnectionCount)}
-            >
-              <option value="0">No outbound connecting flights</option>
-              <option value="1">1 outbound connecting flight</option>
-              <option value="2">2 outbound connecting flights</option>
-              <option value="3">3 outbound connecting flights</option>
-            </select>
-          </label>
-
-          {connectionIndexes.map((index) =>
-            renderConnectionFlightFields("outbound", outboundConnectionSegments[index], index),
-          )}
+          <AirConnectionFlightsControl
+            name="outbound_connection_count"
+            label="Outbound Connecting Flights"
+            defaultValue={outboundSavedConnectionCount}
+            optionPrefix="outbound"
+          >
+            {connectionIndexes.map((index) =>
+              renderConnectionFlightFields("outbound", outboundConnectionSegments[index], index),
+            )}
+          </AirConnectionFlightsControl>
 
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Return Flight</h3>
@@ -7149,23 +7143,16 @@ export default async function AdminTripEditorPage({
             </div>
           </div>
 
-          <label>
-            <span className="label">Return Connecting Flights</span>
-            <select
-              className="select"
-              name="return_connection_count"
-              defaultValue={String(returnSavedConnectionCount)}
-            >
-              <option value="0">No return connecting flights</option>
-              <option value="1">1 return connecting flight</option>
-              <option value="2">2 return connecting flights</option>
-              <option value="3">3 return connecting flights</option>
-            </select>
-          </label>
-
-          {connectionIndexes.map((index) =>
-            renderConnectionFlightFields("return", returnConnectionSegments[index], index),
-          )}
+          <AirConnectionFlightsControl
+            name="return_connection_count"
+            label="Return Connecting Flights"
+            defaultValue={returnSavedConnectionCount}
+            optionPrefix="return"
+          >
+            {connectionIndexes.map((index) =>
+              renderConnectionFlightFields("return", returnConnectionSegments[index], index),
+            )}
+          </AirConnectionFlightsControl>
         
 
           <SectionSaveButton label="Air Component" />
