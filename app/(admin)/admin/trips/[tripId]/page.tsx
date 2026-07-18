@@ -3549,6 +3549,33 @@ async function updateTrip(formData: FormData) {
     String(formData.get("outbound_cabin_class") ?? "").trim() || null;
   const outboundSeatAssignment =
     String(formData.get("outbound_seat_assignment") ?? "").trim() || null;
+  type FlightSegmentValues = {
+    departure_airport_code: string | null;
+    destination_airport_code: string | null;
+    departure_datetime: string | null;
+    arrival_datetime: string | null;
+    flight_number: string | null;
+    carrier: string | null;
+    cabin_class: string | null;
+    seat_assignment: string | null;
+  };
+  const ignoreDateOnlyFlightDefaults = (values: FlightSegmentValues) => {
+    const hasNonDateSegmentValue =
+      values.departure_airport_code ||
+      values.destination_airport_code ||
+      values.flight_number ||
+      values.carrier ||
+      values.cabin_class ||
+      values.seat_assignment;
+
+    if (hasNonDateSegmentValue) return values;
+
+    return {
+      ...values,
+      departure_datetime: null,
+      arrival_datetime: null,
+    };
+  };
   const outboundConnectionDepartureAirport =
     String(formData.get("outbound_connection_departure_airport_code") ?? "").trim() || null;
   const outboundConnectionDestinationAirport =
@@ -3569,26 +3596,37 @@ async function updateTrip(formData: FormData) {
     0,
     Math.min(3, Number(formData.get("outbound_connection_count") ?? 0) || 0),
   );
-  const getConnectionSegmentValues = (prefix: string) => ({
-    departure_airport_code:
-      String(formData.get(`${prefix}_departure_airport_code`) ?? "").trim() || null,
-    destination_airport_code:
-      String(formData.get(`${prefix}_destination_airport_code`) ?? "").trim() || null,
-    departure_datetime:
-      String(formData.get(`${prefix}_departure_datetime`) ?? "").trim() || null,
-    arrival_datetime:
-      String(formData.get(`${prefix}_arrival_datetime`) ?? "").trim() || null,
-    flight_number:
-      String(formData.get(`${prefix}_flight_number`) ?? "").trim() || null,
-    carrier:
-      String(formData.get(`${prefix}_carrier`) ?? "").trim() || null,
-    cabin_class:
-      String(formData.get(`${prefix}_cabin_class`) ?? "").trim() || null,
-    seat_assignment:
-      String(formData.get(`${prefix}_seat_assignment`) ?? "").trim() || null,
+  const getConnectionSegmentValues = (prefix: string) =>
+    ignoreDateOnlyFlightDefaults({
+      departure_airport_code:
+        String(formData.get(`${prefix}_departure_airport_code`) ?? "").trim() || null,
+      destination_airport_code:
+        String(formData.get(`${prefix}_destination_airport_code`) ?? "").trim() || null,
+      departure_datetime:
+        String(formData.get(`${prefix}_departure_datetime`) ?? "").trim() || null,
+      arrival_datetime:
+        String(formData.get(`${prefix}_arrival_datetime`) ?? "").trim() || null,
+      flight_number:
+        String(formData.get(`${prefix}_flight_number`) ?? "").trim() || null,
+      carrier:
+        String(formData.get(`${prefix}_carrier`) ?? "").trim() || null,
+      cabin_class:
+        String(formData.get(`${prefix}_cabin_class`) ?? "").trim() || null,
+      seat_assignment:
+        String(formData.get(`${prefix}_seat_assignment`) ?? "").trim() || null,
+    });
+  const outboundSegmentValues = ignoreDateOnlyFlightDefaults({
+    departure_airport_code: outboundDepartureAirport,
+    destination_airport_code: outboundDestinationAirport,
+    departure_datetime: outboundDepartureDatetime,
+    arrival_datetime: outboundArrivalDatetime,
+    flight_number: outboundFlightNumber,
+    carrier: outboundCarrier,
+    cabin_class: outboundCabinClass,
+    seat_assignment: outboundSeatAssignment,
   });
   const outboundConnectionSegments = [
-    {
+    ignoreDateOnlyFlightDefaults({
       departure_airport_code: outboundConnectionDepartureAirport,
       destination_airport_code: outboundConnectionDestinationAirport,
       departure_datetime: outboundConnectionDepartureDatetime,
@@ -3597,7 +3635,7 @@ async function updateTrip(formData: FormData) {
       carrier: outboundConnectionCarrier,
       cabin_class: outboundConnectionCabinClass,
       seat_assignment: outboundConnectionSeatAssignment,
-    },
+    }),
     getConnectionSegmentValues("outbound_connection_2"),
     getConnectionSegmentValues("outbound_connection_3"),
   ];
@@ -3638,8 +3676,18 @@ async function updateTrip(formData: FormData) {
     0,
     Math.min(3, Number(formData.get("return_connection_count") ?? 0) || 0),
   );
+  const returnSegmentValues = ignoreDateOnlyFlightDefaults({
+    departure_airport_code: returnDepartureAirport,
+    destination_airport_code: returnDestinationAirport,
+    departure_datetime: returnDepartureDatetime,
+    arrival_datetime: returnArrivalDatetime,
+    flight_number: returnFlightNumber,
+    carrier: returnCarrier,
+    cabin_class: returnCabinClass,
+    seat_assignment: returnSeatAssignment,
+  });
   const returnConnectionSegments = [
-    {
+    ignoreDateOnlyFlightDefaults({
       departure_airport_code: returnConnectionDepartureAirport,
       destination_airport_code: returnConnectionDestinationAirport,
       departure_datetime: returnConnectionDepartureDatetime,
@@ -3648,7 +3696,7 @@ async function updateTrip(formData: FormData) {
       carrier: returnConnectionCarrier,
       cabin_class: returnConnectionCabinClass,
       seat_assignment: returnConnectionSeatAssignment,
-    },
+    }),
     getConnectionSegmentValues("return_connection_2"),
     getConnectionSegmentValues("return_connection_3"),
   ];
@@ -3662,17 +3710,9 @@ async function updateTrip(formData: FormData) {
   const hasAnyAirValue =
     airSupplierId ||
     airTotalPrice > 0 ||
-    outboundDepartureAirport ||
-    outboundDestinationAirport ||
-    outboundDepartureDatetime ||
-    outboundArrivalDatetime ||
-    outboundFlightNumber ||
+    Object.values(outboundSegmentValues).some((value) => Boolean(value)) ||
     hasAnyOutboundConnectionValue ||
-    returnDepartureAirport ||
-    returnDestinationAirport ||
-    returnDepartureDatetime ||
-    returnArrivalDatetime ||
-    returnFlightNumber ||
+    Object.values(returnSegmentValues).some((value) => Boolean(value)) ||
     hasAnyReturnConnectionValue ||
     airAirlineLocator ||
     airConfirmationNumber;
@@ -3842,16 +3882,7 @@ async function updateTrip(formData: FormData) {
       }
     };
 
-    await upsertSegment("outbound", 1, {
-      departure_airport_code: outboundDepartureAirport,
-      destination_airport_code: outboundDestinationAirport,
-      departure_datetime: outboundDepartureDatetime,
-      arrival_datetime: outboundArrivalDatetime,
-      flight_number: outboundFlightNumber,
-      carrier: outboundCarrier,
-      cabin_class: outboundCabinClass,
-      seat_assignment: outboundSeatAssignment,
-    });
+    await upsertSegment("outbound", 1, outboundSegmentValues);
 
     for (const [index, segment] of outboundConnectionSegments.entries()) {
       await upsertSegment(
@@ -3873,16 +3904,7 @@ async function updateTrip(formData: FormData) {
     }
 
     if (airFlightType === "round_trip") {
-      await upsertSegment("return", 1, {
-        departure_airport_code: returnDepartureAirport,
-        destination_airport_code: returnDestinationAirport,
-        departure_datetime: returnDepartureDatetime,
-        arrival_datetime: returnArrivalDatetime,
-        flight_number: returnFlightNumber,
-        carrier: returnCarrier,
-        cabin_class: returnCabinClass,
-        seat_assignment: returnSeatAssignment,
-      });
+      await upsertSegment("return", 1, returnSegmentValues);
 
       for (const [index, segment] of returnConnectionSegments.entries()) {
         await upsertSegment(
