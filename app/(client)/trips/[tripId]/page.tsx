@@ -39,6 +39,28 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+const billableTripComponentTypes = [
+  "hotel",
+  "air",
+  "cruise",
+  "transfer",
+  "rental_car",
+  "activity",
+  "insurance",
+];
+
+const selectedInsuranceBookingStatuses = new Set([
+  "reserved",
+  "confirmed",
+  "pending_final_payment",
+  "paid_in_full",
+  "travel_complete",
+]);
+
+function isSelectedInsuranceBookingStatus(status: string | null | undefined) {
+  return selectedInsuranceBookingStatuses.has(String(status ?? "").trim());
+}
+
 function fmtMoney(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "Not provided";
@@ -713,6 +735,30 @@ async function saveInsuranceDecisionForClient({
 
   if (error) throw new Error(error.message);
 
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data: insuranceComponents, error: insuranceComponentsError } = await supabaseAdmin
+    .from("trip_components")
+    .select("id, booking_status")
+    .eq("trip_id", tripId)
+    .eq("component_type", "insurance");
+
+  if (insuranceComponentsError) throw new Error(insuranceComponentsError.message);
+
+  const unselectedInsuranceComponentIds = (insuranceComponents ?? [])
+    .filter((component) => !isSelectedInsuranceBookingStatus(component.booking_status))
+    .map((component) => component.id);
+
+  if (unselectedInsuranceComponentIds.length > 0) {
+    const { error: insurancePriceError } = await supabaseAdmin
+      .from("trip_components")
+      .update({ total_price: 0 })
+      .in("id", unselectedInsuranceComponentIds);
+
+    if (insurancePriceError) throw new Error(insurancePriceError.message);
+  }
+
+  await recalculateTripPaymentTotals(supabaseAdmin, tripId);
+
   const decisionLabel =
     decision === "accepted"
       ? "accepted travel insurance coverage review"
@@ -732,8 +778,6 @@ async function saveInsuranceDecisionForClient({
     recordedAt: decisionAt,
   });
   const waiverContent = waiverDocument.plainText;
-
-  const supabaseAdmin = createSupabaseAdminClient();
   const waiverFileName = "travel-insurance-waiver.html";
   const waiverStoragePath = `${tripId}/generated/${waiverFileName}`;
   const waiverBytes = new TextEncoder().encode(waiverDocument.html);
@@ -828,6 +872,82 @@ async function saveInsuranceDecisionForClient({
     .eq("title", insuranceAnsweredMilestoneTitle);
 
   if (milestoneUpdateError) throw new Error(milestoneUpdateError.message);
+}
+
+async function recalculateTripPaymentTotals(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  tripId: string,
+) {
+  const [
+    { data: components, error: componentsError },
+    { data: proposal, error: proposalError },
+    { data: ledgerEntries, error: ledgerError },
+  ] = await Promise.all([
+    supabase
+      .from("trip_components" as any)
+      .select("component_type, total_price")
+      .eq("trip_id", tripId)
+      .in("component_type", billableTripComponentTypes),
+    supabase
+      .from("trip_proposals" as any)
+      .select("id, planning_fee")
+      .eq("trip_id", tripId)
+      .maybeSingle(),
+    supabase
+      .from("trip_payment_ledger" as any)
+      .select("entry_type, amount")
+      .eq("trip_id", tripId),
+  ]);
+
+  if (componentsError) throw new Error(componentsError.message);
+  if (proposalError) throw new Error(proposalError.message);
+  if (ledgerError) throw new Error(ledgerError.message);
+
+  const componentTotal = (components ?? []).reduce(
+    (sum, component) => sum + Number(component.total_price ?? 0),
+    0,
+  );
+  const planningFee = Number(proposal?.planning_fee ?? 0);
+  const calculatedTripTotal = roundMoney(componentTotal + planningFee);
+
+  const ledgerTotalPaid = (ledgerEntries ?? []).reduce((sum, entry) => {
+    const amount = Number(entry.amount ?? 0);
+    if (entry.entry_type === "payment") return sum + amount;
+    if (entry.entry_type === "refund") return sum - amount;
+    return sum;
+  }, 0);
+
+  const ledgerBalanceAdjustment = (ledgerEntries ?? []).reduce((sum, entry) => {
+    const amount = Number(entry.amount ?? 0);
+    if (entry.entry_type === "credit") return sum - amount;
+    if (entry.entry_type === "fee" || entry.entry_type === "adjustment") return sum + amount;
+    return sum;
+  }, 0);
+
+  const totalPaid = Math.max(0, roundMoney(ledgerTotalPaid));
+  const balanceDue = Math.max(
+    0,
+    roundMoney(calculatedTripTotal - totalPaid + ledgerBalanceAdjustment),
+  );
+
+  const { error: tripUpdateError } = await supabase
+    .from("trips")
+    .update({
+      total_paid: totalPaid,
+      balance_due: balanceDue,
+    })
+    .eq("id", tripId);
+
+  if (tripUpdateError) throw new Error(tripUpdateError.message);
+
+  if (proposal?.id) {
+    const { error: proposalUpdateError } = await supabase
+      .from("trip_proposals" as any)
+      .update({ total_price: calculatedTripTotal })
+      .eq("id", proposal.id);
+
+    if (proposalUpdateError) throw new Error(proposalUpdateError.message);
+  }
 }
 
 async function recordProposalDecision(formData: FormData) {
@@ -918,145 +1038,12 @@ async function recordInsuranceDecision(formData: FormData) {
     throw new Error("Choose yes or no for travel insurance.");
   }
 
-  const { data: trip, error: tripError } = await supabase
-    .from("trips")
-    .select("id, client_account_id, trip_name, destinations, departure_date")
-    .eq("id", tripId)
-    .single();
-
-  if (tripError || !trip) throw new Error("Trip not found.");
-
-  if (trip.client_account_id !== clientAccount.id) {
-    throw new Error("Only the primary traveler can answer the insurance question.");
-  }
-
-  const decisionAt = new Date().toISOString();
-  const { error } = await supabase
-    .from("trips")
-    .update({
-      insurance_decision: decision,
-      insurance_decision_at: decisionAt,
-      insurance_decision_by_client_account_id: clientAccount.id,
-    })
-    .eq("id", tripId);
-
-  if (error) throw new Error(error.message);
-
-  const decisionLabel =
-    decision === "accepted"
-      ? "accepted travel insurance coverage review"
-      : "declined travel insurance coverage review";
-  const clientName =
-    `${clientAccount.first_name ?? ""} ${clientAccount.last_name ?? ""}`.trim() ||
-    clientAccount.email ||
-    "Client";
-  const waiverDocument = buildInsuranceWaiverDocument({
-    clientName,
-    clientEmail: clientAccount.email ?? null,
-    tripName: trip.trip_name ?? "Trip",
-    destinations: trip.destinations ?? null,
-    departureDate: trip.departure_date ?? null,
+  await saveInsuranceDecisionForClient({
+    supabase,
+    clientAccount,
+    tripId,
     decision: decision as "accepted" | "declined",
-    decisionLabel,
-    recordedAt: decisionAt,
   });
-  const waiverContent = waiverDocument.plainText;
-
-  const supabaseAdmin = createSupabaseAdminClient();
-  const waiverFileName = "travel-insurance-waiver.html";
-  const waiverStoragePath = `${tripId}/generated/${waiverFileName}`;
-  const waiverBytes = new TextEncoder().encode(waiverDocument.html);
-
-  const { error: waiverUploadError } = await supabaseAdmin.storage
-    .from("trip-documents")
-    .upload(waiverStoragePath, waiverBytes, {
-      contentType: "text/html; charset=utf-8",
-      upsert: true,
-    });
-
-  if (waiverUploadError) throw new Error(waiverUploadError.message);
-
-  const { data: existingWaiver, error: existingWaiverError } = await supabaseAdmin
-    .from("trip_notes")
-    .select("id")
-    .eq("trip_id", tripId)
-    .eq("note_type", "insurance_waiver")
-    .maybeSingle();
-
-  if (existingWaiverError) throw new Error(existingWaiverError.message);
-
-  if (existingWaiver) {
-    const { error: waiverUpdateError } = await supabaseAdmin
-      .from("trip_notes")
-      .update({
-        title: "Travel Insurance Waiver",
-        content: waiverContent,
-        updated_at: decisionAt,
-      })
-      .eq("id", existingWaiver.id);
-
-    if (waiverUpdateError) throw new Error(waiverUpdateError.message);
-  } else {
-    const { error: waiverInsertError } = await supabaseAdmin
-      .from("trip_notes")
-      .insert({
-        trip_id: tripId,
-        note_type: "insurance_waiver",
-        title: "Travel Insurance Waiver",
-        content: waiverContent,
-      });
-
-    if (waiverInsertError) throw new Error(waiverInsertError.message);
-  }
-
-  const { data: existingWaiverDocument, error: existingWaiverDocumentError } =
-    await supabaseAdmin
-      .from("trip_documents")
-      .select("id")
-      .eq("trip_id", tripId)
-      .eq("storage_path", waiverStoragePath)
-      .maybeSingle();
-
-  if (existingWaiverDocumentError) throw new Error(existingWaiverDocumentError.message);
-
-  const waiverDocumentPayload = {
-    trip_id: tripId,
-    file_name: waiverFileName,
-    storage_path: waiverStoragePath,
-    mime_type: "text/html; charset=utf-8",
-    file_size_bytes: waiverBytes.byteLength,
-    visibility: "client_travel_circle",
-    component_id: null,
-    component_type: "insurance",
-    attach_to_commission: false,
-  };
-
-  if (existingWaiverDocument) {
-    const { error: waiverDocumentUpdateError } = await supabaseAdmin
-      .from("trip_documents")
-      .update(waiverDocumentPayload)
-      .eq("id", existingWaiverDocument.id);
-
-    if (waiverDocumentUpdateError) throw new Error(waiverDocumentUpdateError.message);
-  } else {
-    const { error: waiverDocumentInsertError } = await supabaseAdmin
-      .from("trip_documents")
-      .insert(waiverDocumentPayload);
-
-    if (waiverDocumentInsertError) throw new Error(waiverDocumentInsertError.message);
-  }
-
-  const { error: milestoneUpdateError } = await supabaseAdmin
-    .from("trip_milestones" as any)
-    .update({
-      is_completed: true,
-      completed_at: decisionAt,
-      updated_at: decisionAt,
-    })
-    .eq("trip_id", tripId)
-    .eq("title", insuranceAnsweredMilestoneTitle);
-
-  if (milestoneUpdateError) throw new Error(milestoneUpdateError.message);
 
   revalidatePath(`/trips/${tripId}`);
   revalidatePath(`/admin/trips/${tripId}`);
@@ -1469,47 +1456,52 @@ export default async function TripDetailPage({
             </p>
           </div>
           {insuranceQuoteOptions.length > 0 ? (
-            <div className="grid grid-3">
-              {insuranceQuoteOptions.map((option) => (
-                <div
-                  key={option.optionNumber}
-                  className="stack"
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #fed7aa",
-                    borderRadius: 8,
-                    padding: 16,
-                  }}
-                >
-                  <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
-                  <div>
-                    <span className="label">Provider</span>
-                    <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-                      {option.providerName || "Not provided"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label">Plan</span>
-                    <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-                      {option.planName || "Not provided"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label">Premium</span>
-                    <p style={{ margin: "6px 0 0", fontWeight: 900 }}>
-                      {fmtMoney(option.premiumAmount)}
-                    </p>
-                  </div>
-                  {option.coverageDescription ? (
+            <div className="stack">
+              <p style={{ margin: 0, lineHeight: 1.6 }}>
+                These quoted premiums are not included in your trip total until a plan is selected and booked.
+              </p>
+              <div className="grid grid-3">
+                {insuranceQuoteOptions.map((option) => (
+                  <div
+                    key={option.optionNumber}
+                    className="stack"
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #fed7aa",
+                      borderRadius: 8,
+                      padding: 16,
+                    }}
+                  >
+                    <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
                     <div>
-                      <span className="label">Coverage</span>
-                      <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
-                        {option.coverageDescription}
+                      <span className="label">Provider</span>
+                      <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                        {option.providerName || "Not provided"}
                       </p>
                     </div>
-                  ) : null}
-                </div>
-              ))}
+                    <div>
+                      <span className="label">Plan</span>
+                      <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                        {option.planName || "Not provided"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="label">Premium</span>
+                      <p style={{ margin: "6px 0 0", fontWeight: 900 }}>
+                        {fmtMoney(option.premiumAmount)}
+                      </p>
+                    </div>
+                    {option.coverageDescription ? (
+                      <div>
+                        <span className="label">Coverage</span>
+                        <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+                          {option.coverageDescription}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
           <form action={recordInsuranceDecision} className="row">

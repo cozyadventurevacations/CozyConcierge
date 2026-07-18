@@ -41,6 +41,18 @@ const billableTripComponentTypes = [
   "insurance",
 ];
 
+const selectedInsuranceBookingStatuses = new Set([
+  "reserved",
+  "confirmed",
+  "pending_final_payment",
+  "paid_in_full",
+  "travel_complete",
+]);
+
+function isSelectedInsuranceBookingStatus(status: string | null | undefined) {
+  return selectedInsuranceBookingStatuses.has(String(status ?? "").trim());
+}
+
 const tripComponentTypeLabels: Record<string, string> = {
   hotel: "Hotel",
   air: "Air",
@@ -4371,6 +4383,8 @@ async function updateTrip(formData: FormData) {
   const insuranceCommissionAmount = insuranceCommissionAmountRaw
     ? toMoneyNumber(formData.get("insurance_commission_amount"))
     : null;
+  const insuranceTotalPrice =
+    isSelectedInsuranceBookingStatus(insuranceBookingStatus) ? insurancePremiumAmount : null;
 
   const insuranceDetailPayload = {
     provider_name: insuranceProviderName || savedInsuranceSupplierName || null,
@@ -4414,7 +4428,7 @@ async function updateTrip(formData: FormData) {
         "Insurance",
       supplier_name: savedInsuranceSupplierName || insuranceProviderName || null,
       booking_status: insuranceBookingStatus,
-      total_price: insurancePremiumAmount ?? 0,
+      total_price: insuranceTotalPrice ?? 0,
       commission_admin_only: insuranceCommissionAmount ?? 0,
       deposit_due_date: null,
       final_payment_due_date: null,
@@ -8116,7 +8130,7 @@ export default async function AdminTripEditorPage({
           <div className="card stack" style={{ background: "#f7fbfc" }}>
             <h3 style={{ margin: 0 }}>Quoted Plans</h3>
             <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
-              Add up to three insurance quote options for the client to review before they accept or decline coverage review.
+              Add up to three insurance quote options for the client to review. Quoted premiums stay out of trip totals until this insurance component is marked reserved.
             </p>
 
             {[1, 2, 3].map((optionNumber) => {
