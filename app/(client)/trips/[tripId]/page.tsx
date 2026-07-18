@@ -39,6 +39,74 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function fmtMoney(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "Not provided";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(Number(value));
+}
+
+type InsuranceQuoteOption = {
+  optionNumber: number;
+  providerName: string | null;
+  planName: string | null;
+  premiumAmount: number | null;
+  coverageDescription: string | null;
+};
+
+function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
+  const rawOptions = Array.isArray(details?.quote_options)
+    ? details.quote_options
+    : [];
+  const mappedOptions = rawOptions
+    .map((option: any, index: number) => ({
+      optionNumber: Number(option?.option_number ?? index + 1),
+      providerName: option?.provider_name ?? null,
+      planName: option?.plan_name ?? null,
+      premiumAmount:
+        option?.premium_amount === null || option?.premium_amount === undefined
+          ? null
+          : Number(option.premium_amount),
+      coverageDescription: option?.coverage_description ?? null,
+    }))
+    .filter((option: InsuranceQuoteOption) =>
+      Boolean(
+        option.providerName ||
+          option.planName ||
+          option.premiumAmount !== null ||
+          option.coverageDescription,
+      ),
+    );
+
+  if (mappedOptions.length > 0) return mappedOptions;
+
+  if (
+    details?.provider_name ||
+    details?.plan_name ||
+    details?.premium_amount ||
+    details?.coverage_description
+  ) {
+    return [
+      {
+        optionNumber: 1,
+        providerName: details.provider_name ?? null,
+        planName: details.plan_name ?? null,
+        premiumAmount:
+          details.premium_amount === null || details.premium_amount === undefined
+            ? null
+            : Number(details.premium_amount),
+        coverageDescription: details.coverage_description ?? null,
+      },
+    ];
+  }
+
+  return [];
+}
+
 const answeredInsuranceDecisionValues = new Set([
   "accepted",
   "accept",
@@ -1325,8 +1393,10 @@ export default async function TripDetailPage({
     totalPrice: activityResult.data.total_price ?? null, bookingStatus: activityResult.data.booking_status ?? null,
   } : null;
 
+  const insuranceQuoteOptions = getInsuranceQuoteOptions(insuranceDetails.data);
   const insurance = insuranceResult.data && insuranceDetails.data ? {
     provider: insuranceDetails.data.provider_name ?? null, planName: insuranceDetails.data.plan_name ?? null,
+    quoteOptions: insuranceQuoteOptions,
     coverageStart: insuranceDetails.data.coverage_start_date ?? null,
     coverageEnd: insuranceDetails.data.coverage_end_date ?? null,
     travelersCount: insuranceDetails.data.insured_traveler_count ?? null,
@@ -1398,6 +1468,50 @@ export default async function TripDetailPage({
               insurance options for this trip at this time.
             </p>
           </div>
+          {insuranceQuoteOptions.length > 0 ? (
+            <div className="grid grid-3">
+              {insuranceQuoteOptions.map((option) => (
+                <div
+                  key={option.optionNumber}
+                  className="stack"
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #fed7aa",
+                    borderRadius: 8,
+                    padding: 16,
+                  }}
+                >
+                  <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
+                  <div>
+                    <span className="label">Provider</span>
+                    <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                      {option.providerName || "Not provided"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="label">Plan</span>
+                    <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
+                      {option.planName || "Not provided"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="label">Premium</span>
+                    <p style={{ margin: "6px 0 0", fontWeight: 900 }}>
+                      {fmtMoney(option.premiumAmount)}
+                    </p>
+                  </div>
+                  {option.coverageDescription ? (
+                    <div>
+                      <span className="label">Coverage</span>
+                      <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+                        {option.coverageDescription}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
           <form action={recordInsuranceDecision} className="row">
             <input type="hidden" name="trip_id" value={trip.id} />
             <button

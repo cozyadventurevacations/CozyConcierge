@@ -205,6 +205,7 @@ type ActivityData = {
 type InsuranceData = {
   provider: string | null;
   planName: string | null;
+  quoteOptions: InsuranceQuoteOption[];
   coverageStart: string | null;
   coverageEnd: string | null;
   travelersCount: number | null;
@@ -214,6 +215,14 @@ type InsuranceData = {
   totalPrice: number | null;
   bookingStatus: string | null;
 } | null;
+
+type InsuranceQuoteOption = {
+  optionNumber: number;
+  providerName: string | null;
+  planName: string | null;
+  premiumAmount: number | null;
+  coverageDescription: string | null;
+};
 
 type TripDetailClientProps = {
   trip: TripRow;
@@ -1107,16 +1116,43 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
 
             {insurance && (
               <Collapsible eyebrow="Protection" title="Travel Insurance">
+                {insurance.quoteOptions.length > 0 ? (
+                  <div className="grid grid-3">
+                    {insurance.quoteOptions.map((option) => (
+                      <div
+                        key={option.optionNumber}
+                        className="stack"
+                        style={{
+                          background: "#fbfdfe",
+                          border: "1px solid #e6f0f2",
+                          borderRadius: 8,
+                          padding: 16,
+                        }}
+                      >
+                        <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
+                        <InfoItem label="Provider" value={option.providerName} />
+                        <InfoItem label="Plan" value={option.planName} />
+                        <PriceItem label="Premium" value={option.premiumAmount} />
+                        {option.coverageDescription ? (
+                          <InfoItem label="Coverage" value={option.coverageDescription} />
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-2">
+                    <InfoItem label="Provider" value={insurance.provider} />
+                    <InfoItem label="Plan" value={insurance.planName} />
+                    <PriceItem label="Total Premium" value={insurance.totalPrice} />
+                  </div>
+                )}
                 <div className="grid grid-2">
-                  <InfoItem label="Provider" value={insurance.provider} />
-                  <InfoItem label="Plan" value={insurance.planName} />
                   <InfoItem label="Status" value={insurance.bookingStatus} />
                   <InfoItem label="Policy Number" value={insurance.policyNumber} />
                   <InfoItem label="Coverage Start" value={fmtDate(insurance.coverageStart)} />
                   <InfoItem label="Coverage End" value={fmtDate(insurance.coverageEnd)} />
                   <InfoItem label="Travelers Covered" value={insurance.travelersCount} />
                   <InfoItem label="Claims Phone" value={insurance.claimPhone} />
-                  <PriceItem label="Total Premium" value={insurance.totalPrice} />
                 </div>
                 {insurance.notes && <InfoItem label="Coverage Notes" value={insurance.notes} />}
               </Collapsible>

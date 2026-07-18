@@ -4300,6 +4300,34 @@ async function updateTrip(formData: FormData) {
     formData.get("insurance_provider_name") ?? "",
   ).trim();
   const insurancePlanName = String(formData.get("insurance_plan_name") ?? "").trim();
+  const buildInsuranceQuoteOption = (index: number) => {
+    const suffix = index === 1 ? "" : `_${index}`;
+    const providerName = String(
+      formData.get(`insurance_provider_name${suffix}`) ?? "",
+    ).trim();
+    const planName = String(formData.get(`insurance_plan_name${suffix}`) ?? "").trim();
+    const premiumAmountRaw = String(
+      formData.get(`insurance_premium_amount${suffix}`) ?? "",
+    ).trim();
+    const coverageDescription =
+      String(formData.get(`insurance_coverage_description${suffix}`) ?? "").trim() ||
+      null;
+    const premiumAmount = premiumAmountRaw
+      ? toMoneyNumber(formData.get(`insurance_premium_amount${suffix}`))
+      : null;
+
+    if (!providerName && !planName && !premiumAmountRaw && !coverageDescription) {
+      return null;
+    }
+
+    return {
+      option_number: index,
+      provider_name: providerName || savedInsuranceSupplierName || null,
+      plan_name: planName || null,
+      premium_amount: premiumAmount,
+      coverage_description: coverageDescription,
+    };
+  };
   const insurancePolicyNumber =
     String(formData.get("insurance_policy_number") ?? "").trim() || null;
   const insuranceCoverageStartDate =
@@ -4336,6 +4364,9 @@ async function updateTrip(formData: FormData) {
   const insurancePremiumAmount = insurancePremiumAmountRaw
     ? toMoneyNumber(formData.get("insurance_premium_amount"))
     : null;
+  const insuranceQuoteOptions = [1, 2, 3]
+    .map((index) => buildInsuranceQuoteOption(index))
+    .filter((option): option is NonNullable<typeof option> => Boolean(option));
 
   const insuranceCommissionAmount = insuranceCommissionAmountRaw
     ? toMoneyNumber(formData.get("insurance_commission_amount"))
@@ -4353,6 +4384,7 @@ async function updateTrip(formData: FormData) {
     premium_amount: insurancePremiumAmount,
     claim_phone: insuranceClaimPhone,
     insurance_notes: insuranceNotes,
+    quote_options: insuranceQuoteOptions,
     commission_amount: insuranceCommissionAmount,
     commission_status: insuranceCommissionStatus,
     commission_notes: insuranceCommissionNotes,
@@ -4362,6 +4394,7 @@ async function updateTrip(formData: FormData) {
     insuranceSupplierId ||
     insuranceProviderName ||
     insurancePlanName ||
+    insuranceQuoteOptions.length > 0 ||
     Number(insurancePremiumAmount ?? 0) > 0 ||
     insurancePolicyNumber ||
     insuranceCoverageStartDate ||
@@ -4374,7 +4407,9 @@ async function updateTrip(formData: FormData) {
       supplier_id: insuranceSupplierId,
       display_name:
         insurancePlanName ||
+        insuranceQuoteOptions[0]?.plan_name ||
         insuranceProviderName ||
+        insuranceQuoteOptions[0]?.provider_name ||
         savedInsuranceSupplierName ||
         "Insurance",
       supplier_name: savedInsuranceSupplierName || insuranceProviderName || null,
@@ -8076,23 +8111,93 @@ export default async function AdminTripEditorPage({
               defaultValue={insurance.component?.supplier_id ?? ""}
             />
 
-            <label>
-              <span className="label">Provider Name</span>
-              <input
-                className="input"
-                name="insurance_provider_name"
-                defaultValue={insurance.details?.provider_name ?? ""}
-              />
-            </label>
+          </div>
 
-            <label>
-              <span className="label">Plan Name</span>
-              <input
-                className="input"
-                name="insurance_plan_name"
-                defaultValue={insurance.details?.plan_name ?? ""}
-              />
-            </label>
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Quoted Plans</h3>
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
+              Add up to three insurance quote options for the client to review before they accept or decline coverage review.
+            </p>
+
+            {[1, 2, 3].map((optionNumber) => {
+              const suffix = optionNumber === 1 ? "" : `_${optionNumber}`;
+              const quoteOptions = Array.isArray(insurance.details?.quote_options)
+                ? insurance.details.quote_options
+                : [];
+              const option = quoteOptions.find(
+                (quotedOption: any) => Number(quotedOption?.option_number) === optionNumber,
+              );
+              const providerDefault =
+                option?.provider_name ??
+                (optionNumber === 1 ? insurance.details?.provider_name : "") ??
+                "";
+              const planDefault =
+                option?.plan_name ??
+                (optionNumber === 1 ? insurance.details?.plan_name : "") ??
+                "";
+              const premiumDefault =
+                option?.premium_amount ??
+                (optionNumber === 1 ? insurance.details?.premium_amount : "") ??
+                "";
+              const coverageDefault =
+                option?.coverage_description ??
+                (optionNumber === 1 ? insurance.details?.coverage_description : "") ??
+                "";
+
+              return (
+                <div
+                  key={optionNumber}
+                  className="stack"
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #e6f0f2",
+                    borderRadius: 8,
+                    padding: 16,
+                  }}
+                >
+                  <h4 style={{ margin: 0 }}>Plan {optionNumber}</h4>
+                  <div className="grid grid-2">
+                    <label>
+                      <span className="label">Provider Name</span>
+                      <input
+                        className="input"
+                        name={`insurance_provider_name${suffix}`}
+                        defaultValue={providerDefault}
+                      />
+                    </label>
+
+                    <label>
+                      <span className="label">Plan Name</span>
+                      <input
+                        className="input"
+                        name={`insurance_plan_name${suffix}`}
+                        defaultValue={planDefault}
+                      />
+                    </label>
+
+                    <label>
+                      <span className="label">Premium Amount</span>
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.01"
+                        name={`insurance_premium_amount${suffix}`}
+                        defaultValue={premiumDefault}
+                      />
+                    </label>
+                  </div>
+
+                  <AiRewriteTextarea
+                    label="Coverage Description"
+                    name={`insurance_coverage_description${suffix}`}
+                    defaultValue={coverageDefault}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-2">
 
             <label>
               <span className="label">Booking Status</span>
@@ -8133,17 +8238,6 @@ export default async function AdminTripEditorPage({
                 min="1"
                 name="insurance_insured_traveler_count"
                 defaultValue={insurance.details?.insured_traveler_count ?? ""}
-              />
-            </label>
-
-            <label>
-              <span className="label">Premium Amount</span>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                name="insurance_premium_amount"
-                defaultValue={insurance.details?.premium_amount ?? ""}
               />
             </label>
 
