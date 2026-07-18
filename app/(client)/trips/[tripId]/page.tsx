@@ -5,6 +5,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
+import { getInsurancePlanBrochureUrl } from "@/lib/insurance/allianz-plans";
 import { TripDetailClient } from "./trip-detail-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,6 +79,7 @@ type InsuranceQuoteOption = {
   planName: string | null;
   premiumAmount: number | null;
   coverageDescription: string | null;
+  brochureUrl: string | null;
 };
 
 function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
@@ -94,6 +96,9 @@ function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
           ? null
           : Number(option.premium_amount),
       coverageDescription: option?.coverage_description ?? null,
+      brochureUrl:
+        option?.brochure_url ??
+        getInsurancePlanBrochureUrl(option?.option_number ?? index + 1, option?.plan_name),
     }))
     .filter((option: InsuranceQuoteOption) =>
       Boolean(
@@ -122,6 +127,7 @@ function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
             ? null
             : Number(details.premium_amount),
         coverageDescription: details.coverage_description ?? null,
+        brochureUrl: getInsurancePlanBrochureUrl(1, details.plan_name),
       },
     ];
   }
@@ -1491,6 +1497,11 @@ export default async function TripDetailPage({
                         {fmtMoney(option.premiumAmount)}
                       </p>
                     </div>
+                    {option.brochureUrl ? (
+                      <a className="btn btn-outline" href={option.brochureUrl} target="_blank" rel="noreferrer">
+                        View flyer
+                      </a>
+                    ) : null}
                     {option.coverageDescription ? (
                       <div>
                         <span className="label">Coverage</span>

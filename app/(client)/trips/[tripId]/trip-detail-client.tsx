@@ -222,6 +222,7 @@ type InsuranceQuoteOption = {
   planName: string | null;
   premiumAmount: number | null;
   coverageDescription: string | null;
+  brochureUrl: string | null;
 };
 
 type TripDetailClientProps = {
@@ -1133,6 +1134,11 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                         <InfoItem label="Provider" value={option.providerName} />
                         <InfoItem label="Plan" value={option.planName} />
                         <PriceItem label="Premium" value={option.premiumAmount} />
+                        {option.brochureUrl ? (
+                          <Link className="btn btn-outline" href={option.brochureUrl} target="_blank">
+                            View flyer
+                          </Link>
+                        ) : null}
                         {option.coverageDescription ? (
                           <InfoItem label="Coverage" value={option.coverageDescription} />
                         ) : null}

@@ -17,6 +17,7 @@ import { sendProposalSharedEmail } from "@/lib/email/proposal-shared";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { labelForEmailAutomationType } from "@/lib/email-automations/config";
 import { encryptBuffer } from "@/lib/encryption";
+import { getAllianzInsurancePlan } from "@/lib/insurance/allianz-plans";
 import { AiRewriteTextarea } from "./ai-rewrite-textarea";
 import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
@@ -4314,10 +4315,14 @@ async function updateTrip(formData: FormData) {
   const insurancePlanName = String(formData.get("insurance_plan_name") ?? "").trim();
   const buildInsuranceQuoteOption = (index: number) => {
     const suffix = index === 1 ? "" : `_${index}`;
+    const standardPlan = getAllianzInsurancePlan(index);
     const providerName = String(
       formData.get(`insurance_provider_name${suffix}`) ?? "",
-    ).trim();
-    const planName = String(formData.get(`insurance_plan_name${suffix}`) ?? "").trim();
+    ).trim() || standardPlan?.providerName || "";
+    const planName =
+      String(formData.get(`insurance_plan_name${suffix}`) ?? "").trim() ||
+      standardPlan?.planName ||
+      "";
     const premiumAmountRaw = String(
       formData.get(`insurance_premium_amount${suffix}`) ?? "",
     ).trim();
@@ -4328,7 +4333,7 @@ async function updateTrip(formData: FormData) {
       ? toMoneyNumber(formData.get(`insurance_premium_amount${suffix}`))
       : null;
 
-    if (!providerName && !planName && !premiumAmountRaw && !coverageDescription) {
+    if (!premiumAmountRaw && !coverageDescription) {
       return null;
     }
 
@@ -4338,6 +4343,7 @@ async function updateTrip(formData: FormData) {
       plan_name: planName || null,
       premium_amount: premiumAmount,
       coverage_description: coverageDescription,
+      brochure_url: standardPlan?.brochureUrl ?? null,
     };
   };
   const insurancePolicyNumber =
@@ -8138,15 +8144,18 @@ export default async function AdminTripEditorPage({
               const quoteOptions = Array.isArray(insurance.details?.quote_options)
                 ? insurance.details.quote_options
                 : [];
+              const standardPlan = getAllianzInsurancePlan(optionNumber);
               const option = quoteOptions.find(
                 (quotedOption: any) => Number(quotedOption?.option_number) === optionNumber,
               );
               const providerDefault =
                 option?.provider_name ??
+                standardPlan?.providerName ??
                 (optionNumber === 1 ? insurance.details?.provider_name : "") ??
                 "";
               const planDefault =
                 option?.plan_name ??
+                standardPlan?.planName ??
                 (optionNumber === 1 ? insurance.details?.plan_name : "") ??
                 "";
               const premiumDefault =
@@ -8169,26 +8178,23 @@ export default async function AdminTripEditorPage({
                     padding: 16,
                   }}
                 >
-                  <h4 style={{ margin: 0 }}>Plan {optionNumber}</h4>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <div>
+                      <h4 style={{ margin: 0 }}>{planDefault || `Plan ${optionNumber}`}</h4>
+                      <p style={{ margin: "4px 0 0", color: "#667085" }}>
+                        {providerDefault || "Allianz Travel Insurance"}
+                      </p>
+                    </div>
+                    {standardPlan?.brochureUrl ? (
+                      <Link className="btn btn-outline" href={standardPlan.brochureUrl} target="_blank">
+                        View flyer
+                      </Link>
+                    ) : null}
+                  </div>
+                  <input type="hidden" name={`insurance_provider_name${suffix}`} value={providerDefault} />
+                  <input type="hidden" name={`insurance_plan_name${suffix}`} value={planDefault} />
+
                   <div className="grid grid-2">
-                    <label>
-                      <span className="label">Provider Name</span>
-                      <input
-                        className="input"
-                        name={`insurance_provider_name${suffix}`}
-                        defaultValue={providerDefault}
-                      />
-                    </label>
-
-                    <label>
-                      <span className="label">Plan Name</span>
-                      <input
-                        className="input"
-                        name={`insurance_plan_name${suffix}`}
-                        defaultValue={planDefault}
-                      />
-                    </label>
-
                     <label>
                       <span className="label">Premium Amount</span>
                       <input
