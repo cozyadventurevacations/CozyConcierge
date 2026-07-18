@@ -5,7 +5,10 @@ import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
-import { getInsurancePlanBrochureUrl } from "@/lib/insurance/allianz-plans";
+import {
+  getAllianzInsurancePlan,
+  getInsurancePlanBrochureUrl,
+} from "@/lib/insurance/allianz-plans";
 import { TripDetailClient } from "./trip-detail-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,19 +90,25 @@ function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
     ? details.quote_options
     : [];
   const mappedOptions = rawOptions
-    .map((option: any, index: number) => ({
-      optionNumber: Number(option?.option_number ?? index + 1),
-      providerName: option?.provider_name ?? null,
-      planName: option?.plan_name ?? null,
-      premiumAmount:
-        option?.premium_amount === null || option?.premium_amount === undefined
-          ? null
-          : Number(option.premium_amount),
-      coverageDescription: option?.coverage_description ?? null,
-      brochureUrl:
-        option?.brochure_url ??
-        getInsurancePlanBrochureUrl(option?.option_number ?? index + 1, option?.plan_name),
-    }))
+    .map((option: any, index: number) => {
+      const optionNumber = Number(option?.option_number ?? index + 1);
+      const standardPlan = getAllianzInsurancePlan(optionNumber);
+
+      return {
+        optionNumber,
+        providerName: option?.provider_name ?? standardPlan?.providerName ?? null,
+        planName: option?.plan_name ?? standardPlan?.planName ?? null,
+        premiumAmount:
+          option?.premium_amount === null || option?.premium_amount === undefined
+            ? null
+            : Number(option.premium_amount),
+        coverageDescription:
+          option?.coverage_description ?? standardPlan?.coverageSummary ?? null,
+        brochureUrl:
+          option?.brochure_url ??
+          getInsurancePlanBrochureUrl(option?.option_number ?? index + 1, option?.plan_name),
+      };
+    })
     .filter((option: InsuranceQuoteOption) =>
       Boolean(
         option.providerName ||
@@ -126,7 +135,7 @@ function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
           details.premium_amount === null || details.premium_amount === undefined
             ? null
             : Number(details.premium_amount),
-        coverageDescription: details.coverage_description ?? null,
+        coverageDescription: details.coverage_description ?? getAllianzInsurancePlan(1)?.coverageSummary ?? null,
         brochureUrl: getInsurancePlanBrochureUrl(1, details.plan_name),
       },
     ];

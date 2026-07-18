@@ -4329,11 +4329,15 @@ async function updateTrip(formData: FormData) {
     const coverageDescription =
       String(formData.get(`insurance_coverage_description${suffix}`) ?? "").trim() ||
       null;
+    const hasOnlyDefaultCoverage =
+      Boolean(coverageDescription) &&
+      Boolean(standardPlan?.coverageSummary) &&
+      coverageDescription === standardPlan?.coverageSummary;
     const premiumAmount = premiumAmountRaw
       ? toMoneyNumber(formData.get(`insurance_premium_amount${suffix}`))
       : null;
 
-    if (!premiumAmountRaw && !coverageDescription) {
+    if (!premiumAmountRaw && (!coverageDescription || hasOnlyDefaultCoverage)) {
       return null;
     }
 
@@ -8164,6 +8168,7 @@ export default async function AdminTripEditorPage({
                 "";
               const coverageDefault =
                 option?.coverage_description ??
+                standardPlan?.coverageSummary ??
                 (optionNumber === 1 ? insurance.details?.coverage_description : "") ??
                 "";
 
