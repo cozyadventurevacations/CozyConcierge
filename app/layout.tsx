@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { InteractionFeedback } from "@/components/layout/interaction-feedback";
 
 export const metadata: Metadata = {
   title: "Cozy Concierge",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <InteractionFeedback />
+        {children}
+      </body>
     </html>
   );
 }

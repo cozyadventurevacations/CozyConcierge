@@ -8,6 +8,8 @@
   --accent-dark: #123f5b;
   --success: #3d8c4e;
   --warning: #c96d2a;
+  --interaction-ring: rgba(98, 169, 207, 0.38);
+  --interaction-ring-strong: rgba(18, 63, 91, 0.26);
 }
 
 * {
@@ -33,6 +35,115 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+button,
+a[href],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+label,
+summary,
+[role="button"],
+[role="link"],
+[tabindex]:not([tabindex="-1"]) {
+  -webkit-tap-highlight-color: rgba(98, 169, 207, 0.24);
+}
+
+button,
+a[href],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+summary,
+[role="button"],
+[role="link"] {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+button:active,
+a[href]:active,
+input[type="button"]:active,
+input[type="submit"]:active,
+input[type="reset"]:active,
+summary:active,
+[role="button"]:active,
+[role="link"]:active {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(0.96);
+}
+
+button:focus-visible,
+a[href]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="link"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 3px solid var(--interaction-ring);
+  outline-offset: 3px;
+}
+
+.interaction-acknowledged {
+  animation: interaction-acknowledged-pulse 650ms ease-out;
+}
+
+.interaction-acknowledged.btn,
+.interaction-acknowledged.card,
+.interaction-acknowledged[role="button"],
+.interaction-acknowledged[role="link"],
+button.interaction-acknowledged,
+a.interaction-acknowledged[href],
+summary.interaction-acknowledged {
+  box-shadow:
+    0 0 0 4px var(--interaction-ring),
+    0 10px 22px rgba(18, 63, 91, 0.16) !important;
+  filter: brightness(1.04);
+}
+
+input.interaction-acknowledged,
+select.interaction-acknowledged,
+textarea.interaction-acknowledged {
+  box-shadow: 0 0 0 4px var(--interaction-ring) !important;
+  border-color: var(--accent) !important;
+}
+
+@keyframes interaction-acknowledged-pulse {
+  0% {
+    transform: scale(0.985);
+  }
+
+  42% {
+    transform: scale(1.018);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a[href],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  summary,
+  [role="button"],
+  [role="link"] {
+    transition: none;
+  }
+
+  .interaction-acknowledged {
+    animation: none;
+  }
 }
 
 .container {
