@@ -64,6 +64,141 @@ const tripComponentTypeLabels: Record<string, string> = {
   insurance: "Insurance",
 };
 
+const savedSectionComponentTypes: Record<string, string> = {
+  "Hotel Component": "hotel",
+  "Air Component": "air",
+  "Cruise Component": "cruise",
+  "Transfer Component": "transfer",
+  "Rental Car Component": "rental_car",
+  "Activity Component": "activity",
+  "Insurance Component": "insurance",
+};
+
+function getSavedSectionComponentType(value: string | null | undefined) {
+  return savedSectionComponentTypes[String(value ?? "").trim()] ?? null;
+}
+
+function hasMeaningfulText(value: unknown) {
+  return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+}
+
+function hasPositiveAmount(value: unknown) {
+  return Number(value ?? 0) > 0;
+}
+
+function hasMeaningfulFlightSegment(segment: any) {
+  if (!segment) return false;
+
+  return (
+    hasMeaningfulText(segment.departure_airport_code) ||
+    hasMeaningfulText(segment.destination_airport_code) ||
+    hasMeaningfulText(segment.flight_number) ||
+    hasMeaningfulText(segment.carrier) ||
+    hasMeaningfulText(segment.airline_locator) ||
+    hasMeaningfulText(segment.cabin_class) ||
+    hasMeaningfulText(segment.seat_assignment)
+  );
+}
+
+function hasMeaningfulTripComponent(
+  type: string,
+  component: any,
+  details: any,
+  flightSegments: any[] = [],
+) {
+  if (!component) return false;
+
+  const hasCommonValue =
+    hasMeaningfulText(component.supplier_id) ||
+    hasMeaningfulText(component.supplier_name) ||
+    hasMeaningfulText(component.confirmation_number) ||
+    hasPositiveAmount(component.total_price) ||
+    hasMeaningfulText(component.terms_and_conditions) ||
+    hasMeaningfulText(component.cancellation_policy);
+
+  switch (type) {
+    case "hotel":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.hotel_name) ||
+        hasMeaningfulText(details?.hotel_address) ||
+        hasMeaningfulText(details?.room_category) ||
+        hasMeaningfulText(details?.room_description) ||
+        hasMeaningfulText(details?.hotel_description) ||
+        hasPositiveAmount(details?.nightly_rate)
+      );
+    case "air":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.airline_locator) ||
+        hasMeaningfulText(details?.rate_class) ||
+        flightSegments.some(hasMeaningfulFlightSegment)
+      );
+    case "cruise":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.cruise_line) ||
+        hasMeaningfulText(details?.ship_name) ||
+        hasMeaningfulText(details?.departure_port) ||
+        hasMeaningfulText(details?.arrival_port) ||
+        hasMeaningfulText(details?.cabin_category) ||
+        hasMeaningfulText(details?.cabin_number) ||
+        hasMeaningfulText(details?.dining_seating) ||
+        hasMeaningfulText(details?.cruise_description) ||
+        Boolean(component.price_watch_enabled) ||
+        hasMeaningfulText(component.price_watch_public_url)
+      );
+    case "transfer":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.supplier_name) ||
+        hasMeaningfulText(details?.pickup_location) ||
+        hasMeaningfulText(details?.dropoff_location) ||
+        hasMeaningfulText(details?.vehicle_type) ||
+        hasMeaningfulText(details?.transfer_notes) ||
+        hasPositiveAmount(details?.commission_amount)
+      );
+    case "rental_car":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.rental_company) ||
+        hasMeaningfulText(details?.pickup_location) ||
+        hasMeaningfulText(details?.return_location) ||
+        hasMeaningfulText(details?.vehicle_class) ||
+        hasMeaningfulText(details?.rental_notes) ||
+        hasPositiveAmount(details?.commission_amount)
+      );
+    case "activity":
+      return (
+        hasCommonValue ||
+        hasMeaningfulText(details?.activity_name) ||
+        hasMeaningfulText(details?.supplier_name) ||
+        hasMeaningfulText(details?.location) ||
+        hasMeaningfulText(details?.activity_notes) ||
+        hasPositiveAmount(details?.commission_amount)
+      );
+    case "insurance": {
+      const quoteOptions = Array.isArray(details?.quote_options)
+        ? details.quote_options
+        : [];
+
+      return (
+        hasCommonValue ||
+        quoteOptions.length > 0 ||
+        hasMeaningfulText(details?.provider_name) ||
+        hasMeaningfulText(details?.plan_name) ||
+        hasMeaningfulText(details?.policy_number) ||
+        hasPositiveAmount(details?.premium_amount) ||
+        hasMeaningfulText(details?.claim_phone) ||
+        hasMeaningfulText(details?.insurance_notes) ||
+        hasPositiveAmount(details?.commission_amount)
+      );
+    }
+    default:
+      return hasCommonValue;
+  }
+}
+
 const allowedBookingStatuses = ["on_hold", "reserved", "quoted"];
 const paymentDocumentTypes = ["receipt", "authorization_form", "other"] as const;
 
@@ -3246,6 +3381,9 @@ async function updateTrip(formData: FormData) {
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
   const savedSection = String(formData.get("save_section") ?? "trip").trim() || "trip";
+  const savedComponentType = getSavedSectionComponentType(savedSection);
+  const shouldSaveComponent = (componentType: string) =>
+    savedComponentType === componentType;
   if (!tripId) throw new Error("Missing trip ID.");
 
   const { supabase } = await requireAdmin();
@@ -3610,7 +3748,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "hotel",
-    hasAnyHotelValue,
+    shouldSaveComponent("hotel") && hasAnyHotelValue,
     {
       supplier_id: hotelSupplierId,
       display_name: hotelName || hotelSupplierName || "Hotel",
@@ -3844,7 +3982,7 @@ async function updateTrip(formData: FormData) {
     airAirlineLocator ||
     airConfirmationNumber;
 
-  if (hasAnyAirValue) {
+  if (shouldSaveComponent("air") && hasAnyAirValue) {
     const { data: existingAirComponent, error: existingAirComponentError } =
       await supabase
         .from("trip_components")
@@ -4111,7 +4249,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "cruise",
-    hasAnyCruiseValue,
+    shouldSaveComponent("cruise") && hasAnyCruiseValue,
     {
       supplier_id: cruiseSupplierId,
       display_name: shipName || cruiseLine || cruiseSupplierName || "Cruise",
@@ -4209,7 +4347,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "transfer",
-    hasAnyTransferValue,
+    shouldSaveComponent("transfer") && hasAnyTransferValue,
     {
       supplier_id: transferSupplierId,
       display_name: transferSupplierName || savedTransferSupplierName || "Transfer",
@@ -4306,7 +4444,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "rental_car",
-    hasAnyRentalCarValue,
+    shouldSaveComponent("rental_car") && hasAnyRentalCarValue,
     {
       supplier_id: rentalCarSupplierId,
       display_name: rentalCompany || savedRentalCarSupplierName || "Rental Car",
@@ -4396,7 +4534,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "activity",
-    hasAnyActivityValue,
+    shouldSaveComponent("activity") && hasAnyActivityValue,
     {
       supplier_id: activitySupplierId,
       display_name: activityName || "Activity",
@@ -4540,7 +4678,7 @@ async function updateTrip(formData: FormData) {
 
   await upsertTripComponent(
     "insurance",
-    hasAnyInsuranceValue,
+    shouldSaveComponent("insurance") && hasAnyInsuranceValue,
     {
       supplier_id: insuranceSupplierId,
       display_name:
@@ -5858,18 +5996,31 @@ export default async function AdminTripEditorPage({
     ? Math.round((milestoneCompleted / milestoneTotal) * 100)
     : 0;
 
+  const hasHotelComponent = hasMeaningfulTripComponent("hotel", hotel.component, hotel.details);
+  const hasAirComponent = hasMeaningfulTripComponent(
+    "air",
+    air.component,
+    air.details,
+    [outboundSegment, ...outboundConnectionSegments, returnSegment, ...returnConnectionSegments],
+  );
+  const hasCruiseComponent = hasMeaningfulTripComponent("cruise", cruise.component, cruise.details);
+  const hasTransferComponent = hasMeaningfulTripComponent("transfer", transfer.component, transfer.details);
+  const hasRentalCarComponent = hasMeaningfulTripComponent("rental_car", rentalCar.component, rentalCar.details);
+  const hasActivityComponent = hasMeaningfulTripComponent("activity", activity.component, activity.details);
+  const hasInsuranceComponent = hasMeaningfulTripComponent("insurance", insurance.component, insurance.details);
+
   const tripComponentSummaries = [
-    { label: "Hotel", component: hotel.component },
-    { label: "Air", component: air.component },
-    { label: "Cruise", component: cruise.component },
-    { label: "Transfer", component: transfer.component },
-    { label: "Rental Car", component: rentalCar.component },
-    { label: "Activity", component: activity.component },
-    { label: "Insurance", component: insurance.component },
+    { label: "Hotel", component: hotel.component, isActive: hasHotelComponent },
+    { label: "Air", component: air.component, isActive: hasAirComponent },
+    { label: "Cruise", component: cruise.component, isActive: hasCruiseComponent },
+    { label: "Transfer", component: transfer.component, isActive: hasTransferComponent },
+    { label: "Rental Car", component: rentalCar.component, isActive: hasRentalCarComponent },
+    { label: "Activity", component: activity.component, isActive: hasActivityComponent },
+    { label: "Insurance", component: insurance.component, isActive: hasInsuranceComponent },
   ];
 
   const activeTripComponents = tripComponentSummaries.filter(
-    (summary) => summary.component,
+    (summary) => summary.isActive,
   );
   const componentPriceTotal = activeTripComponents.reduce(
     (sum, summary) => sum + Number(summary.component?.total_price ?? 0),
@@ -7133,7 +7284,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="hotel-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hotel.component ? "Added" : "Missing"} tone={hotel.component ? "good" : "warning"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hasHotelComponent ? "Added" : "Missing"} tone={hasHotelComponent ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={hotel.component?.id ?? ""}
@@ -7292,7 +7443,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="air-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={air.component ? "Added" : "Missing"} tone={air.component ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={hasAirComponent ? "Added" : "Missing"} tone={hasAirComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={air.component?.id ?? ""}
@@ -7585,7 +7736,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="cruise-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={cruise.component ? "Added" : "Missing"} tone={cruise.component ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={hasCruiseComponent ? "Added" : "Missing"} tone={hasCruiseComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={cruise.component?.id ?? ""}
@@ -7854,7 +8005,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="transfer-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={transfer.component ? "Added" : "Missing"} tone={transfer.component ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={hasTransferComponent ? "Added" : "Missing"} tone={hasTransferComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={transfer.component?.id ?? ""}
@@ -8057,7 +8208,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="rental_car-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Rental Car Component" badge={rentalCar.component ? "Added" : "Missing"} tone={rentalCar.component ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Rental Car Component" badge={hasRentalCarComponent ? "Added" : "Missing"} tone={hasRentalCarComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={rentalCar.component?.id ?? ""}
@@ -8249,7 +8400,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="activity-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={activity.component ? "Added" : "Missing"} tone={activity.component ? "good" : "neutral"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={hasActivityComponent ? "Added" : "Missing"} tone={hasActivityComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={activity.component?.id ?? ""}
@@ -8443,7 +8594,7 @@ export default async function AdminTripEditorPage({
         </CollapsibleSection>
 
         <span id="insurance-component" />
-        <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={insurance.component ? "Added" : "Missing"} tone={insurance.component ? "good" : "warning"} />}>
+        <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={hasInsuranceComponent ? "Added" : "Missing"} tone={hasInsuranceComponent ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={insurance.component?.id ?? ""}
@@ -9626,8 +9777,8 @@ export default async function AdminTripEditorPage({
               title="Hotel"
               href="#hotel-component"
               status={
-                <CommandStatusBadge tone={hotel.component ? "neutral" : "warning"}>
-                  {hotel.component ? hotel.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasHotelComponent ? "neutral" : "warning"}>
+                  {hasHotelComponent ? hotel.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9642,8 +9793,8 @@ export default async function AdminTripEditorPage({
               title="Air"
               href="#air-component"
               status={
-                <CommandStatusBadge tone={air.component ? "neutral" : "warning"}>
-                  {air.component ? air.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasAirComponent ? "neutral" : "warning"}>
+                  {hasAirComponent ? air.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9674,8 +9825,8 @@ export default async function AdminTripEditorPage({
               title="Cruise"
               href="#cruise-component"
               status={
-                <CommandStatusBadge tone={cruise.component ? "neutral" : "warning"}>
-                  {cruise.component ? cruise.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasCruiseComponent ? "neutral" : "warning"}>
+                  {hasCruiseComponent ? cruise.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9690,8 +9841,8 @@ export default async function AdminTripEditorPage({
               title="Transfer"
               href="#transfer-component"
               status={
-                <CommandStatusBadge tone={transfer.component ? "neutral" : "warning"}>
-                  {transfer.component ? transfer.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasTransferComponent ? "neutral" : "warning"}>
+                  {hasTransferComponent ? transfer.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9707,8 +9858,8 @@ export default async function AdminTripEditorPage({
               title="Rental Car"
               href="#rental_car-component"
               status={
-                <CommandStatusBadge tone={rentalCar.component ? "neutral" : "warning"}>
-                  {rentalCar.component ? rentalCar.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasRentalCarComponent ? "neutral" : "warning"}>
+                  {hasRentalCarComponent ? rentalCar.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9724,8 +9875,8 @@ export default async function AdminTripEditorPage({
               title="Activity"
               href="#activity-component"
               status={
-                <CommandStatusBadge tone={activity.component ? "neutral" : "warning"}>
-                  {activity.component ? activity.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasActivityComponent ? "neutral" : "warning"}>
+                  {hasActivityComponent ? activity.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
@@ -9740,8 +9891,8 @@ export default async function AdminTripEditorPage({
               title="Insurance"
               href="#insurance-component"
               status={
-                <CommandStatusBadge tone={insurance.component ? "neutral" : "warning"}>
-                  {insurance.component ? insurance.component.booking_status ?? "added" : "not added"}
+                <CommandStatusBadge tone={hasInsuranceComponent ? "neutral" : "warning"}>
+                  {hasInsuranceComponent ? insurance.component?.booking_status ?? "added" : "not added"}
                 </CommandStatusBadge>
               }
             >
