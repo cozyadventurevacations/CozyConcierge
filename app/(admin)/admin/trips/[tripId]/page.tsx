@@ -298,6 +298,15 @@ type PaymentRequestSummaryRow = {
   completed_at: string | null;
 };
 
+type TripPaymentDocumentRow = {
+  id: string;
+  file_name: string | null;
+  payment_document_type: string | null;
+  booking_extraction_status: string | null;
+  booking_extraction_summary: string | null;
+  created_at: string | null;
+};
+
 type TripReminderRow = {
   id: string;
   trip_id: string;
@@ -2468,6 +2477,111 @@ async function extractBookingDetailsFromUploadedComponentDocument({
                 '  "final_payment_due_date": "YYYY-MM-DD" | null,',
                 '  "cancellation_terms": string | null,',
                 '  "payment_terms": string | null,',
+                '  "important_notes": string[],',
+                '  "missing_or_unclear_fields": string[]',
+                "}",
+              ].join("\n"),
+            },
+            fileInput,
+          ],
+        },
+      ],
+      temperature: 0.1,
+    });
+
+    return extractJsonObject(response.output_text || "");
+  } finally {
+    await client.files.delete(uploadedFile.id).catch(() => {});
+  }
+}
+
+function formatExtractedPaymentReceiptSummary(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+
+  const payload = value as Record<string, unknown>;
+  const parts = [
+    payload.payment_amount ? `Amount: ${String(payload.payment_amount)}` : null,
+    payload.payment_date ? `Date: ${String(payload.payment_date)}` : null,
+    payload.payment_method ? `Method: ${String(payload.payment_method)}` : null,
+    payload.reference_number ? `Reference: ${String(payload.reference_number)}` : null,
+    payload.payee_or_processor ? `Processor: ${String(payload.payee_or_processor)}` : null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" | ") : "Payment receipt extracted for review.";
+}
+
+async function extractPaymentReceiptFromDocument({
+  fileName,
+  mimeType,
+  bytes,
+}: {
+  fileName: string;
+  mimeType: string | null;
+  bytes: Uint8Array;
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY. Payment receipt extraction is not configured.");
+  }
+
+  const client = new OpenAI({ apiKey });
+  const openAiFile = await toFile(
+    bytes,
+    fileName,
+    { type: mimeType || "application/octet-stream" },
+  );
+
+  const uploadedFile = await client.files.create({
+    file: openAiFile,
+    purpose: "user_data",
+  });
+
+  try {
+    const fileInput =
+      mimeType?.startsWith("image/")
+        ? {
+            type: "input_image" as const,
+            file_id: uploadedFile.id,
+            detail: "high" as const,
+          }
+        : {
+            type: "input_file" as const,
+            file_id: uploadedFile.id,
+            detail: "high" as const,
+          };
+
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "system",
+          content: [
+            "You extract payment receipt details for a travel agency CRM.",
+            "Only use information visible in the uploaded document.",
+            "Do not guess, invent, or calculate missing values.",
+            "Return only valid JSON. No markdown.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: [
+                "Extract payment receipt details from this document.",
+                "Return this JSON shape:",
+                "{",
+                '  "payment_amount": string | null,',
+                '  "currency": string | null,',
+                '  "payment_date": "YYYY-MM-DD" | null,',
+                '  "payment_method": string | null,',
+                '  "reference_number": string | null,',
+                '  "receipt_number": string | null,',
+                '  "invoice_number": string | null,',
+                '  "authorization_code": string | null,',
+                '  "payee_or_processor": string | null,',
+                '  "payer_name": string | null,',
                 '  "important_notes": string[],',
                 '  "missing_or_unclear_fields": string[]',
                 "}",
@@ -4951,6 +5065,195 @@ async function uploadTripPaymentDocument(formData: FormData) {
   revalidatePath(`/admin/trips/${tripId}/documents`);
 }
 
+async function uploadTripPaymentReceipt(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const file = formData.get("file");
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!(file instanceof File)) throw new Error("File is required.");
+
+  validatePaymentDocumentFile(file);
+
+  const mimeType = file.type || "";
+  const canExtractPaymentReceipt =
+    mimeType === "application/pdf" ||
+    mimeType.startsWith("image/");
+
+  if (!canExtractPaymentReceipt) {
+    throw new Error("Receipt auto-population currently supports PDF and image receipts.");
+  }
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, total_paid, balance_due")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error(tripError?.message ?? "Trip not found.");
+
+  const { data: userProfile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (profileError || !userProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const safeFileName =
+    file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/_+/g, "_") || "payment-receipt";
+  const storagePath = `${tripId}/payments/receipts/${crypto.randomUUID()}-${safeFileName}`;
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+  const encryptedFileBuffer = encryptBuffer(fileBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from("trip-documents")
+    .upload(storagePath, encryptedFileBuffer, {
+      contentType: "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { data: insertedDocument, error: insertError } = await supabase
+    .from("trip_documents")
+    .insert({
+      trip_id: tripId,
+      file_name: file.name,
+      storage_path: storagePath,
+      mime_type: mimeType || null,
+      file_size_bytes: file.size,
+      visibility: "internal",
+      component_id: null,
+      component_type: null,
+      attach_to_commission: false,
+      uploaded_by_user_profile_id: userProfile.id,
+      payment_request_id: null,
+      payment_document_type: "receipt",
+      is_encrypted: true,
+      encryption_algorithm: "aes-256-gcm",
+      booking_extraction_status: "processing",
+      booking_extraction_summary: null,
+      booking_extraction_json: null,
+      booking_extracted_at: null,
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !insertedDocument) {
+    await supabase.storage.from("trip-documents").remove([storagePath]);
+    throw new Error(
+      getPaymentDocumentSchemaErrorMessage(insertError) ??
+        insertError?.message ??
+        "Could not save payment receipt.",
+    );
+  }
+
+  try {
+    const extracted = await extractPaymentReceiptFromDocument({
+      fileName: file.name,
+      mimeType: mimeType || null,
+      bytes: fileBuffer,
+    });
+    const paymentAmount = parseExtractedAmount((extracted as any).payment_amount);
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      throw new Error("Could not find a valid payment amount on the receipt.");
+    }
+
+    const referenceNumber =
+      cleanExtractedText((extracted as any).reference_number) ||
+      cleanExtractedText((extracted as any).receipt_number) ||
+      cleanExtractedText((extracted as any).invoice_number) ||
+      cleanExtractedText((extracted as any).authorization_code);
+    const paymentMethod =
+      cleanExtractedText((extracted as any).payment_method) ||
+      cleanExtractedText((extracted as any).payee_or_processor);
+    const entryDate =
+      cleanExtractedText((extracted as any).payment_date) || todayDateString();
+    const notes = [
+      "Auto-populated from uploaded payment receipt.",
+      cleanExtractedText((extracted as any).payee_or_processor)
+        ? `Processor: ${cleanExtractedText((extracted as any).payee_or_processor)}`
+        : null,
+      cleanExtractedText((extracted as any).payer_name)
+        ? `Payer: ${cleanExtractedText((extracted as any).payer_name)}`
+        : null,
+      ...cleanExtractedArray((extracted as any).important_notes),
+    ].filter(Boolean).join("\n");
+
+    const { error: ledgerError } = await supabase
+      .from("trip_payment_ledger" as any)
+      .insert({
+        trip_id: tripId,
+        entry_type: "payment",
+        amount: paymentAmount,
+        entry_date: entryDate,
+        payment_method: paymentMethod,
+        reference_number: referenceNumber,
+        notes: notes || null,
+      });
+
+    if (ledgerError) throw new Error(ledgerError.message);
+
+    const updatedTotals = applyPaymentLedgerEntry(trip, "payment", paymentAmount);
+    const { error: tripUpdateError } = await supabase
+      .from("trips")
+      .update(updatedTotals)
+      .eq("id", tripId);
+
+    if (tripUpdateError) throw new Error(tripUpdateError.message);
+
+    const summary = formatExtractedPaymentReceiptSummary(extracted);
+    const { error: extractionUpdateError } = await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "extracted",
+        booking_extraction_json: extracted,
+        booking_extraction_summary: summary,
+        booking_extracted_at: new Date().toISOString(),
+      })
+      .eq("id", insertedDocument.id)
+      .eq("trip_id", tripId);
+
+    if (extractionUpdateError) throw new Error(extractionUpdateError.message);
+  } catch (error) {
+    const extractionError =
+      error instanceof Error ? error.message : "Payment receipt extraction failed.";
+
+    await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "failed",
+        booking_extraction_summary: extractionError,
+      })
+      .eq("id", insertedDocument.id)
+      .eq("trip_id", tripId);
+
+    revalidatePath(`/admin/trips/${tripId}`);
+    revalidatePath(`/admin/trips/${tripId}/documents`);
+    redirect(
+      `/admin/trips/${tripId}?paymentReceiptUploaded=1&paymentReceiptExtracted=failed&paymentReceiptError=${encodeURIComponent(extractionError)}#trip-payments`,
+    );
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?paymentReceiptUploaded=1&paymentReceiptExtracted=1#trip-payments`);
+}
+
 async function createTripReminder(formData: FormData) {
   "use server";
 
@@ -5111,10 +5414,21 @@ export default async function AdminTripEditorPage({
     documentUploaded?: string;
     extracted?: string;
     extractionError?: string;
+    paymentReceiptUploaded?: string;
+    paymentReceiptExtracted?: string;
+    paymentReceiptError?: string;
   }>;
 }) {
   const { tripId } = await params;
-  const { saved, documentUploaded, extracted, extractionError } = await searchParams;
+  const {
+    saved,
+    documentUploaded,
+    extracted,
+    extractionError,
+    paymentReceiptUploaded,
+    paymentReceiptExtracted,
+    paymentReceiptError,
+  } = await searchParams;
   const savedMessage = getSavedSectionMessage(saved);
   const { supabase } = await requireAdmin();
 
@@ -5286,6 +5600,14 @@ export default async function AdminTripEditorPage({
     .eq("trip_id", tripId)
     .order("requested_at", { ascending: false });
 
+  const { data: tripPaymentDocuments, error: tripPaymentDocumentsError } = await supabase
+    .from("trip_documents")
+    .select("id, file_name, payment_document_type, booking_extraction_status, booking_extraction_summary, created_at")
+    .eq("trip_id", tripId)
+    .eq("payment_document_type", "receipt")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   const { data: tripReminders, error: tripRemindersError } = await supabase
     .from("trip_reminders" as any)
     .select("id, trip_id, reminder_type, title, notes, reminder_date, is_completed, completed_at, created_at")
@@ -5367,6 +5689,7 @@ export default async function AdminTripEditorPage({
   const commissionRows = (tripCommissions ?? []) as CommissionRow[];
   const tripPaymentLedgerRows = (tripPaymentLedger ?? []) as TripPaymentLedgerRow[];
   const paymentRequestRows = (paymentRequests ?? []) as PaymentRequestSummaryRow[];
+  const tripPaymentDocumentRows = (tripPaymentDocuments ?? []) as TripPaymentDocumentRow[];
   const tripReminderSetupMessage = getTripReminderSchemaErrorMessage(tripRemindersError);
   const tripReminderRows = tripReminderSetupMessage ? [] : ((tripReminders ?? []) as TripReminderRow[]);
   const openTripReminderRows = tripReminderRows.filter((reminder) => !reminder.is_completed);
@@ -6037,6 +6360,28 @@ export default async function AdminTripEditorPage({
                 : extracted === "failed"
                   ? extractionError || "The file was saved to the component. Try Extract Booking Details from Trip Documents or upload a clearer PDF or image."
                   : "The file is saved to this component and will appear on the commission only if you checked that option."}
+            </p>
+          </div>
+        ) : null}
+
+        {paymentReceiptUploaded ? (
+          <div
+            className="card"
+            style={{
+              border: paymentReceiptExtracted === "failed" ? "1px solid #fed7aa" : "1px solid #bbf7d0",
+              background: paymentReceiptExtracted === "failed" ? "#fff7ed" : "#f0fdf4",
+              color: paymentReceiptExtracted === "failed" ? "#9a3412" : "#166534",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 900 }}>
+              {paymentReceiptExtracted === "failed"
+                ? "Payment receipt uploaded, but auto-population failed."
+                : "Payment receipt uploaded and applied."}
+            </p>
+            <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
+              {paymentReceiptExtracted === "failed"
+                ? paymentReceiptError || "The receipt was saved, but payment fields could not be read."
+                : "A payment ledger entry was created from the receipt and trip totals were updated."}
             </p>
           </div>
         ) : null}
@@ -8375,6 +8720,71 @@ export default async function AdminTripEditorPage({
             <button type="submit" form="add-trip-payment-ledger-entry-form" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
               Add Payment Entry
             </button>
+          </div>
+
+          <div className="card stack" style={{ background: "#fbfdfe" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Upload Payment Receipt</h3>
+              <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                Upload a PDF or image receipt and Cozy Concierge will read the amount, date, method, and reference number, then add the payment entry automatically.
+              </p>
+            </div>
+
+            <form action={uploadTripPaymentReceipt} encType="multipart/form-data" className="card stack" style={{ background: "#ffffff", border: "1px solid #e6f0f2" }}>
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <div className="grid grid-2">
+                <label>
+                  <span className="label">Receipt File</span>
+                  <input className="input" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.webp" required />
+                </label>
+                <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#667085", lineHeight: 1.5 }}>
+                  Receipts are encrypted before storage and saved as internal trip documents.
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+                Upload Receipt and Auto-Populate
+              </button>
+            </form>
+
+            {tripPaymentDocumentsError ? (
+              <div>
+                <p><strong>Error loading payment receipt documents:</strong></p>
+                <pre>{JSON.stringify(tripPaymentDocumentsError, null, 2)}</pre>
+              </div>
+            ) : tripPaymentDocumentRows.length === 0 ? (
+              <div style={{ padding: "12px", borderRadius: 12, background: "#f7fbfc", border: "1px solid #e6f0f2", color: "#64748b", lineHeight: 1.6 }}>
+                No payment receipts have been uploaded for this trip yet.
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table className="table" style={{ minWidth: 820 }}>
+                  <thead>
+                    <tr>
+                      <th>Uploaded</th>
+                      <th>File</th>
+                      <th>Status</th>
+                      <th>Extracted Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tripPaymentDocumentRows.map((document) => (
+                      <tr key={document.id}>
+                        <td>{formatDate(document.created_at, "Not provided")}</td>
+                        <td>{document.file_name ?? "Payment receipt"}</td>
+                        <td>
+                          <span style={{ display: "inline-flex", borderRadius: 999, padding: "5px 10px", background: document.booking_extraction_status === "failed" ? "#fff7ed" : document.booking_extraction_status === "extracted" ? "#ecfdf3" : "#f0f7f8", color: document.booking_extraction_status === "failed" ? "#c2410c" : document.booking_extraction_status === "extracted" ? "#027a48" : "var(--accent-dark)", fontWeight: 800, fontSize: 12 }}>
+                            {document.booking_extraction_status ?? "saved"}
+                          </span>
+                        </td>
+                        <td style={{ maxWidth: 420, whiteSpace: "pre-wrap" }}>
+                          {document.booking_extraction_summary ?? "Not extracted yet"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="card stack" style={{ background: "#fbfdfe" }}>
