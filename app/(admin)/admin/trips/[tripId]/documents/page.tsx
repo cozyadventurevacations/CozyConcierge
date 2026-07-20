@@ -417,13 +417,17 @@ async function deleteTripDocument(formData: FormData) {
 
   const tripId = String(formData.get("trip_id") ?? "").trim();
   const documentId = String(formData.get("document_id") ?? "").trim();
+  const confirmed = formData.get("confirm_delete") === "on";
 
   if (!tripId) throw new Error("Missing trip ID.");
   if (!documentId) throw new Error("Missing document ID.");
+  if (!confirmed) {
+    throw new Error("Confirm permanent deletion before deleting this document.");
+  }
 
   const { data: document, error: docError } = await supabase
     .from("trip_documents")
-    .select("id, trip_id, storage_path")
+    .select("id, trip_id, storage_path, file_name")
     .eq("id", documentId)
     .eq("trip_id", tripId)
     .single();
@@ -1065,11 +1069,28 @@ export default async function AdminTripDocumentsPage({
                         )}
                       </div>
 
-                      <form action={deleteTripDocument}>
+                      <form action={deleteTripDocument} className="stack" style={{ gap: 8 }}>
                         <input type="hidden" name="trip_id" value={trip.id} />
                         <input type="hidden" name="document_id" value={doc.id} />
-                        <button type="submit" className="btn btn-outline">
-                          Delete Document
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            color: "#667085",
+                            fontSize: 13,
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          <input type="checkbox" name="confirm_delete" required />
+                          Confirm permanent deletion
+                        </label>
+                        <button
+                          type="submit"
+                          className="btn btn-outline"
+                          style={{ borderColor: "#b42318", color: "#b42318" }}
+                        >
+                          Permanently Delete Document
                         </button>
                       </form>
                     </div>

@@ -95,6 +95,31 @@ summary:focus-visible,
   animation: interaction-acknowledged-pulse 650ms ease-out;
 }
 
+.interaction-working.btn,
+.btn.interaction-working {
+  position: relative;
+  pointer-events: none;
+  cursor: wait;
+  opacity: 0.78;
+  filter: saturate(0.92);
+  box-shadow:
+    0 0 0 4px var(--interaction-ring),
+    0 10px 22px rgba(18, 63, 91, 0.14) !important;
+}
+
+.interaction-working.btn::before,
+.btn.interaction-working::before {
+  content: "";
+  width: 1em;
+  height: 1em;
+  margin-right: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: interaction-working-spin 750ms linear infinite;
+  flex: 0 0 auto;
+}
+
 .interaction-acknowledged.btn,
 .interaction-acknowledged.card,
 .interaction-acknowledged[role="button"],
@@ -129,6 +154,12 @@ textarea.interaction-acknowledged {
   }
 }
 
+@keyframes interaction-working-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   button,
   a[href],
@@ -142,6 +173,11 @@ textarea.interaction-acknowledged {
   }
 
   .interaction-acknowledged {
+    animation: none;
+  }
+
+  .interaction-working.btn::before,
+  .btn.interaction-working::before {
     animation: none;
   }
 }
