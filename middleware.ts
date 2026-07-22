@@ -16,6 +16,16 @@ const PUBLIC_API_PATHS = [
   "/api/automations/send-emails",
 ];
 
+// These admin-namespaced routes are called by external cron jobs (not a
+// logged-in browser session) and authenticate themselves internally via a
+// CRON_SECRET / x-purge-secret header check. They must be exact matches
+// only — do NOT widen this to a prefix match on "/api/admin", since that
+// would bypass the admin-role check below for every other admin API route.
+const PUBLIC_CRON_API_EXACT_PATHS = [
+  "/api/admin/check-cruise-prices",
+  "/api/admin/purge-deleted-trips",
+];
+
 function isAdminRole(role: string | null | undefined) {
   const normalizedRole = String(role ?? "").trim().toLowerCase();
 
@@ -34,6 +44,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (PUBLIC_API_PATHS.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next();
+  }
+
+  if (PUBLIC_CRON_API_EXACT_PATHS.includes(pathname)) {
     return NextResponse.next();
   }
 
