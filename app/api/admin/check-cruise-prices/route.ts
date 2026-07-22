@@ -83,7 +83,7 @@ function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | nul
     message.includes("cruise_price_watch_results") ||
     message.includes("schema cache")
   ) {
-    return "Cruise Price Watch is not fully set up in Supabase yet. Run scripts/setup-cruise-price-watch.sql in the Supabase SQL Editor, then try again.";
+    return "Cruise Price Watch needs a database setup step before it can be used.";
   }
 
   return null;

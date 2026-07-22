@@ -5,6 +5,7 @@ export const clientNav = [
   { href: "/messages", label: "Messages" },
   { href: "/travel-request", label: "Travel Request" },
   { href: "/terms-and-conditions", label: "Terms" },
+  { href: "/privacy-policy", label: "Privacy" },
   { href: "/profile", label: "Profile" },
   { href: "/logout", label: "Logout" },
 ];

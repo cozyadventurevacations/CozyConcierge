@@ -170,6 +170,7 @@ function LoginPageContent() {
         <Link href="/forgot-password" style={{ fontWeight: 800 }}>Forgot password?</Link>
         <Link href="/register" style={{ fontWeight: 800 }}>Create account</Link>
         <Link href="/travel-request" style={{ fontWeight: 800 }}>Request a trip</Link>
+        <Link href="/privacy-policy" style={{ fontWeight: 800 }}>Privacy Policy</Link>
       </div>
     </AuthShell>
   );

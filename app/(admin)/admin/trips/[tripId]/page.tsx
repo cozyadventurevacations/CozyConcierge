@@ -306,7 +306,7 @@ function getPaymentDocumentSchemaErrorMessage(error: { message?: string } | null
     message.includes("encryption_algorithm") ||
     message.includes("schema cache")
   ) {
-    return "Payment request documents are not fully set up in Supabase yet. Run scripts/setup-payment-request-documents.sql in the Supabase SQL Editor, then try again.";
+    return "Payment request documents need a database setup step before they can be used.";
   }
 
   return null;
@@ -319,7 +319,7 @@ function getTripReminderSchemaErrorMessage(error: { message?: string } | null | 
     message.includes("schema cache") ||
     message.includes("Could not find")
   ) {
-    return "Custom trip reminders are not fully set up in Supabase yet. Run scripts/setup-trip-reminders.sql in the Supabase SQL Editor to enable custom reminders.";
+    return "Custom trip reminders need a database setup step before they can be used.";
   }
 
   return null;
@@ -332,7 +332,7 @@ function getCruisePriceWatchSchemaErrorMessage(error: { message?: string } | nul
     message.includes("cruise_price_watch_results") ||
     message.includes("schema cache")
   ) {
-    return "Cruise Price Watch is not fully set up in Supabase yet. Run scripts/setup-cruise-price-watch.sql in the Supabase SQL Editor, then try saving the cruise again.";
+    return "Cruise Price Watch needs a database setup step before it can be used.";
   }
 
   return null;

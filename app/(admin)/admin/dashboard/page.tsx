@@ -781,7 +781,7 @@ export default async function AdminDashboardPage({
         />
         {cruisePriceWatchResultsResult.error ? (
           <p style={{ margin: 0, color: "#64748b" }}>
-            Run scripts/setup-cruise-price-watch.sql in Supabase to enable cruise price alerts.
+            Cruise price alerts need a database setup step before they can be used.
           </p>
         ) : cruisePriceWatchResults.length === 0 ? (
           <p style={{ margin: 0, color: "#64748b" }}>No cruise price alerts or review items.</p>

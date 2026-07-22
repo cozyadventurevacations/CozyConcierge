@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --no-cache",
     "typecheck": "tsc --noEmit",
     "import:airports": "node scripts/import-airports.mjs",
     "import:airlines": "node scripts/import-airlines.mjs"

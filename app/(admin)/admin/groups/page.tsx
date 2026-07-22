@@ -178,9 +178,7 @@ export default async function AdminGroupsPage() {
           <p><strong>Error loading groups:</strong></p>
           <pre>{JSON.stringify(groupsResult.error, null, 2)}</pre>
           <p style={{ color: "#64748b", lineHeight: 1.6 }}>
-            If this is your first time opening Groups, run
-            <code> scripts/setup-group-travel.sql </code>
-            in Supabase SQL Editor.
+            Groups need a database setup step before they can be used.
           </p>
         </div>
       </PageShell>

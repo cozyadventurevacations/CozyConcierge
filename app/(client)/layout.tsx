@@ -237,6 +237,13 @@ export default async function ClientLayout({
             Terms and Conditions
           </Link>
           {" "}|{" "}
+          <Link
+            href="/privacy-policy"
+            style={{ color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+          >
+            Privacy Policy
+          </Link>
+          {" "}|{" "}
           <a
             href="https://www.cozyadventurevacations.com"
             target="_blank"

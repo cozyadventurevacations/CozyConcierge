@@ -86,7 +86,7 @@ function getReminderSetupMessage(error: { message?: string } | null | undefined)
     message.includes("schema cache") ||
     message.includes("Could not find")
   ) {
-    return "Custom trip reminders are not fully set up in Supabase yet. Run scripts/setup-trip-reminders.sql in the Supabase SQL Editor to enable custom reminders.";
+    return "Custom trip reminders need a database setup step before they can be used.";
   }
   return null;
 }

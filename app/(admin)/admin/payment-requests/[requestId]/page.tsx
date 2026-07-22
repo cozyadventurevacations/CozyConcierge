@@ -137,7 +137,7 @@ function getPaymentDocumentSchemaErrorMessage(error: { message?: string } | null
     message.includes("encryption_algorithm") ||
     message.includes("schema cache")
   ) {
-    return "Payment request documents are not fully set up in Supabase yet. Run scripts/setup-payment-request-documents.sql in the Supabase SQL Editor, then try again.";
+    return "Payment request documents need a database setup step before they can be used.";
   }
 
   return null;

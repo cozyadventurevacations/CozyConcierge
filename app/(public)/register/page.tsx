@@ -245,6 +245,7 @@ export default function RegisterPage() {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", fontSize: 14 }}>
             <Link href="/login" style={{ color: "var(--accent-dark)", fontWeight: 800, textDecoration: "none" }}>Already have an account?</Link>
             <Link href="/travel-request" style={{ color: "var(--accent-dark)", fontWeight: 800, textDecoration: "none" }}>Request a trip instead</Link>
+            <Link href="/privacy-policy" style={{ color: "var(--accent-dark)", fontWeight: 800, textDecoration: "none" }}>Privacy Policy</Link>
           </div>
         </div>
       </section>
