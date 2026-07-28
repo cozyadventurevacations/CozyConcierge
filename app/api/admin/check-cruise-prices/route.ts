@@ -93,6 +93,25 @@ function normalizeCode(value: string | null | undefined) {
   return (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function normalizeCabinMatchCode(value: string | null | undefined) {
+  const raw = (value ?? "").trim().toUpperCase();
+  const categoryPortion = raw.split(/[\/|,;]/)[0]?.trim() || raw;
+  return normalizeCode(categoryPortion);
+}
+
+function cabinClassForMatchCode(value: string | null | undefined) {
+  const code = normalizeCabinMatchCode(value);
+  if (!code) return null;
+
+  if (code.startsWith("H") || code.startsWith("S")) return "suite";
+  if (code.startsWith("M")) return "club balcony";
+  if (code.startsWith("B")) return "balcony";
+  if (code.startsWith("O")) return "oceanview";
+  if (code.startsWith("I") || code.startsWith("T")) return "inside";
+
+  return null;
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -214,15 +233,118 @@ function extractMoneyValues(text: string) {
   return values;
 }
 
+function formatMoney(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function normalizeOfferCategory(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .trim();
+}
+
+function categoryMatchesCabinClass(category: string, cabinClass: string) {
+  if (cabinClass === "club balcony") {
+    return category.includes("club balcony") || category.includes("mini suite");
+  }
+
+  return category.includes(cabinClass);
+}
+
+function extractJsonLdBlocks(html: string) {
+  const blocks: string[] = [];
+  const pattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+
+  for (const match of html.matchAll(pattern)) {
+    if (match[1]) blocks.push(match[1].trim());
+  }
+
+  return blocks;
+}
+
+function flattenJsonLdOffers(value: unknown): Array<{ name?: unknown; category?: unknown; price?: unknown; priceCurrency?: unknown }> {
+  if (!value || typeof value !== "object") return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap(flattenJsonLdOffers);
+  }
+
+  const record = value as Record<string, unknown>;
+  const offers = record.offers;
+  const nestedOffers = Array.isArray(offers) ? offers : offers ? [offers] : [];
+  const childOffers = Object.values(record).flatMap((child) => {
+    if (child === offers) return [];
+    return flattenJsonLdOffers(child);
+  });
+
+  return [
+    ...nestedOffers
+      .filter((offer): offer is Record<string, unknown> => Boolean(offer) && typeof offer === "object" && !Array.isArray(offer))
+      .map((offer) => ({
+        name: offer.name,
+        category: offer.category,
+        price: offer.price,
+        priceCurrency: offer.priceCurrency,
+      })),
+    ...childOffers,
+  ];
+}
+
+function extractStructuredCabinFare(html: string, cabinClass: string | null) {
+  if (!cabinClass) return null;
+
+  for (const block of extractJsonLdBlocks(html)) {
+    try {
+      const parsed = JSON.parse(block) as unknown;
+      const offers = flattenJsonLdOffers(parsed);
+
+      for (const offer of offers) {
+        const category = normalizeOfferCategory(`${String(offer.name ?? "")} ${String(offer.category ?? "")}`);
+        const price = Number(String(offer.price ?? "").replace(/,/g, ""));
+
+        if (
+          categoryMatchesCabinClass(category, cabinClass) &&
+          Number.isFinite(price) &&
+          price >= 100 &&
+          price <= 100000
+        ) {
+          return {
+            cabinClass,
+            price,
+            currency: String(offer.priceCurrency ?? "USD").toUpperCase(),
+          };
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function isGenericCruiseLineUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/, "");
+    return path === "" || path === "/" || path === "/en";
+  } catch {
+    return false;
+  }
+}
+
 function parsePublicCruisePage({
   html,
   cabinMatchCode,
   bookedTotal,
+  publicUrl,
   saleWindows,
 }: {
   html: string;
   cabinMatchCode: string;
   bookedTotal: number;
+  publicUrl: string;
   saleWindows: PriceWatchSaleWindow[];
 }): {
   status: WatchStatus;
@@ -236,10 +358,22 @@ function parsePublicCruisePage({
   const saleWindowLabel = formatSaleWindowList(saleWindows);
   const hasActiveSaleWindow = saleWindows.length > 0;
   const hasVisibleSaleLanguage = hasSaleLanguage(html);
+  const cabinClass = cabinClassForMatchCode(cabinMatchCode);
+  const structuredCabinFare = extractStructuredCabinFare(html, cabinClass);
   const saleContextMessage =
     hasActiveSaleWindow
       ? ` This check ran during ${saleWindowLabel}; verify any holiday or major sale perks against the client booking.`
       : "";
+
+  if (isGenericCruiseLineUrl(publicUrl)) {
+    return {
+      status: "manual_review",
+      foundTotal: structuredCabinFare?.price ?? null,
+      savingsAmount: null,
+      promoCodes,
+      message: `The saved public pricing URL is a cruise-line homepage, not a specific sailing or pricing page. Save the exact public pricing page for this ship, date, and cabin class so the checker can compare it.${saleContextMessage}`,
+    };
+  }
 
   if (!code) {
     return {
@@ -248,6 +382,16 @@ function parsePublicCruisePage({
       savingsAmount: null,
       promoCodes,
       message: `No cabin category code was saved, so the app could not match exact room class.${saleContextMessage}`,
+    };
+  }
+
+  if (structuredCabinFare) {
+    return {
+      status: "manual_review",
+      foundTotal: structuredCabinFare.price,
+      savingsAmount: null,
+      promoCodes,
+      message: `Found a public ${structuredCabinFare.cabinClass} cabin fare of ${formatMoney(structuredCabinFare.price)} ${structuredCabinFare.currency} per person. Review manually before comparing it to the booked total, because this page does not confirm the full booking total, taxes, fees, guests, or included perks.${saleContextMessage}`,
     };
   }
 
@@ -372,7 +516,7 @@ async function runCruisePriceWatch() {
     const bookedTotal = Number(component.total_price ?? 0);
     const publicUrl = component.price_watch_public_url?.trim() ?? "";
     const cruiseLine = cruise?.cruise_line ?? component.supplier_name ?? component.display_name;
-    const cabinMatchCode = normalizeCode(component.price_watch_match_code || cruise?.cabin_category);
+    const cabinMatchCode = normalizeCabinMatchCode(component.price_watch_match_code || cruise?.cabin_category);
 
     if (trip?.deleted_at) {
       results.push({ componentId: component.id, status: "skipped", message: "Trip is deleted." });
@@ -403,7 +547,7 @@ async function runCruisePriceWatch() {
       }
 
       const html = await response.text();
-      const parsed = parsePublicCruisePage({ html, cabinMatchCode, bookedTotal, saleWindows });
+      const parsed = parsePublicCruisePage({ html, cabinMatchCode, bookedTotal, publicUrl, saleWindows });
 
       await supabase.from("cruise_price_watch_results").insert({
         trip_id: component.trip_id,
@@ -426,7 +570,7 @@ async function runCruisePriceWatch() {
         price_watch_last_status: parsed.status,
         price_watch_last_found_price: parsed.foundTotal,
         price_watch_last_promo_codes: parsed.promoCodes,
-        price_watch_last_error: parsed.status === "error" ? parsed.message : null,
+        price_watch_last_error: ["error", "manual_review"].includes(parsed.status) ? parsed.message : null,
       };
 
       if (parsed.status === "lower_price_found") {
