@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   "/register",
   "/forgot-password",
   "/reset-password",
+  "/auth/callback",
   "/logout",
   "/groups",
 ];

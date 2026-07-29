@@ -1,20 +1,59 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isPreparingSession, setIsPreparingSession] = useState(false);
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("code");
+
+    if (!code) {
+      return;
+    }
+
+    const recoveryCode = code;
+    let isMounted = true;
+
+    async function exchangeRecoveryCode() {
+      setIsPreparingSession(true);
+      setErrorMessage("");
+
+      const { error } = await supabase.auth.exchangeCodeForSession(recoveryCode);
+
+      if (!isMounted) {
+        return;
+      }
+
+      window.history.replaceState({}, "", "/reset-password");
+
+      if (error) {
+        setErrorMessage(
+          "That password reset link is invalid or has expired. Please request a new reset link and try again.",
+        );
+      }
+
+      setIsPreparingSession(false);
+    }
+
+    void exchangeRecoveryCode();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [supabase]);
 
   async function handleUpdatePassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,6 +91,7 @@ export default function ResetPasswordPage() {
     }
 
     setMessage("Your password has been updated. Redirecting you to login...");
+    await supabase.auth.signOut();
 
     setTimeout(() => {
       router.push("/login");
@@ -114,8 +154,8 @@ export default function ResetPasswordPage() {
           ) : null}
 
           <div className="row">
-            <button className="btn btn-primary" type="submit" disabled={isLoading}>
-              {isLoading ? "Updating..." : "Update Password"}
+            <button className="btn btn-primary" type="submit" disabled={isLoading || isPreparingSession}>
+              {isPreparingSession ? "Preparing..." : isLoading ? "Updating..." : "Update Password"}
             </button>
 
             <Link href="/login" className="btn btn-primary">
