@@ -21,6 +21,7 @@ function itemMatchesSearch(item: TravelLibraryItem, searchTerm: string) {
     item.category,
     ...item.answer,
     ...item.tags,
+    item.sourceLabel,
     ...(item.askAdvisorWhen ?? []),
   ]
     .join(" ")
@@ -53,7 +54,7 @@ function SearchBox({
         className="input"
         name="q"
         type="search"
-        placeholder="Search passports, packing, cruises, payments..."
+        placeholder="Search passports, packing, flights, food safety..."
         defaultValue={defaultValue}
         style={{ flex: "1 1 320px", minWidth: 240 }}
       />
@@ -180,7 +181,7 @@ function LibraryItemCard({ item }: { item: TravelLibraryItem }) {
       ) : null}
 
       {item.pdfUrl ? (
-        <div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <a
             href={item.pdfUrl}
             className="btn btn-primary"
@@ -189,6 +190,20 @@ function LibraryItemCard({ item }: { item: TravelLibraryItem }) {
             style={{ padding: "9px 14px", fontSize: 13 }}
           >
             {item.pdfLabel ?? "Download PDF"}
+          </a>
+        </div>
+      ) : null}
+
+      {item.sourceUrl ? (
+        <div>
+          <a
+            href={item.sourceUrl}
+            className="btn btn-outline"
+            target="_blank"
+            rel="noreferrer"
+            style={{ padding: "9px 14px", fontSize: 13 }}
+          >
+            {item.sourceLabel ?? "Official Resource"}
           </a>
         </div>
       ) : null}
@@ -243,7 +258,7 @@ export default async function TravelLibraryPage({
   return (
     <PageShell
       title="Travel Tips & FAQ"
-      subtitle="Practical travel reminders, common questions, and advisor-friendly guidance in one place."
+      subtitle="Personal planning, proactive care, and practical answers to help you feel prepared before departure."
     >
       <section
         className="card stack"
@@ -275,10 +290,10 @@ export default async function TravelLibraryPage({
               Client Library
             </p>
             <h2 style={{ margin: "6px 0 0" }}>
-              Quick answers before, during, and after travel.
+              Quick answers with personal support close by.
             </h2>
             <p style={{ margin: "8px 0 0", color: "#5e7e8f", lineHeight: 1.6 }}>
-              Start here for general guidance, then message your advisor when the answer depends on your exact booking, supplier rules, or travel dates.
+              Use this library for general travel guidance and official resources. When the answer depends on your exact booking, supplier rules, or travel dates, message Jeremy for personal guidance.
             </p>
           </div>
           <Link href="/messages" className="btn btn-primary">

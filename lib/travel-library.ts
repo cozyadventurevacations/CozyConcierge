@@ -17,6 +17,8 @@ export type TravelLibraryItem = {
   tags: string[];
   pdfUrl?: string;
   pdfLabel?: string;
+  sourceUrl?: string;
+  sourceLabel?: string;
   askAdvisorWhen?: string[];
 };
 
@@ -128,6 +130,158 @@ export const travelLibraryItems: TravelLibraryItem[] = [
       "Any traveler name, date, document, or transfer detail looks wrong.",
       "You cannot complete online check-in.",
       "You need help deciding what belongs in your carry-on.",
+    ],
+  },
+  {
+    slug: "tsa-liquids-rule",
+    title: "What is the TSA 3-1-1 liquids rule?",
+    category: "packing",
+    summary: "Carry-on liquids, gels, creams, aerosols, and pastes must follow TSA size limits.",
+    answer: [
+      "For most carry-on liquids, gels, creams, pastes, and aerosols, TSA uses the 3-1-1 rule: travel-size containers of 3.4 ounces or 100 milliliters or less, packed in one quart-size bag, with one bag per passenger.",
+      "Pack larger toiletries in checked luggage when possible, and place your small liquids bag where it is easy to remove if requested during screening.",
+      "Some medically necessary liquids may be allowed in larger amounts, but they should be declared for screening. Rules and screening decisions can vary by item, so check TSA guidance before packing anything unusual.",
+    ],
+    tags: ["tsa", "liquids", "carry-on", "packing", "security"],
+    sourceUrl: "https://www.tsa.gov/news/press/factsheets/tsa-travel-tips",
+    sourceLabel: "TSA Travel Tips",
+    askAdvisorWhen: [
+      "You are packing medical liquids, specialty toiletries, or food for a traveler with medical needs.",
+      "You are unsure whether an item belongs in checked or carry-on luggage.",
+      "Your itinerary includes multiple flights or international screening points.",
+    ],
+  },
+  {
+    slug: "traveling-with-medications",
+    title: "How should I pack medications for travel?",
+    category: "packing",
+    summary: "Keep medications accessible, clearly packed, and protected from luggage delays.",
+    answer: [
+      "Keep prescription medications, medical devices, and anything medically necessary in your carry-on rather than checked luggage.",
+      "TSA allows medications through screening, but they may need additional review. Liquid medications and medically necessary liquids can be screened separately from the standard liquids bag.",
+      "For international travel, bring medications in original packaging when practical and review destination rules before departure. Some medicines that are common at home may be restricted elsewhere.",
+    ],
+    tags: ["medications", "tsa", "carry-on", "health", "international"],
+    sourceUrl: "https://www.tsa.gov/news/press/factsheets/tsa-travel-tips",
+    sourceLabel: "TSA Medication Guidance",
+    askAdvisorWhen: [
+      "You travel with refrigerated medication or medical equipment.",
+      "You need to carry syringes, liquid medication, or mobility-related supplies.",
+      "You are traveling internationally with controlled or specialty medication.",
+    ],
+  },
+  {
+    slug: "flight-delay-cancellation-next-steps",
+    title: "What should I do if my flight is delayed or canceled?",
+    category: "airports-flights",
+    summary: "Stay calm, keep records, and review your airline options before choosing.",
+    answer: [
+      "Start with the airline app, gate agents, and official airline notifications. Rebooking options can change quickly, so check more than one channel when possible.",
+      "If the disruption is within the airline's control, some airlines have committed to meals, hotels, transportation, or rebooking support in certain situations. DOT maintains a dashboard showing each major U.S. airline's commitments.",
+      "Save screenshots, emails, boarding passes, receipts, and delay notices. If you have travel insurance, documentation is often important for a claim.",
+    ],
+    tags: ["flight delay", "cancellation", "airline", "rebooking", "receipts"],
+    sourceUrl: "https://www.transportation.gov/airconsumer/airline-cancellation-delay-dashboard",
+    sourceLabel: "DOT Airline Cancellation and Delay Dashboard",
+    askAdvisorWhen: [
+      "A delay could affect a cruise, tour, transfer, or hotel check-in.",
+      "You are unsure whether to accept a rebooking, voucher, or refund.",
+      "You need documentation for a travel insurance claim.",
+    ],
+  },
+  {
+    slug: "airline-refunds-basics",
+    title: "When might I be entitled to an airline refund?",
+    category: "airports-flights",
+    summary: "DOT refund rules may apply when the airline cancels or significantly changes a flight.",
+    answer: [
+      "Under DOT rules, passengers may be entitled to a refund when an airline cancels a flight or makes a significant delay or schedule change, and the traveler chooses not to travel or accept the airline's alternative.",
+      "Refund rules are not the same as compensation for inconvenience. Meals, hotels, or vouchers depend on the airline's commitments and the cause of the disruption.",
+      "Before accepting a credit, voucher, or alternate flight, pause and review your options. The right choice can depend on the rest of your trip and any insurance coverage.",
+    ],
+    tags: ["refund", "flight cancellation", "schedule change", "dot", "airline"],
+    sourceUrl: "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
+    sourceLabel: "DOT Airline Refunds",
+    askAdvisorWhen: [
+      "The new flight affects a cruise departure, tour start, or prepaid hotel.",
+      "You are offered a voucher and are not sure whether to accept it.",
+      "You booked air as part of a package or through a supplier.",
+    ],
+  },
+  {
+    slug: "international-travel-checklist",
+    title: "What should I check before international travel?",
+    category: "documents",
+    summary: "Review destination rules, documents, copies, health notes, and emergency contacts early.",
+    answer: [
+      "Before traveling abroad, review your destination's entry, exit, visa, passport validity, health, and local-law information.",
+      "Make copies of important documents and keep one set separate from the originals. It can also help to leave a copy with someone you trust at home.",
+      "The State Department's STEP program can send safety, weather, health, and security alerts for your destination and can help an embassy or consulate contact you in an emergency.",
+    ],
+    tags: ["international", "documents", "passport", "visa", "step"],
+    sourceUrl: "https://travel.state.gov/en/international-travel/planning/checklist.html?sfns=mo",
+    sourceLabel: "State Department International Travel Checklist",
+    askAdvisorWhen: [
+      "Your destination has visa, vaccination, or passport validity requirements.",
+      "You are traveling with minors or multiple households.",
+      "You want help organizing documents before departure.",
+    ],
+  },
+  {
+    slug: "passport-processing-timing",
+    title: "When should I renew or apply for a passport?",
+    category: "documents",
+    summary: "Start early, because mailing, processing, and return delivery all take time.",
+    answer: [
+      "Check passport expiration dates as soon as you start planning. Some destinations require at least six months of validity beyond your travel dates, and some airlines may deny boarding if this requirement is not met.",
+      "Passport timing includes more than processing alone. Mailing the application and receiving the completed passport can each add time.",
+      "If your trip is approaching, review the State Department's current processing options and ask your advisor if timing could affect your booking.",
+    ],
+    tags: ["passport", "renewal", "processing", "international", "documents"],
+    sourceUrl: "https://travel.state.gov/en/passports.html",
+    sourceLabel: "U.S. Passports",
+    askAdvisorWhen: [
+      "Your passport expires within a year of travel.",
+      "A child passport is involved.",
+      "Your name recently changed or your passport is damaged.",
+    ],
+  },
+  {
+    slug: "customs-declarations",
+    title: "What do I need to declare when returning to the United States?",
+    category: "documents",
+    summary: "Declare food, agriculture items, alcohol, tobacco, certain medications, and large currency amounts.",
+    answer: [
+      "When entering the United States, CBP requires travelers to declare all foods, plants, agricultural items, and wildlife items.",
+      "Currency or monetary instruments over $10,000 must be declared. Medications should generally be declared, kept in original packaging, and carried with a prescription in the traveler's name when applicable.",
+      "If you are unsure whether an item must be declared, declare it and let CBP make the determination. Penalties and confiscation are much more stressful than asking at inspection.",
+    ],
+    tags: ["customs", "cbp", "food", "medications", "declaration"],
+    sourceUrl: "https://www.help.cbp.gov/s/article/Article-1909?language=en_US",
+    sourceLabel: "CBP Declaration Guidance",
+    askAdvisorWhen: [
+      "You are bringing food, alcohol, tobacco, gifts, or medication home.",
+      "You bought expensive items abroad.",
+      "You are unsure whether a souvenir is agricultural or wildlife-related.",
+    ],
+  },
+  {
+    slug: "food-water-safety",
+    title: "How can I reduce the chance of getting sick from food or water?",
+    category: "pre-departure",
+    summary: "Choose food and drinks carefully when sanitation or water safety is uncertain.",
+    answer: [
+      "In destinations where tap water safety is uncertain, use factory-sealed bottled water or properly disinfected water for drinking, brushing teeth, making ice, and preparing food or drinks.",
+      "Choose foods that are cooked and served hot. Be cautious with raw or undercooked meat, seafood, eggs, unpeeled produce, unpasteurized dairy, and food that has not been kept hot or cold enough.",
+      "Wash hands before eating. If soap and water are not available, use hand sanitizer with at least 60 percent alcohol.",
+    ],
+    tags: ["food safety", "water", "health", "international", "cdc"],
+    sourceUrl: "https://wwwnc.cdc.gov/travel/page/food-water-safety",
+    sourceLabel: "CDC Food and Drink Considerations",
+    askAdvisorWhen: [
+      "You have immune, pregnancy, age-related, or medical risk factors.",
+      "You are traveling somewhere with limited water treatment or sanitation.",
+      "You need help matching dining plans to health or accessibility needs.",
     ],
   },
   {
