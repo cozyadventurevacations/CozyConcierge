@@ -1,4 +1,5 @@
 export type TravelLibraryCategory =
+  | "working-with-advisor"
   | "before-you-book"
   | "pre-departure"
   | "packing"
@@ -31,6 +32,11 @@ export const travelLibraryCategories: {
     id: "all",
     label: "All",
     description: "Browse every travel tip and FAQ.",
+  },
+  {
+    id: "working-with-advisor",
+    label: "Working With Your Advisor",
+    description: "How Cozy supports you before, during, and after travel.",
   },
   {
     id: "before-you-book",
@@ -75,6 +81,158 @@ export const travelLibraryCategories: {
 ];
 
 export const travelLibraryItems: TravelLibraryItem[] = [
+  {
+    slug: "why-work-with-travel-advisor",
+    title: "Why work with a travel advisor instead of booking everything online?",
+    category: "working-with-advisor",
+    summary: "A trusted advisor helps turn a reservation into a thoughtfully prepared trip.",
+    answer: [
+      "Booking online can confirm a reservation, but working with Cozy Adventure Vacations gives you relationship-driven travel planning with proactive personal care.",
+      "Jeremy helps you compare options, understand what fits your travel style, watch deadlines, prepare documents, think through accessibility or family logistics, and avoid common surprises before departure.",
+      "The Cozy Concierge app keeps helpful details close by, but it is there to strengthen the personal service. Technology for convenience. Personal guidance for everything that matters.",
+    ],
+    tags: ["advisor", "planning", "concierge service", "cozy concierge"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "You are comparing destinations, resorts, cruises, or room types.",
+      "You want help matching the trip to your priorities instead of choosing from too many options.",
+      "You have accessibility, family, payment, or documentation needs to plan around.",
+    ],
+  },
+  {
+    slug: "what-happens-after-booking",
+    title: "What happens after my trip is booked?",
+    category: "working-with-advisor",
+    summary: "Support continues after confirmation through reminders, documents, and trip guidance.",
+    answer: [
+      "After booking, Cozy Adventure Vacations continues helping with itinerary coordination, supplier documents, payment reminders, travel tips, and questions that come up before departure.",
+      "You may see trip details, documents, deadline reminders, messages, and helpful resources inside Cozy Concierge. Some clients may also receive organized physical travel materials when appropriate for the trip.",
+      "You are still responsible for reviewing confirmations, names, dates, payment deadlines, documents, and supplier rules. If anything looks off, message Jeremy early so there is time to help.",
+    ],
+    tags: ["after booking", "documents", "payment reminders", "portal"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "A traveler name, date, destination, or room detail does not look right.",
+      "You cannot find a document, payment link, or supplier instruction.",
+      "You have a new request after the trip is confirmed.",
+    ],
+  },
+  {
+    slug: "quotes-pricing-availability",
+    title: "Are quotes, prices, and availability guaranteed while I decide?",
+    category: "working-with-advisor",
+    summary: "Travel pricing can change until the supplier confirms the booking and payment is processed.",
+    answer: [
+      "Quotes are based on the information and availability available at the time they are prepared. Supplier pricing, taxes, fees, promotions, exchange rates, and inventory can change before confirmation.",
+      "A quote is not guaranteed until the supplier confirms the booking and required payments have been received and processed.",
+      "Cozy Adventure Vacations does not use high-pressure language or promise best-price guarantees. The goal is to help you choose confidently, with clear expectations about timing and supplier rules.",
+    ],
+    tags: ["quotes", "pricing", "availability", "deposits"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "You are interested in a price-sensitive offer or limited inventory.",
+      "Your travel dates, room type, or number of travelers may change.",
+      "You want to understand what payment is needed to hold the booking.",
+    ],
+  },
+  {
+    slug: "changes-cancellations-refunds",
+    title: "What if I need to change, cancel, or request a refund?",
+    category: "working-with-advisor",
+    summary: "Supplier rules control most change, cancellation, credit, and refund outcomes.",
+    answer: [
+      "Change and cancellation rules vary by supplier and may include non-refundable deposits, penalties, fare differences, repricing, or loss of promotional benefits.",
+      "Cozy Adventure Vacations can assist with supplier communications and refund requests when appropriate, but supplier decisions, refund eligibility, processing times, credit validity, and alternate options are controlled by the supplier.",
+      "Before initiating a payment dispute or chargeback, contact Cozy promptly. A direct conversation often gives Jeremy the best chance to help gather facts, review supplier rules, and advocate appropriately.",
+    ],
+    tags: ["cancellation", "changes", "refunds", "supplier rules"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "You are thinking about changing dates, names, flights, rooms, or package components.",
+      "A supplier cancellation or schedule change affects the rest of your trip.",
+      "You are unsure whether to accept a refund, future travel credit, or alternate arrangement.",
+    ],
+  },
+  {
+    slug: "travel-insurance-advisor-guidance",
+    title: "Why does my advisor discuss travel insurance?",
+    category: "working-with-advisor",
+    summary: "Insurance is part of preparing carefully for the unexpected, but coverage is policy-specific.",
+    answer: [
+      "Cozy Adventure Vacations strongly recommends that every traveler review comprehensive travel insurance or travel protection for cancellation, interruption, medical emergencies, evacuation, supplier default, baggage issues, travel delay, and other unexpected events.",
+      "Insurance benefits, exclusions, pre-existing condition rules, purchase deadlines, claim requirements, and coverage limits are determined by the insurer and policy documents.",
+      "Jeremy can help you understand why protection may matter for your trip, but travelers are responsible for reviewing policy documents and deciding whether coverage is adequate.",
+    ],
+    tags: ["travel insurance", "protection", "claims", "coverage"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "You recently made your first trip deposit.",
+      "You have nonrefundable trip costs or international travel plans.",
+      "You need help finding claim documentation after a covered disruption may have occurred.",
+    ],
+  },
+  {
+    slug: "traveler-responsibilities",
+    title: "What am I responsible for as the traveler?",
+    category: "working-with-advisor",
+    summary: "Your advisor guides the process, and travelers still need to review details and meet requirements.",
+    answer: [
+      "Travelers are responsible for providing accurate names, dates of birth, contact details, passport information, traveler preferences, payment information, and other trip details.",
+      "You are also responsible for obtaining, carrying, and presenting required travel documents, including passports, visas, government ID, entry forms, vaccination records, consent documents, cruise boarding documents, and supplier-required materials.",
+      "Cozy may provide reminders and links as a courtesy, but official entry, health, legal, immigration, and supplier requirements can change. Review official sources and supplier documents before departure and again close to travel.",
+    ],
+    tags: ["traveler responsibility", "documents", "passport", "entry requirements"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "A name does not match government-issued identification.",
+      "You are traveling internationally, with minors, or with mixed last names.",
+      "You see a destination rule, health note, or supplier requirement you do not understand.",
+    ],
+  },
+  {
+    slug: "support-during-travel",
+    title: "What should I do if something goes wrong while I am traveling?",
+    category: "working-with-advisor",
+    summary: "Use the right urgent contact first, then loop Jeremy in with clear details and documentation.",
+    answer: [
+      "If there is an emergency, contact local emergency services, medical help, airport staff, ship crew, hotel management, or the responsible supplier first.",
+      "When you are safe, message Jeremy with your booking details, location, what happened, and any time-sensitive deadlines. Keep receipts, screenshots, reports, emails, and names of people you spoke with.",
+      "Cozy Adventure Vacations can provide guidance and assist with supplier or insurance communication when appropriate, but suppliers, insurers, airlines, governments, and local authorities control many real-time decisions.",
+    ],
+    tags: ["during travel", "support", "disruption", "supplier"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "A delay, illness, lost bag, denied boarding, or hotel issue affects your itinerary.",
+      "You need help deciding what documentation to save for insurance or supplier follow-up.",
+      "A supplier gives you an option and you are unsure how it affects the rest of the trip.",
+    ],
+  },
+  {
+    slug: "special-requests-accessibility",
+    title: "Are special requests or accessibility needs guaranteed?",
+    category: "working-with-advisor",
+    summary: "Requests are communicated when feasible, but suppliers decide what can be confirmed.",
+    answer: [
+      "Tell Cozy Adventure Vacations as early as possible about mobility needs, medical considerations, dietary restrictions, bedding preferences, connecting rooms, celebrations, accessibility requests, or other special requests.",
+      "Jeremy can communicate requests to suppliers when feasible, but special requests are not guaranteed unless confirmed directly by the supplier in writing.",
+      "Travelers are responsible for confirming that travel arrangements are suitable for their personal, medical, mobility, dietary, or accessibility needs.",
+    ],
+    tags: ["accessibility", "special requests", "dietary", "rooms"],
+    sourceUrl: "/terms-and-conditions",
+    sourceLabel: "Cozy Terms & Conditions",
+    askAdvisorWhen: [
+      "A request is essential for mobility, medical, dietary, or family care.",
+      "You need connecting rooms, specific bedding, or a confirmed accessible room.",
+      "A supplier asks for documentation, advance notice, or additional fees.",
+    ],
+  },
   {
     slug: "life-onboard-cruise-rhythm",
     title: "Life Onboard: Finding Your Cruise Rhythm",

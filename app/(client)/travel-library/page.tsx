@@ -54,7 +54,7 @@ function SearchBox({
         className="input"
         name="q"
         type="search"
-        placeholder="Search passports, packing, flights, food safety..."
+        placeholder="Search advisor, cancellations, passports, packing..."
         defaultValue={defaultValue}
         style={{ flex: "1 1 320px", minWidth: 240 }}
       />
