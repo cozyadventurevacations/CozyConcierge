@@ -179,6 +179,20 @@ function LibraryItemCard({ item }: { item: TravelLibraryItem }) {
         </div>
       ) : null}
 
+      {item.pdfUrl ? (
+        <div>
+          <a
+            href={item.pdfUrl}
+            className="btn btn-primary"
+            target="_blank"
+            rel="noreferrer"
+            style={{ padding: "9px 14px", fontSize: 13 }}
+          >
+            {item.pdfLabel ?? "Download PDF"}
+          </a>
+        </div>
+      ) : null}
+
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {item.tags.map((tag) => (
           <span

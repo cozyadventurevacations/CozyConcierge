@@ -15,6 +15,8 @@ export type TravelLibraryItem = {
   summary: string;
   answer: string[];
   tags: string[];
+  pdfUrl?: string;
+  pdfLabel?: string;
   askAdvisorWhen?: string[];
 };
 
@@ -71,6 +73,63 @@ export const travelLibraryCategories: {
 ];
 
 export const travelLibraryItems: TravelLibraryItem[] = [
+  {
+    slug: "life-onboard-cruise-rhythm",
+    title: "Life Onboard: Finding Your Cruise Rhythm",
+    category: "cruises",
+    summary: "How to enjoy the ship without trying to do every activity.",
+    answer: [
+      "Modern cruise ships offer more than most guests can experience in one sailing. That is a benefit, not a challenge.",
+      "Use the cruise line app or printed schedule to review shows, activities, dining times, port information, live music, family programming, and theme nights. Then choose a few priorities each day and leave room for rest.",
+      "The best cruise schedule is not the one with the most activities. It is the one that leaves you rested, connected, and excited for the next day.",
+    ],
+    tags: ["cruise", "onboard", "sea days", "entertainment", "pool deck"],
+    pdfUrl: "/travel-library/life-onboard-cruise-rhythm.pdf",
+    pdfLabel: "Download Life Onboard Guide",
+    askAdvisorWhen: [
+      "You want help choosing shows, dining, or excursion timing.",
+      "You are unsure about dress codes or theme nights.",
+      "You want a calmer onboard plan for a family or group.",
+    ],
+  },
+  {
+    slug: "join-your-cruise-facebook-group",
+    title: "Join Your Cruise's Facebook Group",
+    category: "pre-departure",
+    summary: "Find your sailing group for ideas, community, and optional events.",
+    answer: [
+      "Before your cruise, search Facebook for a group created specifically for your sailing. These groups are often named using the ship and departure date.",
+      "They can be helpful for port ideas, hotel recommendations, transportation tips, theme-night information, and optional activities such as meet-and-greets or gift exchanges.",
+      "Facebook groups are not official cruise line resources. Verify important details with your cruise line or travel advisor, and avoid sharing personal information publicly.",
+    ],
+    tags: ["cruise", "facebook group", "pre-departure", "community", "safety"],
+    pdfUrl: "/travel-library/join-your-cruise-facebook-group.pdf",
+    pdfLabel: "Download Facebook Group Tip Sheet",
+    askAdvisorWhen: [
+      "A group post mentions document, boarding, or itinerary changes.",
+      "You are considering a group excursion.",
+      "You are not sure whether information from the group is accurate.",
+    ],
+  },
+  {
+    slug: "30-day-cruise-countdown-checklist",
+    title: "30-Day Cruise Countdown Checklist",
+    category: "pre-departure",
+    summary: "A final-month cruise checklist for a smoother departure.",
+    answer: [
+      "Use the final 30 days to confirm documents, online check-in, cruise app access, luggage tags, reservations, packing needs, transfers, and flight timing.",
+      "Add one simple pre-cruise step: find and join the Facebook group for your specific sailing.",
+      "Keep passports, IDs, medications, valuables, chargers, and first-day essentials in your carry-on.",
+    ],
+    tags: ["cruise", "checklist", "30 days", "packing", "documents"],
+    pdfUrl: "/travel-library/30-day-cruise-countdown-checklist.pdf",
+    pdfLabel: "Download 30-Day Checklist",
+    askAdvisorWhen: [
+      "Any traveler name, date, document, or transfer detail looks wrong.",
+      "You cannot complete online check-in.",
+      "You need help deciding what belongs in your carry-on.",
+    ],
+  },
   {
     slug: "passport-validity",
     title: "How long should my passport be valid after travel?",
