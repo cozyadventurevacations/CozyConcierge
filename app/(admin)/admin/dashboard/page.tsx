@@ -439,6 +439,24 @@ async function quickReplyFromDashboard(formData: FormData) {
   redirect("/admin/dashboard?quickReply=sent");
 }
 
+async function deleteCruisePriceWatchNotification(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+  const resultId = String(formData.get("result_id") ?? "").trim();
+
+  if (!resultId) throw new Error("Missing cruise price watch notification ID.");
+
+  const { error } = await supabase
+    .from("cruise_price_watch_results" as any)
+    .delete()
+    .eq("id", resultId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/dashboard");
+}
+
 export default async function AdminDashboardPage({
   searchParams,
 }: {
@@ -821,6 +839,16 @@ export default async function AdminDashboardPage({
                           Save {formatMoney(savings)}
                         </span>
                       ) : null}
+                      <form action={deleteCruisePriceWatchNotification}>
+                        <input type="hidden" name="result_id" value={result.id} />
+                        <button
+                          type="submit"
+                          className="btn btn-outline"
+                          style={{ fontSize: 13, padding: "5px 10px" }}
+                        >
+                          Delete Notification
+                        </button>
+                      </form>
                     </div>
                     <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
                       Booked: {bookedTotal > 0 ? formatMoney(bookedTotal) : "not saved"} · Found: {foundTotal > 0 ? formatMoney(foundTotal) : "not confirmed"}
