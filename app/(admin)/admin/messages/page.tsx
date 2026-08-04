@@ -42,6 +42,7 @@ type ClientInfo = {
 
 type TripInfo = {
   id: string;
+  client_account_id?: string | null;
   trip_name: string | null;
   destinations: string | null;
   departure_date: string | null;
@@ -177,6 +178,77 @@ async function replyAsAdmin(formData: FormData) {
   if (updateError) throw new Error(updateError.message);
 
   revalidatePath("/admin/messages");
+}
+
+async function startPrivateMessageAsAdmin(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const clientId = String(formData.get("client_id") ?? "").trim();
+  const tripId = String(formData.get("trip_id") ?? "").trim() || null;
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (!clientId) throw new Error("Choose a client.");
+  if (!subject) throw new Error("Subject is required.");
+  if (!body) throw new Error("Message is required.");
+
+  if (tripId) {
+    const { data: trip, error: tripError } = await supabase
+      .from("trips")
+      .select("id, client_account_id")
+      .eq("id", tripId)
+      .single();
+
+    if (tripError || !trip) {
+      throw new Error(tripError?.message ?? "Trip not found.");
+    }
+
+    if (trip.client_account_id !== clientId) {
+      throw new Error("The selected trip does not belong to the selected client.");
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .insert({
+      client_account_id: clientId,
+      trip_id: tripId,
+      subject,
+      thread_type: "private",
+      status: "open",
+      priority: "normal",
+      admin_unread_count: 0,
+      client_unread_count: 1,
+      last_message_at: now,
+    })
+    .select("id")
+    .single();
+
+  if (threadError || !thread) {
+    throw new Error(threadError?.message ?? "Could not create message thread.");
+  }
+
+  const { error: messageError } = await supabase.from("messages" as any).insert({
+    thread_id: thread.id,
+    client_account_id: clientId,
+    trip_id: tripId,
+    sender_type: "admin",
+    audience: "private",
+    body,
+    is_read_by_admin: true,
+    is_read_by_client: false,
+  });
+
+  if (messageError) throw new Error(messageError.message);
+
+  revalidatePath("/admin/messages");
+  revalidatePath("/admin/dashboard");
+  if (tripId) revalidatePath(`/admin/trips/${tripId}`);
+
+  redirect(`/admin/messages?threadId=${thread.id}&type=private&sent=1`);
 }
 
 async function updateThreadStatus(formData: FormData) {
@@ -357,9 +429,19 @@ async function deleteOldMessageThreads(formData: FormData) {
 export default async function AdminMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ threadId?: string; status?: string; type?: string; oldMessageCleanup?: string; hidden?: string }>;
+  searchParams: Promise<{
+    threadId?: string;
+    status?: string;
+    type?: string;
+    oldMessageCleanup?: string;
+    hidden?: string;
+    sent?: string;
+    clientId?: string;
+    tripId?: string;
+  }>;
 }) {
-  const { threadId, status, type, oldMessageCleanup, hidden } = await searchParams;
+  const { threadId, status, type, oldMessageCleanup, hidden, sent, clientId, tripId } =
+    await searchParams;
   const { supabase } = await requireAdmin();
 
   let threadQuery = supabase
@@ -480,6 +562,21 @@ export default async function AdminMessagesPage({
   );
   const tripMap = new Map((trips ?? []).map((trip) => [trip.id, trip as TripInfo]));
 
+  const { data: messageClientOptions } = await supabase
+    .from("client_accounts")
+    .select("id, first_name, last_name, email")
+    .order("last_name", { ascending: true })
+    .order("first_name", { ascending: true });
+
+  const { data: messageTripOptions } = await supabase
+    .from("trips")
+    .select("id, client_account_id, trip_name, destinations, departure_date")
+    .order("departure_date", { ascending: false })
+    .limit(300);
+
+  const startMessageClients = (messageClientOptions ?? []) as ClientInfo[];
+  const startMessageTrips = (messageTripOptions ?? []) as TripInfo[];
+
   const openCount = threadRows.filter((thread) => thread.status === "open").length;
   const unreadCount = threadRows.reduce(
     (sum, thread) => sum + Number(thread.admin_unread_count ?? 0),
@@ -532,6 +629,66 @@ export default async function AdminMessagesPage({
           <p style={{ margin: 0, fontWeight: 800 }}>Conversation hidden from your inbox.</p>
         </div>
       ) : null}
+
+      {sent === "1" ? (
+        <div className="card" style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534" }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Message sent and private thread created.</p>
+        </div>
+      ) : null}
+
+      <div className="card stack" style={{ border: "1px solid #dbeafe", background: "linear-gradient(135deg, #ffffff 0%, #f7fbfc 100%)" }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>
+            New Private Message
+          </p>
+          <h2 style={{ margin: "6px 0 0" }}>Start a client conversation</h2>
+          <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.6 }}>
+            Create a private thread and send the first message without waiting for the client to write first.
+          </p>
+        </div>
+
+        <form action={startPrivateMessageAsAdmin} className="stack">
+          <div className="grid grid-2">
+            <label className="stack-sm">
+              <span className="label">Client</span>
+              <select className="select" name="client_id" defaultValue={clientId ?? ""} required>
+                <option value="">Choose client</option>
+                {startMessageClients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {getClientName(client)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="stack-sm">
+              <span className="label">Trip optional</span>
+              <select className="select" name="trip_id" defaultValue={tripId ?? ""}>
+                <option value="">No trip attached</option>
+                {startMessageTrips.map((trip) => (
+                  <option key={trip.id} value={trip.id}>
+                    {trip.trip_name ?? "Trip"}{trip.destinations ? ` - ${trip.destinations}` : ""}{trip.departure_date ? ` - ${formatDateTime(trip.departure_date)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="stack-sm">
+            <span className="label">Subject</span>
+            <input className="input" name="subject" placeholder="Trip update, payment reminder, document request..." required />
+          </label>
+
+          <label className="stack-sm">
+            <span className="label">Message</span>
+            <textarea className="textarea" name="body" rows={5} placeholder="Write your message here..." required />
+          </label>
+
+          <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+            Send Message
+          </button>
+        </form>
+      </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>
         {/* ── Thread list ── */}

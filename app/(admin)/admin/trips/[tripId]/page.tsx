@@ -2830,6 +2830,74 @@ async function loadTripComponentContext(
   return { trip, component: component as Record<string, unknown>, details };
 }
 
+async function startPrivateTripMessage(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireAdmin();
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (!tripId) throw new Error("Missing trip ID.");
+  if (!subject) throw new Error("Subject is required.");
+  if (!body) throw new Error("Message is required.");
+
+  const { data: tripRow, error: tripError } = await supabase
+    .from("trips")
+    .select("id, client_account_id")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !tripRow) {
+    throw new Error(tripError?.message ?? "Trip not found.");
+  }
+
+  if (!tripRow.client_account_id) {
+    throw new Error("This trip needs a primary client before you can start a private message.");
+  }
+
+  const now = new Date().toISOString();
+  const { data: thread, error: threadError } = await supabase
+    .from("message_threads" as any)
+    .insert({
+      client_account_id: tripRow.client_account_id,
+      trip_id: tripId,
+      subject,
+      thread_type: "private",
+      status: "open",
+      priority: "normal",
+      admin_unread_count: 0,
+      client_unread_count: 1,
+      last_message_at: now,
+    })
+    .select("id")
+    .single();
+
+  if (threadError || !thread) {
+    throw new Error(threadError?.message ?? "Could not create message thread.");
+  }
+
+  const { error: messageError } = await supabase.from("messages" as any).insert({
+    thread_id: thread.id,
+    client_account_id: tripRow.client_account_id,
+    trip_id: tripId,
+    sender_type: "admin",
+    audience: "private",
+    body,
+    is_read_by_admin: true,
+    is_read_by_client: false,
+  });
+
+  if (messageError) throw new Error(messageError.message);
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath("/admin/messages");
+  revalidatePath("/admin/dashboard");
+
+  redirect(`/admin/messages?threadId=${thread.id}&type=private&sent=1`);
+}
+
 async function addTripCompanion(formData: FormData) {
   "use server";
 
@@ -9424,6 +9492,40 @@ export default async function AdminTripEditorPage({
               Open Trip Messages
             </Link>
           </div>
+
+          <form action={startPrivateTripMessage} className="stack" style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 14, background: "#ffffff" }}>
+            <input type="hidden" name="trip_id" value={tripId} />
+            <div>
+              <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
+                Start a private client message
+              </p>
+              <p style={{ margin: "4px 0 0", color: "#667085", lineHeight: 1.5 }}>
+                Create a new one-on-one thread with {getClientDisplayName(clientInfo)} for this trip.
+              </p>
+            </div>
+            <label className="stack-sm">
+              <span className="label">Subject</span>
+              <input
+                className="input"
+                name="subject"
+                defaultValue={trip.trip_name ? `${trip.trip_name} update` : "Trip update"}
+                required
+              />
+            </label>
+            <label className="stack-sm">
+              <span className="label">Message</span>
+              <textarea
+                className="textarea"
+                name="body"
+                rows={4}
+                placeholder="Write your message here..."
+                required
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }}>
+              Send Private Message
+            </button>
+          </form>
 
           {tripMessageThreadsError ? (
             <div className="card" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
