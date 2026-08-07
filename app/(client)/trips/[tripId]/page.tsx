@@ -156,7 +156,6 @@ const answeredInsuranceDecisionValues = new Set([
   "coverage_declined",
 ]);
 
-const insuranceOfferedMilestoneTitle = "Travel insurance offered";
 const insuranceAnsweredMilestoneTitle = "Travel insurance accepted / declined";
 const agencyName = "Cozy Adventure Vacations";
 const agencyTagline = "Memories Await!";
@@ -987,13 +986,21 @@ async function recordProposalDecision(formData: FormData) {
 
   const { data: trip, error: tripError } = await supabase
     .from("trips")
-    .select("id, client_account_id")
+    .select("id, client_account_id, insurance_decision, insurance_decision_at")
     .eq("id", tripId)
     .single();
 
   if (tripError || !trip) throw new Error("Trip not found.");
   if (trip.client_account_id !== clientAccount.id) {
     throw new Error("Only the primary traveler can approve this proposal.");
+  }
+
+  const requiresInsuranceDecision = !hasInsuranceDecisionBeenAnswered(
+    trip.insurance_decision,
+    trip.insurance_decision_at,
+  );
+  if (requiresInsuranceDecision && insuranceDecision !== "accepted" && insuranceDecision !== "declined") {
+    throw new Error("Choose yes or no for travel insurance before responding to this proposal.");
   }
 
   const { data: proposal, error: proposalError } = await supabase
@@ -1155,7 +1162,6 @@ export default async function TripDetailPage({
     rentalCarResult,
     activityResult,
     insuranceResult,
-    insuranceOfferedMilestoneResult,
   ] = await Promise.all([
     supabaseAdmin.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
     supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
@@ -1171,12 +1177,6 @@ export default async function TripDetailPage({
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
-    supabaseAdmin
-      .from("trip_milestones" as any)
-      .select("id, is_completed")
-      .eq("trip_id", tripId)
-      .eq("title", insuranceOfferedMilestoneTitle)
-      .maybeSingle(),
   ]);
 
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails, insuranceDetails] = await Promise.all([
@@ -1446,11 +1446,8 @@ export default async function TripDetailPage({
   };
 
   const deletionRequested = Boolean(trip.deletion_requested_at);
-  const hasInsuranceBeenOffered =
-    insuranceOfferedMilestoneResult.data?.is_completed === true;
   const shouldAskInsurance =
     isPrimaryClient &&
-    hasInsuranceBeenOffered &&
     !proposalForClient &&
     !hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at);
 

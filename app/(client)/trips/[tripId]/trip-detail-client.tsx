@@ -852,7 +852,7 @@ function ProposalDecisionCard({
             <button type="submit" name="proposal_decision" value="approved" className="btn btn-primary">
               Approve Proposal
             </button>
-            <button type="submit" name="proposal_decision" value="declined" className="btn btn-outline" formNoValidate>
+            <button type="submit" name="proposal_decision" value="declined" className="btn btn-outline">
               Decline / Request Changes
             </button>
           </div>
