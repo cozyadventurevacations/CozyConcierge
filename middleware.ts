@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
 
 const PUBLIC_API_PATHS = [
   "/api/register-client",
+  "/api/auth/password-reset",
   "/api/automations/send-emails",
 ];
 
