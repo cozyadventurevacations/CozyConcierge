@@ -15,40 +15,72 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isPreparingSession, setIsPreparingSession] = useState(false);
+  const [isPreparingSession, setIsPreparingSession] = useState(true);
+  const [isReadyToReset, setIsReadyToReset] = useState(false);
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("code");
-
-    if (!code) {
-      return;
-    }
-
-    const recoveryCode = code;
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+    const hasRecoveryHash = hashParams.get("type") === "recovery" && accessToken && refreshToken;
     let isMounted = true;
 
-    async function exchangeRecoveryCode() {
+    async function prepareRecoverySession() {
       setIsPreparingSession(true);
       setErrorMessage("");
 
-      const { error } = await supabase.auth.exchangeCodeForSession(recoveryCode);
+      let recoveryError: Error | null = null;
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        recoveryError = error;
+      } else if (hasRecoveryHash) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        recoveryError = error;
+      }
 
       if (!isMounted) {
         return;
       }
 
-      window.history.replaceState({}, "", "/reset-password");
+      if (code || hasRecoveryHash) {
+        window.history.replaceState({}, "", "/reset-password");
+      }
 
-      if (error) {
+      if (recoveryError) {
         setErrorMessage(
           "That password reset link is invalid or has expired. Please request a new reset link and try again.",
         );
+        setIsReadyToReset(false);
+        setIsPreparingSession(false);
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (!session) {
+        setErrorMessage(
+          "Open the reset link from your email, or request a new password reset link if this one has expired.",
+        );
+        setIsReadyToReset(false);
+      } else {
+        setIsReadyToReset(true);
       }
 
       setIsPreparingSession(false);
     }
 
-    void exchangeRecoveryCode();
+    void prepareRecoverySession();
 
     return () => {
       isMounted = false;
@@ -77,6 +109,19 @@ export default function ResetPasswordPage() {
     }
 
     setIsLoading(true);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      setErrorMessage(
+        "Your password reset session is missing or expired. Please request a new reset link and try again.",
+      );
+      setIsReadyToReset(false);
+      setIsLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.updateUser({
       password,
@@ -154,7 +199,7 @@ export default function ResetPasswordPage() {
           ) : null}
 
           <div className="row">
-            <button className="btn btn-primary" type="submit" disabled={isLoading || isPreparingSession}>
+            <button className="btn btn-primary" type="submit" disabled={isLoading || isPreparingSession || !isReadyToReset}>
               {isPreparingSession ? "Preparing..." : isLoading ? "Updating..." : "Update Password"}
             </button>
 
