@@ -5,7 +5,8 @@ type AutocompleteRequestBody = {
 };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_PLACES_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask":
-          "suggestions.placePrediction.placeId,suggestions.placePrediction.text",
+          "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text",
       },
       body: JSON.stringify({
         input,
@@ -40,10 +41,27 @@ export async function POST(request: Request) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    let googleMessage = "";
+
+    try {
+      const googleError = JSON.parse(errorText) as {
+        error?: { message?: string; status?: string };
+      };
+      googleMessage = [
+        googleError.error?.status,
+        googleError.error?.message,
+      ]
+        .filter(Boolean)
+        .join(": ");
+    } catch {
+      googleMessage = errorText;
+    }
 
     return NextResponse.json(
       {
-        error: "Google Places autocomplete request failed.",
+        error:
+          googleMessage ||
+          "Google Places autocomplete request failed.",
         details: errorText,
       },
       { status: response.status },

@@ -23,7 +23,8 @@ function getComponent(
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_PLACES_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -57,10 +58,25 @@ export async function POST(request: Request) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    let googleMessage = "";
+
+    try {
+      const googleError = JSON.parse(errorText) as {
+        error?: { message?: string; status?: string };
+      };
+      googleMessage = [
+        googleError.error?.status,
+        googleError.error?.message,
+      ]
+        .filter(Boolean)
+        .join(": ");
+    } catch {
+      googleMessage = errorText;
+    }
 
     return NextResponse.json(
       {
-        error: "Google hotel details request failed.",
+        error: googleMessage || "Google hotel details request failed.",
         details: errorText,
       },
       { status: response.status },
