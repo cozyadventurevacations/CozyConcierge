@@ -1938,6 +1938,7 @@ function SectionSaveButton({ label }: { label: string }) {
 function getSavedSectionMessage(value: string | undefined) {
   if (!value) return null;
   if (value === "ai-itinerary") return "AI itinerary summary generated and saved.";
+  if (value === "ai-packing-list") return "AI packing list generated and saved.";
   if (value.startsWith("ai-")) {
     return `AI copy generated for ${value.replace("ai-", "")}.`;
   }
@@ -1960,6 +1961,9 @@ function getSavedSectionAnchor(value: string | undefined) {
     case "Commission":
     case "Commissions": return "commissions";
     case "trip": return "trip-overview";
+    case "ai-itinerary":
+    case "ai-packing-list":
+      return "trip-notes";
     default:
       if (value?.startsWith("ai-")) {
         return `${value.replace("ai-", "")}-component`;
@@ -3243,6 +3247,88 @@ async function generateTripItinerarySummary(formData: FormData) {
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}`);
   redirect(`/admin/trips/${tripId}?saved=ai-itinerary#trip-notes`);
+}
+
+async function generateTripPackingList(formData: FormData) {
+  "use server";
+
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  if (!tripId) throw new Error("Missing trip ID.");
+
+  const { supabase } = await requireAdmin();
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, trip_name, destinations, departure_date, return_date, occasion, trip_status")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error("Trip not found or access denied.");
+
+  const componentTypes = ["hotel", "air", "cruise", "transfer", "rental_car", "activity", "insurance"];
+  const componentContexts = await Promise.all(
+    componentTypes.map(async (componentType) => {
+      const context = await loadTripComponentContext(supabase, tripId, componentType).catch(() => null);
+      return context
+        ? { componentType, component: context.component, details: context.details }
+        : null;
+    }),
+  );
+
+  const generated = await generateAiJson([
+    "Create a practical client-facing packing list for this trip using saved trip and component details only.",
+    "Return JSON with exact keys:",
+    "{",
+    '  "client_note_title": "short title",',
+    '  "client_note_content": "packing list grouped into clear sections"',
+    "}",
+    "",
+    "Include sections such as carry-on essentials, documents, clothing, toiletries, medications/health, tech, comfort items, and destination- or component-specific extras when supported by the saved details.",
+    "For cruises, mention embarkation-day carry-on items when cruise details are present.",
+    "For flights, mention TSA-friendly liquids and keeping medication, documents, chargers, and valuables accessible.",
+    "For hotels, transfers, activities, or rental cars, add only practical reminders supported by the saved context.",
+    "Do not invent weather, baggage allowances, supplier rules, dress codes, visa requirements, amenities, excursions, or medical advice.",
+    "Include a short reminder that travelers should review official supplier documents, airline baggage rules, TSA/security rules, and destination entry requirements before departure.",
+    "",
+    "Trip context:",
+    stringifyForPrompt(trip),
+    "",
+    "Saved component contexts:",
+    stringifyForPrompt(componentContexts.filter(Boolean)),
+  ].join("\n"));
+
+  const title = getGeneratedText(generated, "client_note_title") || "Packing List";
+  const content = getGeneratedText(generated, "client_note_content");
+
+  if (!content) throw new Error("AI did not return a packing list.");
+
+  const { data: existingNote, error: existingNoteError } = await supabase
+    .from("trip_notes")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("note_type", "client")
+    .maybeSingle();
+
+  if (existingNoteError) throw new Error(existingNoteError.message);
+
+  if (existingNote) {
+    const { error } = await supabase
+      .from("trip_notes")
+      .update({ title, content, updated_at: new Date().toISOString() })
+      .eq("id", existingNote.id);
+
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("trip_notes")
+      .insert({ trip_id: tripId, note_type: "client", title, content });
+
+    if (error) throw new Error(error.message);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?saved=ai-packing-list#trip-notes`);
 }
 
 async function uploadComponentDocument(formData: FormData) {
@@ -10050,20 +10136,28 @@ export default async function AdminTripEditorPage({
           >
             <div>
               <p style={{ margin: 0, fontWeight: 900, color: "var(--accent-dark)" }}>
-                AI Itinerary Summary
+                AI Client Note Generator
               </p>
               <p style={{ margin: "6px 0 0", color: "#667085", lineHeight: 1.5, fontSize: 13 }}>
-                Generates a polished client note from saved hotel, air, cruise, transfer, activity, and insurance components.
+                Generates a polished client note from saved hotel, air, cruise, transfer, activity, and insurance components. Review before sending; this replaces the current client note.
               </p>
             </div>
-            <button
-              type="submit"
-              formAction={generateTripItinerarySummary}
-              className="btn btn-outline"
-              style={{ alignSelf: "flex-start" }}
-            >
-              Generate Client Itinerary Summary
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="submit"
+                formAction={generateTripItinerarySummary}
+                className="btn btn-outline"
+              >
+                Generate Itinerary Summary
+              </button>
+              <button
+                type="submit"
+                formAction={generateTripPackingList}
+                className="btn btn-outline"
+              >
+                Generate Packing List
+              </button>
+            </div>
           </div>
 
           {insuranceWaiverNote ? (
