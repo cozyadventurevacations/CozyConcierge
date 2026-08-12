@@ -934,6 +934,11 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
           <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 800 }}>Advisor Note</p>
           <h3 style={{ margin: "4px 0 0" }}>{clientNote.title ?? "Notes from Your Advisor"}</h3>
           <p className="preserve-formatting" style={{ lineHeight: 1.65, margin: 0, color: "#374151" }}>{clientNote.content}</p>
+          <div>
+            <Link href={`/api/trips/${trip.id}/packing-list`} className="btn btn-outline" style={{ fontSize: 13, padding: "9px 16px" }}>
+              Download Packing List PDF
+            </Link>
+          </div>
         </div>
       )}
     </div>

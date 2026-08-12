@@ -10157,6 +10157,12 @@ export default async function AdminTripEditorPage({
               >
                 Generate Packing List
               </button>
+              <a
+                href={`/api/admin/trips/${trip.id}/packing-list`}
+                className="btn btn-outline"
+              >
+                Download Packing List PDF
+              </a>
             </div>
           </div>
 

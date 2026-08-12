@@ -17,12 +17,14 @@
     "csv-parse": "^6.2.1",
     "next": "^15.5.19",
     "openai": "^6.37.0",
+    "pdfkit": "^0.19.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "resend": "^6.12.4"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "9.39.4",
