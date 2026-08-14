@@ -2649,6 +2649,12 @@ function formatExtractedPaymentReceiptSummary(value: unknown) {
   return parts.length ? parts.join(" | ") : "Payment receipt extracted for review.";
 }
 
+function canExtractPaymentDocument(mimeType: string | null | undefined) {
+  const normalizedMimeType = String(mimeType ?? "").trim().toLowerCase();
+
+  return normalizedMimeType === "application/pdf" || normalizedMimeType.startsWith("image/");
+}
+
 async function extractPaymentReceiptFromDocument({
   fileName,
   mimeType,
@@ -2696,9 +2702,13 @@ async function extractPaymentReceiptFromDocument({
         {
           role: "system",
           content: [
-            "You extract payment receipt details for a travel agency CRM.",
+            "You extract proof-of-payment details for a travel agency CRM.",
             "Only use information visible in the uploaded document.",
             "Do not guess, invent, or calculate missing values.",
+            "The document may be a payment receipt, invoice, payment confirmation, credit card authorization form, or supplier payment authorization.",
+            "For credit card authorization forms, treat the authorized charge amount as payment_amount when it is visible.",
+            "For credit card authorization forms, use the authorization/signature/date field as payment_date when a more specific charge date is not visible.",
+            "Never return a full credit card number. If a card reference is visible, return only the last four digits in reference_number or important_notes.",
             "Return only valid JSON. No markdown.",
           ].join("\n"),
         },
@@ -2708,7 +2718,7 @@ async function extractPaymentReceiptFromDocument({
             {
               type: "input_text",
               text: [
-                "Extract payment receipt details from this document.",
+                "Extract proof-of-payment details from this document.",
                 "Return this JSON shape:",
                 "{",
                 '  "payment_amount": string | null,',
@@ -2724,6 +2734,9 @@ async function extractPaymentReceiptFromDocument({
                 '  "important_notes": string[],',
                 '  "missing_or_unclear_fields": string[]',
                 "}",
+                "",
+                "Prefer actual paid/authorized amount over total trip price when both appear.",
+                "If there is no receipt/reference number, use invoice number, authorization code, reservation number, or last-four card reference, in that order.",
               ].join("\n"),
             },
             fileInput,
@@ -2737,6 +2750,92 @@ async function extractPaymentReceiptFromDocument({
   } finally {
     await client.files.delete(uploadedFile.id).catch(() => {});
   }
+}
+
+async function applyExtractedPaymentToTrip({
+  supabase,
+  tripId,
+  trip,
+  extracted,
+  paymentRequestId = null,
+}: {
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"];
+  tripId: string;
+  trip: { total_paid?: number | null; balance_due?: number | null };
+  extracted: Record<string, unknown>;
+  paymentRequestId?: string | null;
+}) {
+  const paymentAmount = parseExtractedAmount(extracted.payment_amount);
+
+  if (!paymentAmount || paymentAmount <= 0) {
+    throw new Error("Could not find a valid payment amount on the payment document.");
+  }
+
+  const extractedReferenceNumber =
+    cleanExtractedText(extracted.reference_number) ||
+    cleanExtractedText(extracted.receipt_number) ||
+    cleanExtractedText(extracted.invoice_number) ||
+    cleanExtractedText(extracted.authorization_code);
+  const referenceNumber = paymentRequestId
+    ? `payment-request:${paymentRequestId}`
+    : extractedReferenceNumber;
+  const paymentMethod =
+    cleanExtractedText(extracted.payment_method) ||
+    cleanExtractedText(extracted.payee_or_processor);
+  const entryDate =
+    cleanExtractedText(extracted.payment_date) || todayDateString();
+  const notes = [
+    "Auto-populated from uploaded payment document.",
+    paymentRequestId ? `Payment request: ${paymentRequestId}` : null,
+    extractedReferenceNumber ? `Document reference: ${extractedReferenceNumber}` : null,
+    cleanExtractedText(extracted.payee_or_processor)
+      ? `Processor: ${cleanExtractedText(extracted.payee_or_processor)}`
+      : null,
+    cleanExtractedText(extracted.payer_name)
+      ? `Payer: ${cleanExtractedText(extracted.payer_name)}`
+      : null,
+    ...cleanExtractedArray(extracted.important_notes),
+  ].filter(Boolean).join("\n");
+
+  const { error: ledgerError } = await supabase
+    .from("trip_payment_ledger" as any)
+    .insert({
+      trip_id: tripId,
+      entry_type: "payment",
+      amount: paymentAmount,
+      entry_date: entryDate,
+      payment_method: paymentMethod,
+      reference_number: referenceNumber,
+      notes: notes || null,
+    });
+
+  if (ledgerError) throw new Error(ledgerError.message);
+
+  const updatedTotals = applyPaymentLedgerEntry(trip, "payment", paymentAmount);
+  const { error: tripUpdateError } = await supabase
+    .from("trips")
+    .update(updatedTotals)
+    .eq("id", tripId);
+
+  if (tripUpdateError) throw new Error(tripUpdateError.message);
+
+  if (paymentRequestId) {
+    const { error: requestUpdateError } = await supabase
+      .from("payment_requests")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRequestId)
+      .eq("trip_id", tripId);
+
+    if (requestUpdateError) throw new Error(requestUpdateError.message);
+  }
+
+  return {
+    paymentAmount,
+    summary: formatExtractedPaymentReceiptSummary(extracted),
+  };
 }
 
 function getComponentLabel(componentType: string) {
@@ -5282,10 +5381,14 @@ async function uploadTripPaymentDocument(formData: FormData) {
   if (!(file instanceof File)) throw new Error("File is required.");
 
   validatePaymentDocumentFile(file);
+  const mimeType = file.type || "";
+  const shouldExtractPaymentDocument =
+    ["receipt", "authorization_form"].includes(paymentDocumentType) &&
+    canExtractPaymentDocument(mimeType);
 
   const { data: paymentRequest, error: paymentRequestError } = await supabase
     .from("payment_requests")
-    .select("id, trip_id")
+    .select("id, trip_id, status, requested_amount")
     .eq("id", requestId)
     .eq("trip_id", tripId)
     .single();
@@ -5325,13 +5428,13 @@ async function uploadTripPaymentDocument(formData: FormData) {
     throw new Error(uploadError.message);
   }
 
-  const { error: insertError } = await supabase
+  const { data: insertedDocument, error: insertError } = await supabase
     .from("trip_documents")
     .insert({
       trip_id: tripId,
       file_name: file.name,
       storage_path: storagePath,
-      mime_type: file.type || null,
+      mime_type: mimeType || null,
       file_size_bytes: file.size,
       visibility: "internal",
       component_id: null,
@@ -5342,19 +5445,91 @@ async function uploadTripPaymentDocument(formData: FormData) {
       payment_document_type: paymentDocumentType,
       is_encrypted: true,
       encryption_algorithm: "aes-256-gcm",
-    });
+      booking_extraction_status: shouldExtractPaymentDocument ? "processing" : null,
+      booking_extraction_summary: null,
+      booking_extraction_json: null,
+      booking_extracted_at: null,
+    })
+    .select("id")
+    .single();
 
-  if (insertError) {
+  if (insertError || !insertedDocument) {
     await supabase.storage.from("trip-documents").remove([storagePath]);
     throw new Error(
       getPaymentDocumentSchemaErrorMessage(insertError) ??
-        insertError.message,
+        insertError?.message ??
+        "Could not save payment document.",
+    );
+  }
+
+  if (!shouldExtractPaymentDocument) {
+    revalidatePath(`/admin/payment-requests/${requestId}`);
+    revalidatePath(`/admin/trips/${tripId}`);
+    revalidatePath(`/admin/trips/${tripId}/documents`);
+    redirect(`/admin/trips/${tripId}?paymentReceiptUploaded=1&paymentReceiptExtracted=0#trip-payments`);
+  }
+
+  const { data: trip, error: tripError } = await supabase
+    .from("trips")
+    .select("id, total_paid, balance_due")
+    .eq("id", tripId)
+    .single();
+
+  if (tripError || !trip) throw new Error(tripError?.message ?? "Trip not found.");
+
+  try {
+    const extracted = await extractPaymentReceiptFromDocument({
+      fileName: file.name,
+      mimeType: mimeType || null,
+      bytes: fileBuffer,
+    });
+
+    const { summary } = await applyExtractedPaymentToTrip({
+      supabase,
+      tripId,
+      trip,
+      extracted: extracted as Record<string, unknown>,
+      paymentRequestId: requestId,
+    });
+
+    const { error: extractionUpdateError } = await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "extracted",
+        booking_extraction_json: extracted,
+        booking_extraction_summary: summary,
+        booking_extracted_at: new Date().toISOString(),
+      })
+      .eq("id", insertedDocument.id)
+      .eq("trip_id", tripId);
+
+    if (extractionUpdateError) throw new Error(extractionUpdateError.message);
+  } catch (error) {
+    const extractionError =
+      error instanceof Error ? error.message : "Payment document extraction failed.";
+
+    await supabase
+      .from("trip_documents")
+      .update({
+        booking_extraction_status: "failed",
+        booking_extraction_summary: extractionError,
+      })
+      .eq("id", insertedDocument.id)
+      .eq("trip_id", tripId);
+
+    revalidatePath(`/admin/payment-requests/${requestId}`);
+    revalidatePath(`/admin/trips/${tripId}`);
+    revalidatePath(`/admin/trips/${tripId}/documents`);
+    redirect(
+      `/admin/trips/${tripId}?paymentReceiptUploaded=1&paymentReceiptExtracted=failed&paymentReceiptError=${encodeURIComponent(extractionError)}#trip-payments`,
     );
   }
 
   revalidatePath(`/admin/payment-requests/${requestId}`);
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/admin/trips/${tripId}/documents`);
+  revalidatePath(`/trips/${tripId}`);
+  redirect(`/admin/trips/${tripId}?paymentReceiptUploaded=1&paymentReceiptExtracted=1#trip-payments`);
 }
 
 async function uploadTripPaymentReceipt(formData: FormData) {
@@ -5371,9 +5546,7 @@ async function uploadTripPaymentReceipt(formData: FormData) {
   validatePaymentDocumentFile(file);
 
   const mimeType = file.type || "";
-  const canExtractPaymentReceipt =
-    mimeType === "application/pdf" ||
-    mimeType.startsWith("image/");
+  const canExtractPaymentReceipt = canExtractPaymentDocument(mimeType);
 
   if (!canExtractPaymentReceipt) {
     throw new Error("Receipt auto-population currently supports PDF and image receipts.");
@@ -5458,56 +5631,14 @@ async function uploadTripPaymentReceipt(formData: FormData) {
       mimeType: mimeType || null,
       bytes: fileBuffer,
     });
-    const paymentAmount = parseExtractedAmount((extracted as any).payment_amount);
 
-    if (!paymentAmount || paymentAmount <= 0) {
-      throw new Error("Could not find a valid payment amount on the receipt.");
-    }
+    const { summary } = await applyExtractedPaymentToTrip({
+      supabase,
+      tripId,
+      trip,
+      extracted: extracted as Record<string, unknown>,
+    });
 
-    const referenceNumber =
-      cleanExtractedText((extracted as any).reference_number) ||
-      cleanExtractedText((extracted as any).receipt_number) ||
-      cleanExtractedText((extracted as any).invoice_number) ||
-      cleanExtractedText((extracted as any).authorization_code);
-    const paymentMethod =
-      cleanExtractedText((extracted as any).payment_method) ||
-      cleanExtractedText((extracted as any).payee_or_processor);
-    const entryDate =
-      cleanExtractedText((extracted as any).payment_date) || todayDateString();
-    const notes = [
-      "Auto-populated from uploaded payment receipt.",
-      cleanExtractedText((extracted as any).payee_or_processor)
-        ? `Processor: ${cleanExtractedText((extracted as any).payee_or_processor)}`
-        : null,
-      cleanExtractedText((extracted as any).payer_name)
-        ? `Payer: ${cleanExtractedText((extracted as any).payer_name)}`
-        : null,
-      ...cleanExtractedArray((extracted as any).important_notes),
-    ].filter(Boolean).join("\n");
-
-    const { error: ledgerError } = await supabase
-      .from("trip_payment_ledger" as any)
-      .insert({
-        trip_id: tripId,
-        entry_type: "payment",
-        amount: paymentAmount,
-        entry_date: entryDate,
-        payment_method: paymentMethod,
-        reference_number: referenceNumber,
-        notes: notes || null,
-      });
-
-    if (ledgerError) throw new Error(ledgerError.message);
-
-    const updatedTotals = applyPaymentLedgerEntry(trip, "payment", paymentAmount);
-    const { error: tripUpdateError } = await supabase
-      .from("trips")
-      .update(updatedTotals)
-      .eq("id", tripId);
-
-    if (tripUpdateError) throw new Error(tripUpdateError.message);
-
-    const summary = formatExtractedPaymentReceiptSummary(extracted);
     const { error: extractionUpdateError } = await supabase
       .from("trip_documents")
       .update({
@@ -5896,7 +6027,7 @@ export default async function AdminTripEditorPage({
     .from("trip_documents")
     .select("id, file_name, payment_document_type, booking_extraction_status, booking_extraction_summary, created_at")
     .eq("trip_id", tripId)
-    .eq("payment_document_type", "receipt")
+    .in("payment_document_type", ["receipt", "authorization_form"])
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -6681,11 +6812,15 @@ export default async function AdminTripEditorPage({
             <p style={{ margin: 0, fontWeight: 900 }}>
               {paymentReceiptExtracted === "failed"
                 ? "Payment receipt uploaded, but auto-population failed."
+                : paymentReceiptExtracted === "0"
+                  ? "Payment document uploaded."
                 : "Payment receipt uploaded and applied."}
             </p>
             <p style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
               {paymentReceiptExtracted === "failed"
                 ? paymentReceiptError || "The receipt was saved, but payment fields could not be read."
+                : paymentReceiptExtracted === "0"
+                  ? "The payment document was saved. Auto-population runs only for receipt or authorization PDFs and images."
                 : "A payment ledger entry was created from the receipt and trip totals were updated."}
             </p>
           </div>
@@ -6747,7 +6882,7 @@ export default async function AdminTripEditorPage({
 
         <StickyTripActionBar clientId={clientInfo?.id} tripId={trip.id} />
 
-        <span id="advisor-reminders" />
+        <span id="advisor-reminders" className="admin-trip-anchor" />
         <div className="card stack" style={{ border: "1px solid #dbeafe", background: "#f8fbff" }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div>
@@ -7199,7 +7334,7 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
-        <span id="trip-timeline" />
+        <span id="trip-timeline" className="admin-trip-anchor" />
         <CollapsibleSection title="Trip Timeline / Milestone Tracker" defaultOpen>
           {tripMilestonesError ? (
             <div className="card">
@@ -7231,7 +7366,7 @@ export default async function AdminTripEditorPage({
           )}
         </CollapsibleSection>
 
-        <span id="trip-overview" />
+        <span id="trip-overview" className="admin-trip-anchor" />
         <CollapsibleSection title="Trip Overview">
           <div className="grid grid-2">
             <label>
@@ -7437,7 +7572,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Trip Overview" />
         </CollapsibleSection>
 
-        <span id="hotel-component" />
+        <span id="hotel-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hasHotelComponent ? "Added" : "Missing"} tone={hasHotelComponent ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -7596,7 +7731,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Hotel Component" />
         </CollapsibleSection>
 
-        <span id="air-component" />
+        <span id="air-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={hasAirComponent ? "Added" : "Missing"} tone={hasAirComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -7889,7 +8024,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Air Component" />
         </CollapsibleSection>
 
-        <span id="cruise-component" />
+        <span id="cruise-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={hasCruiseComponent ? "Added" : "Missing"} tone={hasCruiseComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -8158,7 +8293,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Cruise Component" />
         </CollapsibleSection>
 
-        <span id="transfer-component" />
+        <span id="transfer-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={hasTransferComponent ? "Added" : "Missing"} tone={hasTransferComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -8361,7 +8496,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Transfer Component" />
         </CollapsibleSection>
 
-        <span id="rental_car-component" />
+        <span id="rental_car-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Rental Car Component" badge={hasRentalCarComponent ? "Added" : "Missing"} tone={hasRentalCarComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -8553,7 +8688,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Rental Car Component" />
         </CollapsibleSection>
 
-        <span id="activity-component" />
+        <span id="activity-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={hasActivityComponent ? "Added" : "Missing"} tone={hasActivityComponent ? "good" : "neutral"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -8747,7 +8882,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Activity Component" />
         </CollapsibleSection>
 
-        <span id="insurance-component" />
+        <span id="insurance-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={hasInsuranceComponent ? "Added" : "Missing"} tone={hasInsuranceComponent ? "good" : "warning"} />}>
           <ComponentCommissionLink
             tripId={trip.id}
@@ -8964,7 +9099,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Insurance Component" />
         </CollapsibleSection>
 
-        <span id="trip-payments" />
+        <span id="trip-payments" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Payments & Adjustments" badge={`${tripPaymentLedgerRows.length} entries`} tone={tripPaymentLedgerRows.length > 0 ? "good" : "neutral"} />}>
           <div className="grid grid-3">
             <div className="card">
@@ -9255,7 +9390,7 @@ export default async function AdminTripEditorPage({
           )}
         </CollapsibleSection>
 
-        <span id="proposal" />
+        <span id="proposal" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Proposal" badge={proposal?.client_decision === "approved" ? "Approved" : proposal?.client_visible ? "Published" : proposal ? "Draft" : "Empty"} tone={proposal?.client_decision === "approved" ? "good" : proposal?.client_visible ? "neutral" : proposal ? "warning" : "neutral"} />}>
           <div className="grid grid-2">
             <label>
@@ -9368,7 +9503,7 @@ export default async function AdminTripEditorPage({
           <SectionSaveButton label="Proposal" />
         </CollapsibleSection>
 
-        <span id="commissions" />
+        <span id="commissions" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Commissions for This Trip" badge={`${commissionRows.length} record${commissionRows.length === 1 ? "" : "s"}`} tone={commissionRows.length > 0 ? "good" : "neutral"} />}>
           <div
             style={{
@@ -9538,7 +9673,7 @@ export default async function AdminTripEditorPage({
           }}
         >
           <div className="stack">
-        <span id="trip-messages" />
+        <span id="trip-messages" className="admin-trip-anchor" />
         <div
           className="card stack"
           style={{
@@ -9667,7 +9802,7 @@ export default async function AdminTripEditorPage({
           </div>
 
           <div className="stack">
-        <span id="travel-companions" />
+        <span id="travel-companions" className="admin-trip-anchor" />
         <div
           className="card stack"
           style={{
@@ -9836,7 +9971,7 @@ export default async function AdminTripEditorPage({
         </div>
 
         <style>{"@media (max-width: 980px) { .admin-trip-relationship-grid { grid-template-columns: 1fr !important; } }"}</style>
-        <span id="document-readiness" />
+        <span id="document-readiness" className="admin-trip-anchor" />
         <div
           className="card stack"
           style={{
@@ -9925,7 +10060,7 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
-        <span id="trip-snapshot" />
+        <span id="trip-snapshot" className="admin-trip-anchor" />
         <div className="card stack" style={{ background: "#f7fbfc", border: "1px solid #e6f0f2" }}>
           <div
             style={{
@@ -10125,7 +10260,7 @@ export default async function AdminTripEditorPage({
           </div>
         </div>
 
-        <span id="trip-notes" />
+        <span id="trip-notes" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Notes" badge={clientReminder ? "Reminder added" : "Needs reminder"} tone={clientReminder ? "good" : "warning"} />}>
           <div
             className="card stack"

@@ -188,6 +188,18 @@ textarea.interaction-acknowledged {
   padding: 24px;
 }
 
+.admin-trip-anchor {
+  display: block;
+  height: 0;
+  scroll-margin-top: 170px;
+}
+
+@media (max-width: 700px) {
+  .admin-trip-anchor {
+    scroll-margin-top: 230px;
+  }
+}
+
 /* ── Tighter padding on mobile ── */
 @media (max-width: 640px) {
   .container {
