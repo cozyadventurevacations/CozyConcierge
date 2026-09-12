@@ -395,6 +395,82 @@ textarea.interaction-acknowledged {
   color: var(--muted);
 }
 
+.label-sheet {
+  display: grid;
+  grid-template-columns: repeat(3, 2.625in);
+  grid-auto-rows: 1in;
+  gap: 0;
+  width: 8.125in;
+  padding: 0.5in 0 0;
+  margin: 0 auto;
+  background: #ffffff;
+}
+
+.mailing-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 2.625in;
+  height: 1in;
+  padding: 0 0.13in;
+  overflow: hidden;
+  color: #111827;
+  font-size: 10pt;
+  line-height: 1.2;
+}
+
+@media screen {
+  .label-sheet {
+    border: 1px solid var(--border);
+    box-shadow: 0 12px 30px rgba(18, 63, 91, 0.08);
+  }
+
+  .mailing-label {
+    border: 1px dashed #d6e4ea;
+  }
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.5in 0.1875in;
+  }
+
+  html,
+  body {
+    background: #ffffff;
+  }
+
+  body > header,
+  .label-toolbar,
+  .page-title,
+  .page-subtitle {
+    display: none !important;
+  }
+
+  .container {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .label-sheet {
+    width: 8.125in;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .mailing-label {
+    border: 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
 /* ── Tighter table cells on mobile ── */
 @media (max-width: 640px) {
   .table th,

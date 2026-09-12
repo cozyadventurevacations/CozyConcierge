@@ -9,8 +9,11 @@ type ClientRow = {
   preferred_name: string | null;
   email: string | null;
   phone_primary: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
   city: string | null;
   state: string | null;
+  postal_code: string | null;
   travel_style: string | null;
   preferred_airport: string | null;
   passport_expiration_date: string | null;
@@ -50,6 +53,10 @@ function isRecent(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
   return Date.now() - date.getTime() <= 1000 * 60 * 60 * 24 * 30;
+}
+
+function hasMailingAddress(client: ClientRow) {
+  return Boolean(client.address_line_1 && client.city && client.state && client.postal_code);
 }
 
 function passportStatus(client: ClientRow, uploadedPassportIds: Set<string>) {
@@ -109,7 +116,7 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
 
   const { data: clients, error } = await supabase
     .from("client_accounts")
-    .select("id, first_name, last_name, preferred_name, email, phone_primary, city, state, travel_style, preferred_airport, passport_expiration_date, created_at")
+    .select("id, first_name, last_name, preferred_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, travel_style, preferred_airport, passport_expiration_date, created_at")
     .order("last_name", { ascending: true, nullsFirst: false })
     .order("first_name", { ascending: true, nullsFirst: false })
     .order("preferred_name", { ascending: true, nullsFirst: false })
@@ -132,13 +139,18 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
   const recentCount = allRows.filter((client) => isRecent(client.created_at)).length;
   const missingPassportCount = allRows.filter((client) => !uploadedPassportIds.has(client.id)).length;
   const passportAttentionCount = allRows.filter((client) => matchesFilter(client, "passport-expiring", uploadedPassportIds)).length;
+  const mailingAddressCount = allRows.filter(hasMailingAddress).length;
   const base = "/admin/clients";
 
   return (
     <PageShell title="Clients" subtitle="Search and manage client records.">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <p style={{ margin: 0, color: "#64748b" }}>Showing {rows.length} of {allRows.length} client records.</p>
-        <Link href="/admin/clients/new" className="btn btn-primary">Add New Client</Link>
+        <div className="row">
+          <Link href="/admin/clients/labels" className="btn btn-outline">Print All Labels</Link>
+          <Link href="/api/admin/clients/mailing-export" className="btn btn-outline">Export Mailing CSV</Link>
+          <Link href="/admin/clients/new" className="btn btn-primary">Add New Client</Link>
+        </div>
       </div>
 
       <div className="grid grid-4">
@@ -146,6 +158,7 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
         <SummaryCard label="Recently Added" value={recentCount} helper="Last 30 days" />
         <SummaryCard label="Missing Passport" value={missingPassportCount} helper="No passport upload" tone={missingPassportCount > 0 ? "warning" : "good"} />
         <SummaryCard label="Passport Attention" value={passportAttentionCount} helper="Expired or expiring soon" tone={passportAttentionCount > 0 ? "warning" : "good"} />
+        <SummaryCard label="Mailable Clients" value={mailingAddressCount} helper="Complete postal address" tone={mailingAddressCount > 0 ? "good" : "warning"} />
       </div>
 
       <div className="card stack">
@@ -188,6 +201,7 @@ export default async function AdminClientsPage({ searchParams }: { searchParams:
 
                     <div className="row" style={{ gap: 6 }}>
                       <Link href={`/admin/clients/${client.id}`} className="btn btn-primary" style={{ fontSize: 13, padding: "6px 10px" }}>Open</Link>
+                      <Link href={`/admin/clients/labels?clientId=${client.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px" }}>Label</Link>
                       <Link href={`/admin/clients/${client.id}#private-message`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px" }}>Message</Link>
                       <Link href={`/admin/clients/${client.id}#delete-client`} className="btn btn-outline" style={{ fontSize: 13, padding: "6px 10px", color: "#be123c", borderColor: "#fecaca" }}>Delete</Link>
                     </div>

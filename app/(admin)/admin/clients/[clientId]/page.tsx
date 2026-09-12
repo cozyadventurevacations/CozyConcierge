@@ -226,6 +226,10 @@ function getLoyaltyTypeLabel(type: string | null | undefined) {
   }
 }
 
+function hasMailingAddress(client: Pick<ClientDetail, "address_line_1" | "city" | "state" | "postal_code">) {
+  return Boolean(client.address_line_1 && client.city && client.state && client.postal_code);
+}
+
 function InfoItem({ label, value }: { label: string; value: ReactNode }) {
   const isEmpty = value === null || value === undefined || value === "";
   return (
@@ -753,6 +757,9 @@ export default async function AdminClientDetailPage({
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
         <ActionButton href="/admin/clients">Back to Clients</ActionButton>
         <ActionButton href={`/admin/clients/${clientRow.id}/documents`}>View Documents</ActionButton>
+        {hasMailingAddress(clientRow) ? (
+          <ActionButton href={`/admin/clients/labels?clientId=${clientRow.id}`}>Print Mailing Label</ActionButton>
+        ) : null}
         <ActionButton href={`/admin/clients/${clientRow.id}/notes/new`}>Add Note</ActionButton>
         <ActionButton href={`/admin/trips/new?clientId=${clientRow.id}`}>Add Trip</ActionButton>
         <ActionButton href={`/admin/clients/${clientRow.id}/edit`}>Edit Client</ActionButton>
