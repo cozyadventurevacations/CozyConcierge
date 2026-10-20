@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 type Suggestion = {
   placeId: string;
@@ -46,6 +46,12 @@ export function AddressAutocomplete({
   helperText = "Start typing your address, then choose the best match from the list.",
   required = false,
 }: AddressAutocompleteProps) {
+  const listboxId = useId();
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchRevision, setSearchRevision] = useState(0);
+  const searchControllerRef = useRef<AbortController | null>(null);
+  const detailsControllerRef = useRef<AbortController | null>(null);
+
   const names = {
     addressLine1: fieldNames?.addressLine1 ?? "address_line_1",
     addressLine2: fieldNames?.addressLine2 ?? "address_line_2",
@@ -71,12 +77,20 @@ export function AddressAutocomplete({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    return () => {
+      searchControllerRef.current?.abort();
+      detailsControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     function handleDocumentMouseDown(event: MouseEvent) {
       if (!wrapperRef.current) return;
 
       if (!wrapperRef.current.contains(event.target as Node)) {
         setIsSuggestionBoxOpen(false);
-        setSuggestions([]);
+        searchControllerRef.current?.abort();
+        setIsSearching(false);
       }
     }
 
@@ -92,6 +106,9 @@ export function AddressAutocomplete({
       clearTimeout(debounceRef.current);
     }
 
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
     const input = addressLine1.trim();
 
     if (!hasUserTyped || hasSelectedSuggestion) {
@@ -108,6 +125,7 @@ export function AddressAutocomplete({
     }
 
     debounceRef.current = setTimeout(async () => {
+      if (controller.signal.aborted) return;
       setIsSearching(true);
 
       try {
@@ -117,9 +135,11 @@ export function AddressAutocomplete({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ input }),
+          signal: controller.signal,
         });
 
         const data = await response.json();
+        if (controller.signal.aborted) return;
 
         if (!response.ok) {
           setSuggestions([]);
@@ -133,31 +153,37 @@ export function AddressAutocomplete({
 
         const nextSuggestions = (data.suggestions ?? []) as Suggestion[];
 
+        setActiveIndex(-1);
         setSuggestions(nextSuggestions);
         setIsSuggestionBoxOpen(nextSuggestions.length > 0);
         setStatusMessage(null);
       } catch {
+        if (controller.signal.aborted) return;
         setSuggestions([]);
         setIsSuggestionBoxOpen(false);
         setStatusMessage(
           "Address suggestions could not be loaded. You can still enter your address manually.",
         );
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 350);
 
     return () => {
+      controller.abort();
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [addressLine1, hasUserTyped, hasSelectedSuggestion]);
+  }, [addressLine1, hasUserTyped, hasSelectedSuggestion, searchRevision]);
 
   async function handleSelectSuggestion(suggestion: Suggestion) {
+    searchControllerRef.current?.abort();
+    detailsControllerRef.current?.abort();
+    const controller = new AbortController();
+    detailsControllerRef.current = controller;
     setHasSelectedSuggestion(true);
     setHasUserTyped(false);
-    setAddressLine1(suggestion.text);
     setSuggestions([]);
     setIsSuggestionBoxOpen(false);
 
@@ -175,9 +201,11 @@ export function AddressAutocomplete({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ placeId: suggestion.placeId }),
+        signal: controller.signal,
       });
 
       const data = await response.json();
+      if (controller.signal.aborted) return;
 
       if (!response.ok) {
         setStatusMessage(
@@ -188,27 +216,18 @@ export function AddressAutocomplete({
 
       const address = data.address as AddressDetails;
 
-      if (address.addressLine1) {
-        setAddressLine1(address.addressLine1);
-      }
-
-      if (address.city) {
-        setCity(address.city);
-      }
-
-      if (address.state) {
-        setState(address.state);
-      }
-
-      if (address.postalCode) {
-        setPostalCode(address.postalCode);
-      }
+      // Replace every field so a partial result cannot retain the previous address.
+      setAddressLine1(address.addressLine1 ?? "");
+      setCity(address.city ?? "");
+      setState(address.state ?? "");
+      setPostalCode(address.postalCode ?? "");
 
       setSuggestions([]);
       setIsSuggestionBoxOpen(false);
       setIsSearching(false);
       setStatusMessage("Address details filled in. Please review them before saving.");
     } catch {
+      if (controller.signal.aborted) return;
       setSuggestions([]);
       setIsSuggestionBoxOpen(false);
       setIsSearching(false);
@@ -217,6 +236,12 @@ export function AddressAutocomplete({
   }
 
   function handleAddressLine1Change(value: string) {
+    searchControllerRef.current?.abort();
+    detailsControllerRef.current?.abort();
+    setSuggestions([]);
+    setActiveIndex(-1);
+    setIsSuggestionBoxOpen(false);
+    setStatusMessage(null);
     setHasUserTyped(true);
     setHasSelectedSuggestion(false);
     setAddressLine1(value);
@@ -229,20 +254,51 @@ export function AddressAutocomplete({
   }
 
   function handleAddressLine1Focus() {
-    if (suggestions.length > 0 && hasUserTyped && !hasSelectedSuggestion) {
+    if (!hasUserTyped || hasSelectedSuggestion) return;
+
+    if (suggestions.length > 0) {
       setIsSuggestionBoxOpen(true);
+    } else if (addressLine1.trim().length >= 3 && searchControllerRef.current?.signal.aborted) {
+      setSearchRevision((revision) => revision + 1);
     }
   }
 
   function handleAddressLine1KeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
+      searchControllerRef.current?.abort();
+      setIsSearching(false);
       setIsSuggestionBoxOpen(false);
-      setSuggestions([]);
+    } else if (event.key === "ArrowDown" && suggestions.length > 0) {
+      event.preventDefault();
+      setIsSuggestionBoxOpen(true);
+      setActiveIndex((index) => (index + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp" && suggestions.length > 0) {
+      event.preventDefault();
+      setIsSuggestionBoxOpen(true);
+      setActiveIndex((index) => (index <= 0 ? suggestions.length - 1 : index - 1));
+    } else if (event.key === "Enter" && isSuggestionBoxOpen && activeIndex >= 0) {
+      event.preventDefault();
+      void handleSelectSuggestion(suggestions[activeIndex]);
     }
   }
 
+  function handleManualDetailChange() {
+    detailsControllerRef.current?.abort();
+    setStatusMessage(null);
+  }
+
   return (
-    <div ref={wrapperRef} className="stack">
+    <div
+      ref={wrapperRef}
+      className="stack"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          searchControllerRef.current?.abort();
+          setIsSearching(false);
+          setIsSuggestionBoxOpen(false);
+        }
+      }}
+    >
       <div className="stack-sm" style={{ position: "relative" }}>
         <label className="label" htmlFor={names.addressLine1}>
           {addressLine1Label}
@@ -257,7 +313,14 @@ export function AddressAutocomplete({
           onFocus={handleAddressLine1Focus}
           onKeyDown={handleAddressLine1KeyDown}
           placeholder="Start typing your street address"
-          autoComplete="address-line1"
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isSuggestionBoxOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={
+            isSuggestionBoxOpen && activeIndex >= 0 ? listboxId + "-" + activeIndex : undefined
+          }
           required={required}
         />
 
@@ -267,6 +330,9 @@ export function AddressAutocomplete({
 
         {isSuggestionBoxOpen && suggestions.length > 0 ? (
           <div
+            id={listboxId}
+            role="listbox"
+            aria-label="Address suggestions"
             style={{
               position: "absolute",
               top: "calc(100% + 4px)",
@@ -280,19 +346,23 @@ export function AddressAutocomplete({
               overflow: "hidden",
             }}
           >
-            {suggestions.map((suggestion) => (
+            {suggestions.map((suggestion, index) => (
               <button
                 key={suggestion.placeId}
                 type="button"
+                id={listboxId + "-" + index}
+                role="option"
+                aria-selected={activeIndex === index}
+                tabIndex={-1}
+                onClick={() => void handleSelectSuggestion(suggestion)}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  handleSelectSuggestion(suggestion);
                 }}
                 style={{
                   display: "block",
                   width: "100%",
                   border: 0,
-                  background: "#ffffff",
+                  background: activeIndex === index ? "#eef6f8" : "#ffffff",
                   padding: "12px 14px",
                   textAlign: "left",
                   cursor: "pointer",
@@ -313,7 +383,10 @@ export function AddressAutocomplete({
           className="input"
           name={names.addressLine2}
           value={addressLine2}
-          onChange={(event) => setAddressLine2(event.target.value)}
+          onChange={(event) => {
+            handleManualDetailChange();
+            setAddressLine2(event.target.value);
+          }}
           placeholder="Apartment, suite, unit, etc."
           autoComplete="address-line2"
         />
@@ -329,7 +402,10 @@ export function AddressAutocomplete({
             className="input"
             name={names.city}
             value={city}
-            onChange={(event) => setCity(event.target.value)}
+            onChange={(event) => {
+              handleManualDetailChange();
+              setCity(event.target.value);
+            }}
             autoComplete="address-level2"
             required={required}
           />
@@ -341,7 +417,10 @@ export function AddressAutocomplete({
             className="input"
             name={names.state}
             value={state}
-            onChange={(event) => setState(event.target.value)}
+            onChange={(event) => {
+              handleManualDetailChange();
+              setState(event.target.value);
+            }}
             autoComplete="address-level1"
             required={required}
           />
@@ -353,7 +432,10 @@ export function AddressAutocomplete({
             className="input"
             name={names.postalCode}
             value={postalCode}
-            onChange={(event) => setPostalCode(event.target.value)}
+            onChange={(event) => {
+              handleManualDetailChange();
+              setPostalCode(event.target.value);
+            }}
             autoComplete="postal-code"
             required={required}
           />
@@ -367,7 +449,7 @@ export function AddressAutocomplete({
       ) : null}
 
       {statusMessage ? (
-        <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
+        <p role="status" style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
           {statusMessage}
         </p>
       ) : null}

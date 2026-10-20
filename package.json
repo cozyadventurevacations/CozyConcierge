@@ -9,13 +9,14 @@
     "lint": "eslint . --no-cache",
     "typecheck": "tsc --noEmit",
     "import:airports": "node scripts/import-airports.mjs",
-    "import:airlines": "node scripts/import-airlines.mjs"
+    "import:airlines": "node scripts/import-airlines.mjs",
+    "check:places": "node scripts/check-places.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.0",
     "csv-parse": "^6.2.1",
-    "next": "^15.5.19",
+    "next": "15.5.28",
     "openai": "^6.37.0",
     "pdfkit": "^0.19.1",
     "react": "19.1.0",
@@ -28,10 +29,11 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "9.39.4",
-    "eslint-config-next": "^15.5.19",
+    "eslint-config-next": "15.5.28",
     "typescript": "^5.8.0"
   },
   "overrides": {
-    "postcss": "8.5.15"
+    "postcss": "8.5.31",
+    "sharp": "0.35.5"
   }
 }
