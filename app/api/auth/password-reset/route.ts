@@ -1,3 +1,4 @@
+import { protectPublicRequest } from "@/lib/security/request-limits";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
@@ -37,7 +38,7 @@ async function sendPasswordResetEmail(email: string, actionLink: string) {
   const resend = new Resend(apiKey);
   const safeLink = escapeHtml(actionLink);
 
-  await resend.emails.send({
+  const { error } = await resend.emails.send({
     from: `${fromName} <${fromEmail}>`,
     to: email,
     subject: "Reset your Cozy Concierge password",
@@ -71,6 +72,7 @@ async function sendPasswordResetEmail(email: string, actionLink: string) {
       "If you did not request this, you can ignore this email.",
     ].join("\n"),
   });
+  if (error) throw new Error("Email delivery unavailable.");
 }
 
 export async function POST(request: Request) {
@@ -78,7 +80,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const email = String(body?.email ?? "").trim().toLowerCase();
 
-    if (!email || !email.includes("@")) {
+    const limited = await protectPublicRequest(request, "password-reset", email.slice(0, 254));
+    if (limited) return limited;
+    if (!email || !email.includes("@") || email.length > 254) {
       return NextResponse.json({ ok: true });
     }
 
@@ -92,18 +96,14 @@ export async function POST(request: Request) {
     });
 
     if (error || !data.properties?.action_link) {
-      console.warn("Password reset link generation skipped.", {
-        email,
-        error: error?.message ?? "Missing action link.",
-      });
       return NextResponse.json({ ok: true });
     }
 
     await sendPasswordResetEmail(email, data.properties.action_link);
 
     return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error("Password reset request failed.", error);
+  } catch {
+    console.error("Password reset request failed.");
     return NextResponse.json(
       { error: "Unable to send password reset email right now." },
       { status: 500 },

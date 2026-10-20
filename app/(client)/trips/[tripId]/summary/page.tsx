@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 ﻿/* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
 import Image from "next/image";
@@ -53,7 +54,7 @@ async function getCurrentClientAccount() {
   const { data: byEmail, error: emailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (emailError) throw new Error(emailError.message);

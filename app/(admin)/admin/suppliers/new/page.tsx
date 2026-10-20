@@ -58,7 +58,7 @@ function getSupplierPhoneRows(formData: FormData, supplierId: string) {
         sort_order: index,
       };
     })
-    .filter(Boolean);
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 }
 
 function Field({

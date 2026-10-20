@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { PageShell } from "@/components/layout/page-shell";
@@ -193,7 +194,7 @@ async function getCurrentClientAccount() {
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (clientEmailError) {

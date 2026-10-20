@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
@@ -423,7 +424,7 @@ async function getCurrentClientAccount() {
   const { data: byEmail, error: emailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (emailError) throw new Error(emailError.message);
@@ -681,7 +682,7 @@ async function requestTripDeletion(formData: FormData) {
   const { data: clientAccount } = await supabase
     .from("client_accounts")
     .select("id, email")
-    .ilike("email", user.email?.trim().toLowerCase() ?? "")
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (!clientAccount || trip.client_account_id !== clientAccount.id) {

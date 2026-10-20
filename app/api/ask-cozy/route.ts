@@ -1,3 +1,5 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
+import { protectPaidEndpoint } from "@/lib/security/request-limits";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -261,7 +263,7 @@ async function getCurrentClientAccount() {
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (clientEmailError) {
@@ -724,6 +726,8 @@ async function touchThread({
 }
 
 export async function POST(request: Request) {
+  const limited = await protectPaidEndpoint(request, "ai", 20, 100);
+  if (limited) return limited;
   try {
     const apiKey = process.env.OPENAI_API_KEY;
 

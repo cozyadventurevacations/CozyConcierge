@@ -1,3 +1,4 @@
+import { validateDocumentUpload } from "@/lib/security/uploads";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -314,7 +315,7 @@ async function uploadTripDocument(formData: FormData) {
   const { error: uploadError } = await supabase.storage
     .from("trip-documents")
     .upload(storagePath, fileBuffer, {
-      contentType: file.type || "application/octet-stream",
+      contentType: await validateDocumentUpload(file),
       upsert: false,
     });
 

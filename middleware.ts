@@ -1,137 +1,60 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import type { CookieOptions } from "@supabase/ssr";
 
-const PUBLIC_PATHS = [
-  "/login",
-  "/register",
-  "/forgot-password",
-  "/reset-password",
-  "/auth/callback",
-  "/logout",
-  "/groups",
-];
-
-const PUBLIC_API_PATHS = [
-  "/api/register-client",
-  "/api/auth/password-reset",
-  "/api/automations/send-emails",
-];
-
-// These admin-namespaced routes are called by external cron jobs (not a
-// logged-in browser session) and authenticate themselves internally via a
-// CRON_SECRET / x-purge-secret header check. They must be exact matches
-// only — do NOT widen this to a prefix match on "/api/admin", since that
-// would bypass the admin-role check below for every other admin API route.
-const PUBLIC_CRON_API_EXACT_PATHS = [
-  "/api/admin/check-cruise-prices",
-  "/api/admin/purge-deleted-trips",
-];
-
-function isAdminRole(role: string | null | undefined) {
-  const normalizedRole = String(role ?? "").trim().toLowerCase();
-
-  return (
-    normalizedRole === "admin" ||
-    normalizedRole === "owner" ||
-    normalizedRole === "administrator"
-  );
-}
+const PUBLIC_PATHS = ["/", "/login", "/register", "/forgot-password", "/reset-password", "/auth/callback", "/logout", "/privacy-policy", "/terms-and-conditions"];
+const PUBLIC_ASSETS = ["/worldvia-supplier-extractor.js","/travel-library/life-onboard-cruise-rhythm.pdf","/travel-library/join-your-cruise-facebook-group.pdf","/travel-library/30-day-cruise-countdown-checklist.pdf","/legal/cozy-adventure-vacations-terms-and-conditions.pdf","/legal/cozy-adventure-vacations-terms-and-conditions.docx","/insurance/allianz/allianz-latitude-plan.pdf","/insurance/allianz/allianz-journey-plan.pdf","/insurance/allianz/allianz-classic-cancel-anytime-plan.pdf"];
+const PUBLIC_API_PATHS = ["/api/register-client", "/api/auth/password-reset", "/api/automations/send-emails",
+  "/api/admin/check-cruise-prices", "/api/admin/purge-deleted-trips", "/api/admin/check-booking-windows"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+  if (PUBLIC_PATHS.includes(pathname) || PUBLIC_ASSETS.includes(pathname) || pathname === "/groups" || pathname.startsWith("/groups/") || PUBLIC_API_PATHS.includes(pathname)) {
     return NextResponse.next();
   }
-
-  if (PUBLIC_API_PATHS.some((path) => pathname.startsWith(path))) {
-    return NextResponse.next();
-  }
-
-  if (PUBLIC_CRON_API_EXACT_PATHS.includes(pathname)) {
-    return NextResponse.next();
-  }
-
-  if (pathname === "/") {
-    return NextResponse.next();
-  }
-
-  const response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(
-          cookiesToSet: {
-            name: string;
-            value: string;
-            options: CookieOptions;
-          }[],
-        ) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value);
-            response.cookies.set(name, value, options);
-          });
-        },
+  let response = NextResponse.next({ request });
+  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    cookies: {
+      getAll: () => request.cookies.getAll(),
+      setAll(cookiesToSet, headers) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        Object.entries(headers ?? {}).forEach(([key, value]) => response.headers.set(key, value));
       },
     },
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+  });
+  const finish = (result: NextResponse) => {
+    response.cookies.getAll().forEach(cookie => result.cookies.set(cookie));
+    result.headers.set("Cache-Control", "private, no-store");
+    return result;
+  };
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return finish(pathname.startsWith("/api/")
+      ? NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+      : NextResponse.redirect(new URL("/login", request.url)));
   }
-
-  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
-    const userEmail = user.email?.trim().toLowerCase() ?? "";
-
-    const { data: profileByAuthId } = await supabase
-      .from("user_profiles")
-      .select("role")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
-
-    let role = profileByAuthId?.role ?? null;
-
-    if (!isAdminRole(role) && userEmail) {
-      const { data: profileByEmail } = await supabase
-        .from("user_profiles")
-        .select("role")
-        .ilike("email", userEmail)
-        .maybeSingle();
-
-      role = profileByEmail?.role ?? role;
+  const isAdminPath = pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/api/admin" || pathname.startsWith("/api/admin/");
+  if (isAdminPath) {
+    const { data: profile } = await supabase.from("user_profiles").select("role").eq("auth_user_id", user.id).maybeSingle();
+    if (!["admin", "owner", "administrator"].includes(String(profile?.role).trim().toLowerCase())) {
+      return finish(pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "Forbidden." }, { status: 403 })
+        : NextResponse.redirect(new URL("/dashboard", request.url)));
     }
-
-    if (!isAdminRole(role)) {
-      if (pathname.startsWith("/api/admin")) {
-        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-      }
-
-      const dashboardUrl = new URL("/dashboard", request.url);
-      return NextResponse.redirect(dashboardUrl);
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assuranceError || assurance?.currentLevel !== "aal2") {
+      const target = new URL("/auth/mfa", request.url);
+      target.searchParams.set("next", pathname + request.nextUrl.search);
+      return finish(pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "Verify your authenticator to continue.", code: "mfa_required" }, { status: 403 })
+        : NextResponse.redirect(target));
     }
   }
-
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|cozy-logo.png|jeremy.jpg|robots.txt|sitemap.xml).*)"],
 };

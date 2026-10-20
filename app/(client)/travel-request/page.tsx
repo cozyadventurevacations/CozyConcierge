@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
@@ -42,7 +43,7 @@ async function getCurrentClientAccount() {
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email, phone_primary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, preferred_airport")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (clientEmailError) throw new Error(clientEmailError.message);

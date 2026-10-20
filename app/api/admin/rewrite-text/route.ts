@@ -1,8 +1,11 @@
+import { protectPaidEndpoint } from "@/lib/security/request-limits";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/require-admin";
 
 export async function POST(request: Request) {
+  const limited = await protectPaidEndpoint(request, "ai", 20, 100);
+  if (limited) return limited;
   await requireAdmin();
 
   const apiKey = process.env.OPENAI_API_KEY;

@@ -3,9 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
-import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 declare global {
   interface Window {
@@ -43,8 +41,6 @@ function BrandPanel() {
 }
 
 export default function RegisterPage() {
-  const router = useRouter();
-  const supabase = createClient();
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   const [firstName, setFirstName] = useState("");
@@ -146,19 +142,12 @@ export default function RegisterPage() {
         return;
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-
-      if (signInError) {
-        setSuccessMessage("Account created. Please sign in with your email and password.");
-        setErrorMessage(null);
-        return;
-      }
-
-      router.replace("/dashboard");
-      router.refresh();
+      setSuccessMessage(result.message ?? "Check your email to confirm your account before signing in.");
+      setPassword(""); setConfirmPassword("");
+      window.turnstile?.reset(); setCaptchaToken("");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        setErrorMessage("The account creation request timed out. Please check Supabase to see if the user was created, then try again if needed.");
+        setErrorMessage("The request timed out. Check your inbox for a confirmation email, then try again if needed.");
         return;
       }
       setErrorMessage(error instanceof Error ? error.message : "Something went wrong while creating the account.");
@@ -185,7 +174,7 @@ export default function RegisterPage() {
           <div>
             <p style={{ margin: 0, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-dark)", fontWeight: 900 }}>Client account</p>
             <h1 style={{ margin: "6px 0 0" }}>Create your Cozy Concierge login</h1>
-            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations so trips, shared access, and documents can connect automatically.</p>
+            <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations and confirm your email to connect your trips, shared access, and documents.</p>
           </div>
 
           {successMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}

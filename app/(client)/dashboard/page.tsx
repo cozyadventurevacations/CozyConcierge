@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -710,7 +711,7 @@ async function dismissWelcome() {
   const { data: byEmail } = await supabase
     .from("client_accounts")
     .select("id")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   let clientAccountId = byEmail?.id ?? null;
@@ -755,7 +756,7 @@ async function getCurrentClientAccount() {
   const { data: byEmail, error: emailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, preferred_name, email, welcome_dismissed_at")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (emailError) throw new Error(emailError.message);

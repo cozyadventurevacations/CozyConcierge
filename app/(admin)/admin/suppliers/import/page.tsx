@@ -251,7 +251,7 @@ async function importSuppliers(formData: FormData) {
           sort_order: index,
         };
       })
-      .filter(Boolean);
+      .filter((row): row is NonNullable<typeof row> => row !== null);
 
     if (phoneRows.length > 0 && supplierId) {
       const labels = phoneRows.map((phoneRow: any) => phoneRow.label);

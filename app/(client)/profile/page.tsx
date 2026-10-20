@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -307,7 +308,7 @@ async function getCurrentClientAccount() {
 
   const selectFields = `id, first_name, middle_name, last_name, preferred_name, email, phone_primary, phone_secondary, address_line_1, address_line_2, city, state, postal_code, date_of_birth, anniversary_date, preferred_airport, travel_style, airline_seating_preference, airline_class_preference, cruise_cabin_preference, travel_preference_notes, accessibility_notes, food_allergies, passport_number, passport_date_issued, passport_expiration_date, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, notes, notify_new_messages, notify_payment_reminders, notify_trip_updates, notify_travel_circle_invites, notification_preferences_updated_at, created_at`;
 
-  const { data: byEmail, error: emailError } = await supabase.from("client_accounts").select(selectFields).ilike("email", userEmail).maybeSingle();
+  const { data: byEmail, error: emailError } = await supabase.from("client_accounts").select(selectFields).eq("id", await currentClientAccountId(supabase)).maybeSingle();
   if (emailError) throw new Error(emailError.message);
   if (byEmail) return { supabase, user, clientAccount: byEmail as ClientAccount };
 

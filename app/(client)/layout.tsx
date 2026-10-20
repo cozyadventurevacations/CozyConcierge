@@ -1,3 +1,4 @@
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import Image from "next/image";
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/app-header";
@@ -17,7 +18,7 @@ async function getClientAccountIdForCurrentUser(userId: string, email?: string |
     const { data: clientAccountByEmail, error: clientEmailError } = await supabase
       .from("client_accounts")
       .select("id")
-      .ilike("email", normalizedEmail)
+      .eq("id", await currentClientAccountId(supabase))
       .maybeSingle();
 
     if (clientEmailError) throw new Error(clientEmailError.message);

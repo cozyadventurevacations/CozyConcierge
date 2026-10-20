@@ -1,3 +1,4 @@
+import { protectPaidEndpoint } from "@/lib/security/request-limits";
 import { NextResponse } from "next/server";
 
 type DetailsRequestBody = {
@@ -23,6 +24,8 @@ function getComponent(
 }
 
 export async function POST(request: Request) {
+  const limited = await protectPaidEndpoint(request, "places", 60, 1000);
+  if (limited) return limited;
   const apiKey =
     process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_PLACES_API_KEY;
 

@@ -121,20 +121,10 @@ function LoginPageContent() {
       return;
     }
 
-    const { data: profileByEmail, error: profileByEmailError } = await supabase
-      .from("user_profiles")
-      .select("id, role")
-      .ilike("email", cleanEmail)
-      .maybeSingle();
+    await supabase.auth.signOut();
+    setIsSubmitting(false);
+    setErrorMessage("Your profile is not ready. Open your confirmation email or contact your advisor.");
 
-    if (profileByEmailError) {
-      setIsSubmitting(false);
-      setErrorMessage(profileByEmailError.message);
-      return;
-    }
-
-    router.replace(getRedirectPath(profileByEmail?.role));
-    router.refresh();
   }
 
   return (

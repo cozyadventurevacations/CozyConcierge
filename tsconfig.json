@@ -32,9 +32,12 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
-, "patch-payment-badges.js"  ],
+    ".next/types/**/*.ts",
+    "patch-payment-badges.js"
+  ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "tmp",
+    "outputs"
   ]
 }

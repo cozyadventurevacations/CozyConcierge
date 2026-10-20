@@ -1,3 +1,4 @@
+import { validateDocumentUpload } from "@/lib/security/uploads";
 /* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -3532,7 +3533,7 @@ async function uploadComponentDocument(formData: FormData) {
   const { error: uploadError } = await supabase.storage
     .from("trip-documents")
     .upload(storagePath, fileBuffer, {
-      contentType: file.type || "application/octet-stream",
+      contentType: await validateDocumentUpload(file),
       upsert: false,
     });
 
@@ -3782,7 +3783,7 @@ async function updateTrip(formData: FormData) {
       .from("trip-documents")
       .upload(coverImagePath, coverImage, {
         upsert: true,
-        contentType: coverImage.type || "image/jpeg",
+        contentType: await validateDocumentUpload(coverImage),
       });
 
     if (uploadError) throw new Error(uploadError.message);
@@ -5415,6 +5416,7 @@ async function uploadTripPaymentDocument(formData: FormData) {
   const storagePath = `${tripId}/payments/${requestId}/${crypto.randomUUID()}-${safeFileName}`;
   const arrayBuffer = await file.arrayBuffer();
   const fileBuffer = new Uint8Array(arrayBuffer);
+  await validateDocumentUpload(file);
   const encryptedFileBuffer = encryptBuffer(fileBuffer);
 
   const { error: uploadError } = await supabase.storage
@@ -5578,6 +5580,7 @@ async function uploadTripPaymentReceipt(formData: FormData) {
   const storagePath = `${tripId}/payments/receipts/${crypto.randomUUID()}-${safeFileName}`;
   const arrayBuffer = await file.arrayBuffer();
   const fileBuffer = new Uint8Array(arrayBuffer);
+  await validateDocumentUpload(file);
   const encryptedFileBuffer = encryptBuffer(fileBuffer);
 
   const { error: uploadError } = await supabase.storage

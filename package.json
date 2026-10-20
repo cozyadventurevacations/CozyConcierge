@@ -10,12 +10,13 @@
     "typecheck": "tsc --noEmit",
     "import:airports": "node scripts/import-airports.mjs",
     "import:airlines": "node scripts/import-airlines.mjs",
-    "check:places": "node scripts/check-places.mjs"
+    "check:places": "node scripts/check-places.mjs",
+    "test:security": "node --test tests/security.test.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.49.0",
-    "csv-parse": "^6.2.1",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.118.0",
+    "csv-parse": "7.0.3",
     "next": "15.5.28",
     "openai": "^6.37.0",
     "pdfkit": "^0.19.1",

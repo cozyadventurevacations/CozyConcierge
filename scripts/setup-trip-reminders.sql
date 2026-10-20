@@ -21,7 +21,8 @@ create index if not exists trip_reminders_open_date_idx
 create or replace function public.set_trip_reminders_updated_at()
 returns trigger
 language plpgsql
-as $$
+set search_path = ''
+as $
 begin
   new.updated_at = now();
   if new.is_completed = true and old.is_completed is distinct from true then
@@ -40,3 +41,11 @@ for each row
 execute function public.set_trip_reminders_updated_at();
 
 notify pgrst, 'reload schema';
+
+-- Restrict reminder management to MFA-verified administrators.
+alter table public.trip_reminders enable row level security;
+drop policy if exists "Admins can manage custom trip reminders" on public.trip_reminders;
+create policy "Admins can manage custom trip reminders" on public.trip_reminders for all to authenticated
+ using (public.current_user_is_admin() and (auth.jwt()->>'aal')='aal2')
+ with check (public.current_user_is_admin() and (auth.jwt()->>'aal')='aal2');
+grant select, insert, update, delete on public.trip_reminders to authenticated;

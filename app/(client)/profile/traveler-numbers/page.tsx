@@ -1,3 +1,5 @@
+import { validateDocumentUpload } from "@/lib/security/uploads";
+import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
@@ -259,7 +261,7 @@ async function getCurrentClientAccount() {
   const { data: clientAccountByEmail, error: clientEmailError } = await supabase
     .from("client_accounts")
     .select("id, first_name, last_name, email")
-    .ilike("email", userEmail)
+    .eq("id", await currentClientAccountId(supabase))
     .maybeSingle();
 
   if (clientEmailError) {
@@ -590,7 +592,7 @@ async function uploadAdditionalTravelerPassport(formData: FormData) {
   const { error: uploadError } = await supabaseAdmin.storage
     .from("client-documents")
     .upload(storagePath, file, {
-      contentType: file.type || "application/octet-stream",
+      contentType: await validateDocumentUpload(file),
       upsert: false,
     });
 

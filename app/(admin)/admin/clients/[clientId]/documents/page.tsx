@@ -1,3 +1,4 @@
+import { validateDocumentUpload } from "@/lib/security/uploads";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -202,7 +203,7 @@ async function uploadClientPassportDocument(formData: FormData) {
   const { error: uploadError } = await supabaseAdmin.storage
     .from("client-documents")
     .upload(storagePath, file, {
-      contentType: file.type || "application/octet-stream",
+      contentType: await validateDocumentUpload(file),
       upsert: false,
     });
 

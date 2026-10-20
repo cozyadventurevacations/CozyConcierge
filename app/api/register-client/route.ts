@@ -1,37 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { protectPublicRequest, requestIp } from "@/lib/security/request-limits";
+import { sendRegistrationConfirmation } from "@/lib/email/confirm-registration";
 
 export const dynamic = "force-dynamic";
-
-// Rate limiting: max 5 registration attempts per IP per minute
-const rateLimitMap = new Map<string, { count: number; firstRequest: number }>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 5;
-
-function getRateLimitKey(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const realIp = request.headers.get("x-real-ip");
-
-  return forwardedFor?.split(",")[0]?.trim() || realIp || "unknown";
-}
-
-function isRateLimited(request: Request): boolean {
-  const key = getRateLimitKey(request);
-  const now = Date.now();
-  const entry = rateLimitMap.get(key);
-
-  if (!entry || now - entry.firstRequest > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(key, { count: 1, firstRequest: now });
-    return false;
-  }
-
-  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return true;
-  }
-
-  entry.count++;
-  return false;
-}
 
 async function verifyTurnstileToken(request: Request, token: string) {
   const secretKey = process.env.TURNSTILE_SECRET_KEY;
@@ -54,7 +26,7 @@ async function verifyTurnstileToken(request: Request, token: string) {
   formData.append("secret", secretKey);
   formData.append("response", token);
 
-  const remoteIp = getRateLimitKey(request);
+  const remoteIp = requestIp(request);
   if (remoteIp && remoteIp !== "unknown") {
     formData.append("remoteip", remoteIp);
   }
@@ -90,26 +62,6 @@ async function verifyTurnstileToken(request: Request, token: string) {
     valid: true,
     message: "",
   };
-}
-
-function getSupabaseAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
 }
 
 function cleanText(value: unknown) {
@@ -152,210 +104,38 @@ function validatePassword(password: string): { valid: boolean; message: string }
 }
 
 export async function POST(request: Request) {
-  if (isRateLimited(request)) {
-    return NextResponse.json(
-      {
-        error: "Too many registration attempts. Please try again in a minute.",
-      },
-      {
-        status: 429,
-      },
-    );
-  }
-
   try {
     const body = await request.json();
-
-    const firstName = cleanText(body.firstName);
-    const lastName = cleanText(body.lastName);
     const email = cleanEmail(body.email);
-    const phonePrimary = cleanText(body.phonePrimary);
-    const password = cleanText(body.password);
-    const website = cleanText(body.website);
-    const captchaToken = cleanText(body.captchaToken);
-
-    if (website) {
-      return NextResponse.json({
-        success: true,
-        message: "If this email can be registered, the account will be created.",
-      });
+    const limited = await protectPublicRequest(request, "registration", email);
+    if (limited) return limited;
+    const firstName = cleanText(body.firstName).slice(0, 100);
+    const lastName = cleanText(body.lastName).slice(0, 100);
+    const phonePrimary = cleanText(body.phonePrimary).slice(0, 50);
+    const password = typeof body.password === "string" ? body.password : "";
+    const generic = { success: true, requiresEmailConfirmation: true,
+      message: "Check your email to confirm your account. If you already have an account, sign in or reset your password." };
+    if (cleanText(body.website)) return NextResponse.json(generic);
+    if (!firstName || !lastName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length > 128) {
+      return NextResponse.json({ error: "Enter your name, a valid email, and a password of 8–128 characters." }, { status: 400 });
     }
-
-    if (!firstName || !lastName || !email || !password) {
-      return NextResponse.json(
-        {
-          error: "First name, last name, email, and password are required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const turnstileCheck = await verifyTurnstileToken(request, captchaToken);
-
-    if (!turnstileCheck.valid) {
-      return NextResponse.json(
-        {
-          error: turnstileCheck.message,
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
     const passwordCheck = validatePassword(password);
-
-    if (!passwordCheck.valid) {
-      return NextResponse.json(
-        {
-          error: passwordCheck.message,
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const supabaseAdmin = getSupabaseAdminClient();
-
-    const { data: createdUserData, error: createUserError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          first_name: firstName,
-          last_name: lastName,
-          phone_primary: phonePrimary || null,
-          role: "client",
-        },
-      });
-
-    if (createUserError || !createdUserData.user) {
-      return NextResponse.json(
-        {
-          error: createUserError?.message ?? "Unable to create user.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const authUser = createdUserData.user;
-
-    const { data: existingProfile, error: existingProfileError } =
-      await supabaseAdmin
-        .from("user_profiles")
-        .select("id")
-        .eq("auth_user_id", authUser.id)
-        .maybeSingle();
-
-    if (existingProfileError) {
-      return NextResponse.json(
-        {
-          error: existingProfileError.message,
-        },
-        {
-          status: 500,
-        },
-      );
-    }
-
-    let profileId = existingProfile?.id ?? null;
-
-    if (!profileId) {
-      const { data: insertedProfile, error: insertProfileError } =
-        await supabaseAdmin
-          .from("user_profiles")
-          .insert({
-            auth_user_id: authUser.id,
-            email,
-            role: "client",
-          })
-          .select("id")
-          .single();
-
-      if (insertProfileError || !insertedProfile) {
-        await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-
-        return NextResponse.json(
-          {
-            error:
-              insertProfileError?.message ??
-              "Unable to create client user profile.",
-          },
-          {
-            status: 500,
-          },
-        );
-      }
-
-      profileId = insertedProfile.id;
-    }
-
-    const { data: existingClientAccount, error: existingClientAccountError } =
-      await supabaseAdmin
-        .from("client_accounts")
-        .select("id")
-        .eq("user_profile_id", profileId)
-        .maybeSingle();
-
-    if (existingClientAccountError) {
-      await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-
-      return NextResponse.json(
-        {
-          error: existingClientAccountError.message,
-        },
-        {
-          status: 500,
-        },
-      );
-    }
-
-    if (!existingClientAccount) {
-      const { error: insertClientAccountError } = await supabaseAdmin
-        .from("client_accounts")
-        .insert({
-          user_profile_id: profileId,
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone_primary: phonePrimary || null,
-        });
-
-      if (insertClientAccountError) {
-        await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-
-        return NextResponse.json(
-          {
-            error: insertClientAccountError.message,
-          },
-          {
-            status: 500,
-          },
-        );
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Client account created successfully.",
+    if (!passwordCheck.valid) return NextResponse.json({ error: passwordCheck.message }, { status: 400 });
+    const check = await verifyTurnstileToken(request, cleanText(body.captchaToken));
+    if (!check.valid) return NextResponse.json({ error: check.message }, { status: 400 });
+    const { data, error } = await createSupabaseAdminClient().auth.admin.generateLink({
+      type: "signup", email, password,
+      options: { data: { first_name: firstName, last_name: lastName, phone_primary: phonePrimary || null } },
     });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to create client account.",
-      },
-      {
-        status: 500,
-      },
-    );
+    if (error) {
+      if (["email_exists", "user_already_exists"].includes(error.code ?? "")) return NextResponse.json(generic);
+      throw new Error("Registration unavailable.");
+    }
+    if (data.user?.email_confirmed_at) return NextResponse.json(generic);
+    if (!data.properties?.hashed_token) throw new Error("Confirmation unavailable.");
+    await sendRegistrationConfirmation(email, data.properties.hashed_token);
+    return NextResponse.json(generic, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "Unable to complete registration right now. Please try again shortly." }, { status: 503 });
   }
 }
