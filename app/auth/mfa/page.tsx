@@ -72,18 +72,38 @@ export default function MfaPage() {
 
   return <main className="page-shell" style={{ maxWidth: 520, margin: "48px auto", padding: 24 }}>
     <section className="card stack">
-      <h1>Secure your admin access</h1>
-      <p>{needsEnrollment ? "Set up an authenticator app to protect client documents and administrative access." : "Enter the current code from your authenticator to continue."}</p>
+      <h1>{needsEnrollment || qrCode ? "Set up two-step verification" : "Verify your sign-in"}</h1>
+      <p>{needsEnrollment
+        ? "Use an authenticator app on your phone to generate the six-digit codes that protect your account."
+        : qrCode
+          ? "Follow the steps below to connect your authenticator app."
+          : "Open your authenticator app, find Cozy Concierge, and enter the current six-digit code below."}</p>
       {loading ? <p role="status">Loading your security settings...</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      {!loading && needsEnrollment ? <button className="btn btn-primary" disabled={busy} onClick={() => void enroll()}>Set up authenticator</button> : null}
+      {!loading && needsEnrollment ? <div className="stack">
+        <p>Have your authenticator app ready, then select <strong>Set up authenticator</strong> to display your QR code.</p>
+        <button className="btn btn-primary" disabled={busy} onClick={() => void enroll()}>Set up authenticator</button>
+      </div> : null}
       {qrCode ? <div className="stack">
-        <p>Scan this code with your authenticator app, then enter its six-digit code below.</p>
+        <div className="stack-sm" style={{ padding: 16, borderRadius: 12, background: "#f0f7f8", border: "1px solid #d9ecf2" }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Scan from inside your authenticator app</h2>
+          <ol style={{ margin: 0, paddingLeft: 22, lineHeight: 1.7 }}>
+            <li>Open your <strong>authenticator app</strong> on your phone.</li>
+            <li>Tap <strong>+</strong> or <strong>Add account</strong>, then choose <strong>Scan QR code</strong>.</li>
+            <li>Use the scanner inside that app to scan the QR code below.</li>
+            <li>Find the <strong>six-digit code for Cozy Concierge</strong> in the app. Enter it below and select <strong>Verify and continue</strong>.</li>
+          </ol>
+          <p style={{ margin: 0 }}><strong>Only seeing text when you scan?</strong> Your phone’s regular Camera app may show setup text. Open your authenticator app and scan again using its built-in scanner. This QR code connects your authenticator; it does not open a webpage.</p>
+        </div>
         <Image src={qrCode} width={220} height={220} alt="Authenticator setup QR code" unoptimized />
-        <details><summary>Enter a setup key manually</summary><code style={{ overflowWrap: "anywhere" }}>{secret}</code></details>
+        <details>
+          <summary>Using this phone or unable to scan? Enter a setup key manually</summary>
+          <p>In your authenticator app, choose <strong>Add account</strong>, then the option to enter a setup key. Name the account <strong>Cozy Concierge</strong>, enter the key below, and choose <strong>Time-based</strong> if asked. Then enter the six-digit code the app generates in the field below.</p>
+          <code style={{ overflowWrap: "anywhere" }}>{secret}</code>
+        </details>
       </div> : null}
       {!loading && factorId ? <form className="stack" onSubmit={verify}>
-        <label className="stack-sm"><span className="label">Authenticator code</span>
+        <label className="stack-sm"><span className="label">Six-digit code from your authenticator app</span>
           <input className="input" aria-label="Authenticator code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required />
         </label>
         <button className="btn btn-primary" disabled={busy || code.length !== 6}>{busy ? "Verifying..." : "Verify and continue"}</button>

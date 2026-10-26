@@ -52,7 +52,7 @@ try {
  check(await admin.from("user_profiles").update({role:"admin"}).eq("id",profileId));
  if(process.env.SECURITY_TEST_BASE_URL) {
    const adminBlocked=await site("/api/admin/clients/mailing-export");assert.equal(adminBlocked.status,403);
-   const mfa=await site("/auth/mfa");assert.equal(mfa.status,200);assert.match(await mfa.text(),/Secure your admin access/);
+   const mfa=await site("/auth/mfa");assert.equal(mfa.status,200);assert.match(await mfa.text(),/Verify your sign-in|Set up two-step verification/);
  }
  let factor;
  if (process.env.SECURITY_PLAYWRIGHT_PATH && process.env.SECURITY_TEST_BASE_URL) {
