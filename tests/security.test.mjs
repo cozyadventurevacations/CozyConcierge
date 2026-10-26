@@ -38,6 +38,32 @@ function authClient({ user = { id: "test-uid" }, role = "client", aal = "aal1" }
 const request = (body) => new Request("https://example.test/api/register-client", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
+const registrationProfile = {
+  first_name: "Test", last_name: "Traveler", date_of_birth: "1990-04-12",
+  phone_primary: "+1 (555) 123-4567", address_line_1: "123 Test St", city: "Chicago", state: "IL", postal_code: "60601",
+};
+test("registration validates required profile fields, real dates and phones and allows only personal metadata", () => {
+  const { validateRegistrationProfile } = load("lib/registration-profile.ts");
+  for (const name of Object.keys(registrationProfile)) {
+    assert(validateRegistrationProfile({ ...registrationProfile, [name]: "  " }).error, `${name} must be required`);
+  }
+  for (const date_of_birth of ["1990-02-30", "2025-02-29", "not-a-date", "2999-01-01"]) {
+    assert(validateRegistrationProfile({ ...registrationProfile, date_of_birth }).error);
+  }
+  for (const phone_primary of ["abcdefg", "123", "1".repeat(16)]) {
+    assert(validateRegistrationProfile({ ...registrationProfile, phone_primary }).error);
+  }
+  assert(validateRegistrationProfile({ ...registrationProfile, notes: "x".repeat(2001) }).error);
+  assert(validateRegistrationProfile({ ...registrationProfile, notify_trip_updates: "false" }).error);
+  const { profile, error } = validateRegistrationProfile({ ...registrationProfile, middle_name: " Middle ", notes: "Morning flights",
+    anniversary_date: "2000-02-29", food_allergies: "Peanuts\nDairy", notify_trip_updates: false,
+    role: "admin", user_profile_id: "forged", passport_number: "ignore-me", email: "forged@example.test" });
+  assert.equal(error, undefined);
+  assert.equal(profile.middle_name, "Middle"); assert.equal(profile.notes, "Morning flights");
+  assert.equal(profile.food_allergies, "Other / Notes: Peanuts; Dairy");
+  assert.equal(profile.notify_trip_updates, false); assert.equal(profile.notify_new_messages, true);
+  for (const key of ["role", "user_profile_id", "passport_number", "email"]) assert.equal(profile[key], undefined);
+});
 test("redirect paths cannot escape to another origin", () => {
   const { safeNextPath } = load("lib/security/paths.ts");
   for (const value of ["//evil.test", "/\n/evil.test", "/\t/evil.test", "/\\evil.test", "\\evil.test", "https://evil.test", null, ""]) {
@@ -102,6 +128,10 @@ test("registration requires CAPTCHA and emails an unconfirmed signup; it never p
           assert.equal(args.type,"signup"); assert.equal(args.password,"Strong!123");
           assert.equal(args.email,"traveler@example.test");
           assert.equal(args.options.data.role,undefined);
+          assert.equal(args.options.data.date_of_birth,registrationProfile.date_of_birth);
+          assert.equal(args.options.data.address_line_1,registrationProfile.address_line_1);
+          assert.equal(args.options.data.notify_trip_updates,false);
+          assert.equal(args.options.data.passport_number,undefined);
           generated++;return {data:{user:{email_confirmed_at:null},properties:{hashed_token:"test-hash"}}};
         }}},
         from:()=>{throw Error("No records should be linked before email verification");},
@@ -110,10 +140,14 @@ test("registration requires CAPTCHA and emails an unconfirmed signup; it never p
         assert.equal(email,"traveler@example.test");assert.equal(hash,"test-hash");mailed++;
       }},
     });
-    const body={firstName:"Test",lastName:"Traveler",email:"traveler@example.test",password:"Strong!123",captchaToken:"test"};
+    const body={profile:{...registrationProfile,notify_trip_updates:false,role:"admin",passport_number:"ignored"},email:"traveler@example.test",password:"Strong!123",captchaToken:"test"};
     assert.equal((await POST(request(body))).status,400);
     assert.equal(generated,0);assert.equal(mailed,0);
     captchaValid=true;
+    for (const name of Object.keys(registrationProfile)) {
+      assert.equal((await POST(request({...body,profile:{...body.profile,[name]:""}}))).status,400);
+    }
+    assert.equal(generated,0);assert.equal(mailed,0);
     const response=await POST(request(body));
     assert.equal(response.status,200);assert.equal((await response.json()).requiresEmailConfirmation,true);
     assert.equal(generated,1);assert.equal(mailed,1);

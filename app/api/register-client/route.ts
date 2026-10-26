@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { protectPublicRequest, requestIp } from "@/lib/security/request-limits";
 import { sendRegistrationConfirmation } from "@/lib/email/confirm-registration";
+import { validateRegistrationProfile } from "@/lib/registration-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -109,23 +110,26 @@ export async function POST(request: Request) {
     const email = cleanEmail(body.email);
     const limited = await protectPublicRequest(request, "registration", email);
     if (limited) return limited;
-    const firstName = cleanText(body.firstName).slice(0, 100);
-    const lastName = cleanText(body.lastName).slice(0, 100);
-    const phonePrimary = cleanText(body.phonePrimary).slice(0, 50);
     const password = typeof body.password === "string" ? body.password : "";
     const generic = { success: true, requiresEmailConfirmation: true,
       message: "Check your email to confirm your account. If you already have an account, sign in or reset your password." };
     if (cleanText(body.website)) return NextResponse.json(generic);
-    if (!firstName || !lastName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length > 128) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length > 128) {
       return NextResponse.json({ error: "Enter your name, a valid email, and a password of 8–128 characters." }, { status: 400 });
     }
+    const input = body.profile;
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return NextResponse.json({ error: "Complete your personal information and home address." }, { status: 400 });
+    }
+    const profileCheck = validateRegistrationProfile(input);
+    if (profileCheck.error) return NextResponse.json({ error: profileCheck.error }, { status: 400 });
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.valid) return NextResponse.json({ error: passwordCheck.message }, { status: 400 });
     const check = await verifyTurnstileToken(request, cleanText(body.captchaToken));
     if (!check.valid) return NextResponse.json({ error: check.message }, { status: 400 });
     const { data, error } = await createSupabaseAdminClient().auth.admin.generateLink({
       type: "signup", email, password,
-      options: { data: { first_name: firstName, last_name: lastName, phone_primary: phonePrimary || null } },
+      options: { data: profileCheck.profile },
     });
     if (error) {
       if (["email_exists", "user_already_exists"].includes(error.code ?? "")) return NextResponse.json(generic);

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
 import { FormEvent, useEffect, useState } from "react";
+import { registrationSections, registrationNotificationFields, validateRegistrationProfile, type RegistrationField } from "@/lib/registration-profile";
 
 declare global {
   interface Window {
@@ -16,8 +17,24 @@ declare global {
   }
 }
 
-function isValidPassword(password: string) {
-  return password.length >= 8;
+function RegistrationInput({ field }: { field: RegistrationField }) {
+  const id = `registration-${field.name}`;
+  return (
+    <label className="stack-sm" htmlFor={id} style={field.type === "textarea" ? { gridColumn: "1 / -1" } : undefined}>
+      <span className="label">{field.label}{field.required ? " *" : " (optional)"}</span>
+      {field.options ? (
+        <select id={id} name={field.name} className="input" defaultValue="">
+          <option value="">Choose if you like</option>
+          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      ) : field.type === "textarea" ? (
+        <textarea id={id} name={field.name} className="textarea" rows={3} maxLength={field.maxLength} placeholder={field.placeholder} />
+      ) : (
+        <input id={id} name={field.name} className="input" type={field.type ?? "text"} required={field.required}
+          maxLength={field.maxLength} autoComplete={field.autoComplete} placeholder={field.placeholder} />
+      )}
+    </label>
+  );
 }
 
 function BrandPanel() {
@@ -43,10 +60,7 @@ function BrandPanel() {
 export default function RegisterPage() {
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [phonePrimary, setPhonePrimary] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,25 +94,29 @@ export default function RegisterPage() {
     setSuccessMessage(null);
 
     try {
-      const cleanFirstName = firstName.trim();
-      const cleanLastName = lastName.trim();
       const cleanEmail = email.trim().toLowerCase();
-      const cleanPhonePrimary = phonePrimary.trim();
       const formData = new FormData(event.currentTarget);
       const website = String(formData.get("website") ?? "").trim();
+      const answers: Record<string, unknown> = Object.fromEntries(formData);
+      for (const field of registrationNotificationFields) answers[field.name] = formData.has(field.name);
+      const profileCheck = validateRegistrationProfile(answers);
+      if (profileCheck.error) {
+        setErrorMessage(profileCheck.error);
+        return;
+      }
 
       if (!turnstileSiteKey) {
         setErrorMessage("Registration protection is not configured yet. Please contact Cozy Adventure Vacations.");
         return;
       }
 
-      if (!cleanFirstName || !cleanLastName || !cleanEmail || !password) {
-        setErrorMessage("Please enter your first name, last name, email, and password.");
+      if (!cleanEmail || !password) {
+        setErrorMessage("Please enter your email and password.");
         return;
       }
 
-      if (!isValidPassword(password)) {
-        setErrorMessage("Password must be at least 8 characters.");
+      if (password.length < 8 || password.length > 128 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+        setErrorMessage("Use 8–128 characters with an uppercase letter, a number, and a special character.");
         return;
       }
 
@@ -120,10 +138,8 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          firstName: cleanFirstName,
-          lastName: cleanLastName,
           email: cleanEmail,
-          phonePrimary: cleanPhonePrimary,
+          profile: answers,
           password,
           website,
           captchaToken,
@@ -167,7 +183,7 @@ export default function RegisterPage() {
           defer
         />
       ) : null}
-      <section style={{ width: "100%", maxWidth: 1040, display: "grid", gridTemplateColumns: "minmax(0, 0.85fr) minmax(380px, 1fr)", gap: 18, alignItems: "stretch" }}>
+      <section className="registration-layout" style={{ width: "100%", maxWidth: 1120, display: "grid", gridTemplateColumns: "minmax(0, 0.7fr) minmax(0, 1.3fr)", gap: 18, alignItems: "start" }}>
         <BrandPanel />
 
         <div className="card stack" style={{ border: "1px solid #d9ecf2", background: "#ffffff" }}>
@@ -177,8 +193,8 @@ export default function RegisterPage() {
             <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations and confirm your email to connect your trips, shared access, and documents.</p>
           </div>
 
-          {successMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}
-          {errorMessage ? <div style={{ padding: 12, borderRadius: 12, background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", lineHeight: 1.5 }}>{errorMessage}</div> : null}
+          {successMessage ? <div role="status" style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}
+          {errorMessage ? <div role="alert" style={{ padding: 12, borderRadius: 12, background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", lineHeight: 1.5 }}>{errorMessage}</div> : null}
 
           <form onSubmit={handleRegister} className="stack">
             <input
@@ -190,18 +206,40 @@ export default function RegisterPage() {
               style={{ display: "none" }}
             />
 
-            <div className="grid grid-2">
-              <label className="stack-sm"><span className="label">First Name</span><input className="input" value={firstName} onChange={(event) => setFirstName(event.target.value)} autoComplete="given-name" required /></label>
-              <label className="stack-sm"><span className="label">Last Name</span><input className="input" value={lastName} onChange={(event) => setLastName(event.target.value)} autoComplete="family-name" required /></label>
-            </div>
+            {registrationSections.map((section) => {
+              const content = <>
+                <p style={{ margin: "0 0 14px", color: "#667085", fontSize: 14, lineHeight: 1.5 }}>{section.intro}</p>
+                <div className="grid grid-2">{section.fields.map((field) => <RegistrationInput key={field.name} field={field} />)}</div>
+              </>;
+              return section.optional ? (
+                <details key={section.title} style={{ border: "1px solid #d9ecf2", borderRadius: 12, padding: 16 }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 800, color: "var(--accent-dark)", marginBottom: 12 }}>{section.title} (optional)</summary>
+                  {content}
+                </details>
+              ) : (
+                <fieldset key={section.title} style={{ border: "1px solid #d9ecf2", borderRadius: 12, padding: 16, minWidth: 0 }}>
+                  <legend style={{ fontWeight: 800, padding: "0 6px" }}>{section.title}</legend>{content}
+                </fieldset>
+              );
+            })}
+            <details style={{ border: "1px solid #d9ecf2", borderRadius: 12, padding: 16 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 800, color: "var(--accent-dark)", marginBottom: 12 }}>Email preferences (optional)</summary>
+              <p style={{ color: "#667085", fontSize: 14 }}>Choose which travel emails you would like. You can change these in your profile. Critical account and security emails may still be sent.</p>
+              <div className="stack-sm">
+                {registrationNotificationFields.map((field) => <label key={field.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input type="checkbox" name={field.name} defaultChecked />{field.label}
+                </label>)}
+              </div>
+            </details>
+            <p style={{ margin: 0, color: "#667085", fontSize: 14 }}>Passport details and documents can be added later in your profile.</p>
 
-            <label className="stack-sm"><span className="label">Email</span><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="you@example.com" required /></label>
-            <label className="stack-sm"><span className="label">Phone</span><input className="input" value={phonePrimary} onChange={(event) => setPhonePrimary(event.target.value)} autoComplete="tel" placeholder="Optional, but helpful for travel updates" /></label>
+            <label className="stack-sm"><span className="label">Email *</span><input className="input" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" maxLength={254} placeholder="you@example.com" required /></label>
 
             <div className="grid grid-2">
-              <label className="stack-sm"><span className="label">Password</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="Minimum 8 characters" required /></label>
-              <label className="stack-sm"><span className="label">Confirm Password</span><input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" required /></label>
+              <label className="stack-sm"><span className="label">Password *</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} aria-describedby="registration-password-help" required /></label>
+              <label className="stack-sm"><span className="label">Confirm password *</span><input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required /></label>
             </div>
+            <p id="registration-password-help" style={{ margin: 0, color: "#667085", fontSize: 13 }}>Use 8–128 characters with an uppercase letter, a number, and a special character.</p>
 
             {turnstileSiteKey ? (
               <div
@@ -238,7 +276,7 @@ export default function RegisterPage() {
           </div>
         </div>
       </section>
-      <style>{"@media (max-width: 860px) { main section { grid-template-columns: 1fr !important; } main aside { display: none !important; } }"}</style>
+      <style>{"@media (max-width: 860px) { .registration-layout { grid-template-columns: 1fr !important; } .registration-layout > aside { display: none !important; } } @media (max-width: 540px) { .registration-layout .grid-2 { grid-template-columns: minmax(0, 1fr); } .registration-layout > .card { padding: 16px; min-width: 0; } }"}</style>
     </main>
   );
 }
