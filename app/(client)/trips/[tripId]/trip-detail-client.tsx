@@ -206,6 +206,7 @@ type InsuranceData = {
   provider: string | null;
   planName: string | null;
   quoteOptions: InsuranceQuoteOption[];
+  selectedOptionNumber: number | null;
   coverageStart: string | null;
   coverageEnd: string | null;
   travelersCount: number | null;
@@ -1123,7 +1124,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
             {insurance && (
               <Collapsible eyebrow="Protection" title="Travel Insurance">
                 {insurance.quoteOptions.length > 0 ? (
-                  <div className="grid grid-3">
+                  <div className={insurance.selectedOptionNumber ? "stack" : "grid grid-3"}>
                     {insurance.quoteOptions.map((option) => (
                       <div
                         key={option.optionNumber}
@@ -1135,7 +1136,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                           padding: 16,
                         }}
                       >
-                        <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
+                        <h3 style={{ margin: 0 }}>{insurance.selectedOptionNumber ? "Selected insurance plan" : `Plan ${option.optionNumber}`}</h3>
                         <InfoItem label="Provider" value={option.providerName} />
                         <InfoItem label="Plan" value={option.planName} />
                         <PriceItem label="Premium" value={option.premiumAmount} />

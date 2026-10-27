@@ -6,10 +6,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { findActiveTripMemberAccess } from "@/lib/travel-circle-access";
-import {
-  getAllianzInsurancePlan,
-  getInsurancePlanBrochureUrl,
-} from "@/lib/insurance/allianz-plans";
+import { getVisibleInsuranceQuoteOptions, getSelectedInsuranceOptionNumber, isInsuranceBooked } from "@/lib/insurance/quote-options";
 import { TripDetailClient } from "./trip-detail-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -75,74 +72,6 @@ function fmtMoney(value: number | null | undefined) {
     style: "currency",
     currency: "USD",
   }).format(Number(value));
-}
-
-type InsuranceQuoteOption = {
-  optionNumber: number;
-  providerName: string | null;
-  planName: string | null;
-  premiumAmount: number | null;
-  coverageDescription: string | null;
-  brochureUrl: string | null;
-};
-
-function getInsuranceQuoteOptions(details: any): InsuranceQuoteOption[] {
-  const rawOptions = Array.isArray(details?.quote_options)
-    ? details.quote_options
-    : [];
-  const mappedOptions = rawOptions
-    .map((option: any, index: number) => {
-      const optionNumber = Number(option?.option_number ?? index + 1);
-      const standardPlan = getAllianzInsurancePlan(optionNumber);
-
-      return {
-        optionNumber,
-        providerName: option?.provider_name ?? standardPlan?.providerName ?? null,
-        planName: option?.plan_name ?? standardPlan?.planName ?? null,
-        premiumAmount:
-          option?.premium_amount === null || option?.premium_amount === undefined
-            ? null
-            : Number(option.premium_amount),
-        coverageDescription:
-          option?.coverage_description ?? standardPlan?.coverageSummary ?? null,
-        brochureUrl:
-          option?.brochure_url ??
-          getInsurancePlanBrochureUrl(option?.option_number ?? index + 1, option?.plan_name),
-      };
-    })
-    .filter((option: InsuranceQuoteOption) =>
-      Boolean(
-        option.providerName ||
-          option.planName ||
-          option.premiumAmount !== null ||
-          option.coverageDescription,
-      ),
-    );
-
-  if (mappedOptions.length > 0) return mappedOptions;
-
-  if (
-    details?.provider_name ||
-    details?.plan_name ||
-    details?.premium_amount ||
-    details?.coverage_description
-  ) {
-    return [
-      {
-        optionNumber: 1,
-        providerName: details.provider_name ?? null,
-        planName: details.plan_name ?? null,
-        premiumAmount:
-          details.premium_amount === null || details.premium_amount === undefined
-            ? null
-            : Number(details.premium_amount),
-        coverageDescription: details.coverage_description ?? getAllianzInsurancePlan(1)?.coverageSummary ?? null,
-        brochureUrl: getInsurancePlanBrochureUrl(1, details.plan_name),
-      },
-    ];
-  }
-
-  return [];
 }
 
 const answeredInsuranceDecisionValues = new Set([
@@ -1075,6 +1004,27 @@ async function recordInsuranceDecision(formData: FormData) {
   redirect(`/trips/${tripId}`);
 }
 
+async function selectInsurancePlan(formData: FormData) {
+  "use server";
+  const { supabase, clientAccount } = await getCurrentClientAccount();
+  const tripId = String(formData.get("trip_id") ?? "").trim();
+  const optionNumber = Number(formData.get("option_number"));
+  const premium = String(formData.get("quoted_premium") ?? "").trim();
+  if (!tripId || ![1, 2, 3].includes(optionNumber) || !premium || !Number.isFinite(Number(premium)) || Number(premium) < 0) throw new Error("Choose an available insurance quote.");
+  const { error } = await createSupabaseAdminClient().rpc("select_trip_insurance_plan", {
+    p_trip_id: tripId, p_client_account_id: clientAccount.id, p_option_number: optionNumber, p_expected_premium: Number(premium),
+  });
+  if (error) {
+    const message = error.message.includes("quote changed") ? "This quote changed. Refresh your trip and review the current premium." : "This plan could not be selected. Refresh the trip or contact your advisor.";
+    redirect(`/trips/${encodeURIComponent(tripId)}?insuranceError=${encodeURIComponent(message)}`);
+  }
+  await saveInsuranceDecisionForClient({ supabase, clientAccount, tripId, decision: "accepted" });
+  revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}/summary`);
+  revalidatePath(`/admin/trips/${tripId}`);
+  redirect(`/trips/${tripId}?insurance=selected`);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function TripDetailPage({
@@ -1082,10 +1032,10 @@ export default async function TripDetailPage({
   searchParams,
 }: {
   params: Promise<{ tripId: string }>;
-  searchParams: Promise<{ deletion?: string }>;
+  searchParams: Promise<{ deletion?: string; insurance?: string; insuranceError?: string }>;
 }) {
   const { tripId } = await params;
-  const { deletion } = await searchParams;
+  const { deletion, insurance: insuranceNotice, insuranceError } = await searchParams;
   const { supabase, clientAccount } = await getCurrentClientAccount();
   const supabaseAdmin = createSupabaseAdminClient();
 
@@ -1396,10 +1346,12 @@ export default async function TripDetailPage({
     totalPrice: activityResult.data.total_price ?? null, bookingStatus: activityResult.data.booking_status ?? null,
   } : null;
 
-  const insuranceQuoteOptions = getInsuranceQuoteOptions(insuranceDetails.data);
+  const selectedInsuranceOptionNumber = getSelectedInsuranceOptionNumber(insuranceDetails.data, insuranceResult.data?.booking_status);
+  const insuranceQuoteOptions = getVisibleInsuranceQuoteOptions(insuranceDetails.data, insuranceResult.data?.booking_status);
   const insurance = insuranceResult.data && insuranceDetails.data ? {
     provider: insuranceDetails.data.provider_name ?? null, planName: insuranceDetails.data.plan_name ?? null,
     quoteOptions: insuranceQuoteOptions,
+    selectedOptionNumber: selectedInsuranceOptionNumber,
     coverageStart: insuranceDetails.data.coverage_start_date ?? null,
     coverageEnd: insuranceDetails.data.coverage_end_date ?? null,
     travelersCount: insuranceDetails.data.insured_traveler_count ?? null,
@@ -1450,6 +1402,7 @@ export default async function TripDetailPage({
   const shouldAskInsurance =
     isPrimaryClient &&
     !proposalForClient &&
+    !selectedInsuranceOptionNumber &&
     !hasInsuranceDecisionBeenAnswered(trip.insurance_decision, trip.insurance_decision_at);
 
   return (
@@ -1468,60 +1421,6 @@ export default async function TripDetailPage({
               insurance options for this trip at this time.
             </p>
           </div>
-          {insuranceQuoteOptions.length > 0 ? (
-            <div className="stack">
-              <p style={{ margin: 0, lineHeight: 1.6 }}>
-                These quoted premiums are not included in your trip total until a plan is selected and booked.
-              </p>
-              <div className="grid grid-3">
-                {insuranceQuoteOptions.map((option) => (
-                  <div
-                    key={option.optionNumber}
-                    className="stack"
-                    style={{
-                      background: "#ffffff",
-                      border: "1px solid #fed7aa",
-                      borderRadius: 8,
-                      padding: 16,
-                    }}
-                  >
-                    <h3 style={{ margin: 0 }}>Plan {option.optionNumber}</h3>
-                    <div>
-                      <span className="label">Provider</span>
-                      <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-                        {option.providerName || "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="label">Plan</span>
-                      <p style={{ margin: "6px 0 0", fontWeight: 800 }}>
-                        {option.planName || "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="label">Premium</span>
-                      <p style={{ margin: "6px 0 0", fontWeight: 900 }}>
-                        {fmtMoney(option.premiumAmount)}
-                      </p>
-                    </div>
-                    {option.brochureUrl ? (
-                      <a className="btn btn-outline" href={option.brochureUrl} target="_blank" rel="noreferrer">
-                        View flyer
-                      </a>
-                    ) : null}
-                    {option.coverageDescription ? (
-                      <div>
-                        <span className="label">Coverage</span>
-                        <p className="preserve-formatting" style={{ margin: "6px 0 0", lineHeight: 1.5 }}>
-                          {option.coverageDescription}
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
           <form action={recordInsuranceDecision} className="row">
             <input type="hidden" name="trip_id" value={trip.id} />
             <button
@@ -1544,6 +1443,39 @@ export default async function TripDetailPage({
           </form>
         </div>
       )}
+
+      {insuranceError ? <div className="card" role="alert" style={{ color: "#be123c" }}>{insuranceError}</div> : null}
+      {insuranceNotice === "selected" ? <div className="card" role="status">Your insurance plan selection has been saved.</div> : null}
+      {insurance && insuranceQuoteOptions.length > 0 ? (
+        <div className="card stack" style={{ border: selectedInsuranceOptionNumber ? "1px solid #bbf7d0" : "1px solid #d9ecf2" }}>
+          <h2 style={{ margin: 0 }}>{selectedInsuranceOptionNumber ? "Selected insurance plan" : "Insurance quote options"}</h2>
+          <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
+            {selectedInsuranceOptionNumber ? "This is the insurance plan selected for your trip. Contact your advisor if you need to change it." : "Review the quoted plans and choose the one you would like your advisor to arrange."}
+            {" "}Selecting a plan does not purchase or confirm coverage. Your advisor will confirm the booking. Quoted premiums enter your trip total when booked.
+          </p>
+          <div className={selectedInsuranceOptionNumber ? "stack" : "grid grid-3"}>
+            {insuranceQuoteOptions.map((option) => (
+              <div key={option.optionNumber} className="card stack" style={{ background: "#f7fbfc" }}>
+                <h3 style={{ margin: 0 }}>{option.planName || `Plan ${option.optionNumber}`}</h3>
+                {selectedInsuranceOptionNumber ? <strong style={{ color: "#166534" }}>Selected plan</strong> : null}
+                <p style={{ margin: 0 }}>{option.providerName}</p>
+                <p style={{ margin: 0, fontWeight: 900 }}>Quoted premium: {fmtMoney(option.premiumAmount)}</p>
+                {option.coverageDescription ? <p className="preserve-formatting" style={{ margin: 0, lineHeight: 1.5 }}>{option.coverageDescription}</p> : null}
+                {option.brochureUrl ? <a className="btn btn-outline" href={option.brochureUrl} target="_blank" rel="noreferrer">View flyer</a> : null}
+                {isPrimaryClient && !selectedInsuranceOptionNumber && !isInsuranceBooked(insurance.bookingStatus) && insurance.bookingStatus !== "cancelled" ? (
+                  <form action={selectInsurancePlan} className="stack-sm">
+                    <input type="hidden" name="trip_id" value={trip.id} />
+                    <input type="hidden" name="option_number" value={option.optionNumber} />
+                    <input type="hidden" name="quoted_premium" value={option.premiumAmount ?? ""} />
+                    <button className="btn btn-primary" type="submit" disabled={option.premiumAmount === null}>Select this plan</button>
+                    {option.premiumAmount === null ? <span>Ask your advisor for this plan&apos;s premium.</span> : null}
+                  </form>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <TripDetailClient
         trip={tripForClient}

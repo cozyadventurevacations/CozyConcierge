@@ -19,6 +19,8 @@ import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
 import { labelForEmailAutomationType } from "@/lib/email-automations/config";
 import { encryptBuffer } from "@/lib/encryption";
 import { getAllianzInsurancePlan } from "@/lib/insurance/allianz-plans";
+import { getInsuranceQuoteOptions, getSelectedInsuranceOptionNumber, getInsuranceSelectionPayload } from "@/lib/insurance/quote-options";
+import { InsurancePlanEditor } from "./insurance-plan-editor";
 import { AiRewriteTextarea } from "./ai-rewrite-textarea";
 import { ComponentDocumentUploadSubmitButton } from "./component-document-upload-submit-button";
 
@@ -42,18 +44,6 @@ const billableTripComponentTypes = [
   "activity",
   "insurance",
 ];
-
-const selectedInsuranceBookingStatuses = new Set([
-  "reserved",
-  "confirmed",
-  "pending_final_payment",
-  "paid_in_full",
-  "travel_complete",
-]);
-
-function isSelectedInsuranceBookingStatus(status: string | null | undefined) {
-  return selectedInsuranceBookingStatuses.has(String(status ?? "").trim());
-}
 
 const tripComponentTypeLabels: Record<string, string> = {
   hotel: "Hotel",
@@ -4889,7 +4879,7 @@ async function updateTrip(formData: FormData) {
   const insuranceCommissionNotes =
     String(formData.get("insurance_commission_notes") ?? "").trim() || null;
 
-  const insurancePremiumAmount = insurancePremiumAmountRaw
+  const firstInsurancePremiumAmount = insurancePremiumAmountRaw
     ? toMoneyNumber(formData.get("insurance_premium_amount"))
     : null;
   const insuranceQuoteOptions = [1, 2, 3]
@@ -4899,12 +4889,21 @@ async function updateTrip(formData: FormData) {
   const insuranceCommissionAmount = insuranceCommissionAmountRaw
     ? toMoneyNumber(formData.get("insurance_commission_amount"))
     : null;
-  const insuranceTotalPrice =
-    isSelectedInsuranceBookingStatus(insuranceBookingStatus) ? insurancePremiumAmount : null;
+  const selectedInsuranceOptionRaw = String(formData.get("insurance_selected_option_number") ?? "").trim();
+  const selectedInsuranceOptionNumber = selectedInsuranceOptionRaw ? Number(selectedInsuranceOptionRaw) : null;
+  const normalizedInsuranceOptions = getInsuranceQuoteOptions({ quote_options: insuranceQuoteOptions });
+  const insuranceSelection = shouldSaveComponent("insurance")
+    ? getInsuranceSelectionPayload(normalizedInsuranceOptions, selectedInsuranceOptionNumber, insuranceBookingStatus)
+    : { option: null, totalPrice: 0 };
+  const selectedInsuranceOption = insuranceSelection.option;
+  const insurancePremiumAmount = selectedInsuranceOption?.premiumAmount ?? firstInsurancePremiumAmount;
+  const insuranceTotalPrice = insuranceSelection.totalPrice;
 
   const insuranceDetailPayload = {
-    provider_name: insuranceProviderName || savedInsuranceSupplierName || null,
-    plan_name: insurancePlanName || null,
+    selected_option_number: selectedInsuranceOptionNumber,
+    provider_name: selectedInsuranceOption?.providerName || insuranceProviderName || savedInsuranceSupplierName || null,
+    plan_name: selectedInsuranceOption?.planName || insurancePlanName || null,
+    coverage_description: selectedInsuranceOption?.coverageDescription ?? insuranceQuoteOptions[0]?.coverage_description ?? null,
     policy_number: insurancePolicyNumber,
     coverage_start_date: insuranceCoverageStartDate,
     coverage_end_date: insuranceCoverageEndDate,
@@ -4936,13 +4935,14 @@ async function updateTrip(formData: FormData) {
     {
       supplier_id: insuranceSupplierId,
       display_name:
+        selectedInsuranceOption?.planName ||
         insurancePlanName ||
         insuranceQuoteOptions[0]?.plan_name ||
         insuranceProviderName ||
         insuranceQuoteOptions[0]?.provider_name ||
         savedInsuranceSupplierName ||
         "Insurance",
-      supplier_name: savedInsuranceSupplierName || insuranceProviderName || null,
+      supplier_name: selectedInsuranceOption?.providerName || savedInsuranceSupplierName || insuranceProviderName || null,
       booking_status: insuranceBookingStatus,
       total_price: insuranceTotalPrice ?? 0,
       commission_admin_only: insuranceCommissionAmount ?? 0,
@@ -8925,90 +8925,10 @@ export default async function AdminTripEditorPage({
 
           </div>
 
-          <div className="card stack" style={{ background: "#f7fbfc" }}>
-            <h3 style={{ margin: 0 }}>Quoted Plans</h3>
-            <p style={{ margin: 0, color: "#667085", lineHeight: 1.5 }}>
-              Add up to three insurance quote options for the client to review. Quoted premiums stay out of trip totals until this insurance component is marked reserved.
-            </p>
-
-            {[1, 2, 3].map((optionNumber) => {
-              const suffix = optionNumber === 1 ? "" : `_${optionNumber}`;
-              const quoteOptions = Array.isArray(insurance.details?.quote_options)
-                ? insurance.details.quote_options
-                : [];
-              const standardPlan = getAllianzInsurancePlan(optionNumber);
-              const option = quoteOptions.find(
-                (quotedOption: any) => Number(quotedOption?.option_number) === optionNumber,
-              );
-              const providerDefault =
-                option?.provider_name ??
-                standardPlan?.providerName ??
-                (optionNumber === 1 ? insurance.details?.provider_name : "") ??
-                "";
-              const planDefault =
-                option?.plan_name ??
-                standardPlan?.planName ??
-                (optionNumber === 1 ? insurance.details?.plan_name : "") ??
-                "";
-              const premiumDefault =
-                option?.premium_amount ??
-                (optionNumber === 1 ? insurance.details?.premium_amount : "") ??
-                "";
-              const coverageDefault =
-                option?.coverage_description ??
-                standardPlan?.coverageSummary ??
-                (optionNumber === 1 ? insurance.details?.coverage_description : "") ??
-                "";
-
-              return (
-                <div
-                  key={optionNumber}
-                  className="stack"
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e6f0f2",
-                    borderRadius: 8,
-                    padding: 16,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                    <div>
-                      <h4 style={{ margin: 0 }}>{planDefault || `Plan ${optionNumber}`}</h4>
-                      <p style={{ margin: "4px 0 0", color: "#667085" }}>
-                        {providerDefault || "Allianz Travel Insurance"}
-                      </p>
-                    </div>
-                    {standardPlan?.brochureUrl ? (
-                      <Link className="btn btn-outline" href={standardPlan.brochureUrl} target="_blank">
-                        View flyer
-                      </Link>
-                    ) : null}
-                  </div>
-                  <input type="hidden" name={`insurance_provider_name${suffix}`} value={providerDefault} />
-                  <input type="hidden" name={`insurance_plan_name${suffix}`} value={planDefault} />
-
-                  <div className="grid grid-2">
-                    <label>
-                      <span className="label">Premium Amount</span>
-                      <input
-                        className="input"
-                        type="number"
-                        step="0.01"
-                        name={`insurance_premium_amount${suffix}`}
-                        defaultValue={premiumDefault}
-                      />
-                    </label>
-                  </div>
-
-                  <AiRewriteTextarea
-                    label="Coverage Description"
-                    name={`insurance_coverage_description${suffix}`}
-                    defaultValue={coverageDefault}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          <InsurancePlanEditor
+            options={getInsuranceQuoteOptions(insurance.details)}
+            selectedOptionNumber={getSelectedInsuranceOptionNumber(insurance.details, insurance.component?.booking_status)}
+          />
 
           <div className="grid grid-2">
 
@@ -9019,9 +8939,7 @@ export default async function AdminTripEditorPage({
                 name="insurance_booking_status"
                 defaultValue={insurance.component?.booking_status ?? "quoted"}
               >
-                <option value="on_hold">on_hold</option>
-                <option value="reserved">reserved</option>
-                <option value="quoted">quoted</option>
+                {allowedBookingStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </label>
 
