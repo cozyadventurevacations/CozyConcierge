@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { registrationSections, registrationNotificationFields, validateRegistrationProfile, type RegistrationField } from "@/lib/registration-profile";
 
 declare global {
@@ -67,6 +67,11 @@ export default function RegisterPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
+  const feedbackRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (errorMessage || successMessage) feedbackRef.current?.focus();
+  }, [errorMessage, successMessage]);
 
   useEffect(() => {
     window.onTurnstileSuccess = (token: string) => {
@@ -193,8 +198,12 @@ export default function RegisterPage() {
             <p style={{ margin: "8px 0 0", color: "#667085", lineHeight: 1.6 }}>Use the same email address you shared with Cozy Adventure Vacations and confirm your email to connect your trips, shared access, and documents.</p>
           </div>
 
-          {successMessage ? <div role="status" style={{ padding: 12, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", lineHeight: 1.5 }}>{successMessage}</div> : null}
-          {errorMessage ? <div role="alert" style={{ padding: 12, borderRadius: 12, background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", lineHeight: 1.5 }}>{errorMessage}</div> : null}
+          {successMessage || errorMessage ? (
+            <div ref={feedbackRef} tabIndex={-1} role={errorMessage ? "alert" : "status"}
+              style={{ padding: 12, borderRadius: 12, background: errorMessage ? "#fff1f2" : "#f0fdf4", border: errorMessage ? "1px solid #fecdd3" : "1px solid #bbf7d0", color: errorMessage ? "#be123c" : "#166534", lineHeight: 1.5 }}>
+              {errorMessage || successMessage}
+            </div>
+          ) : null}
 
           <form onSubmit={handleRegister} className="stack">
             <input
@@ -239,7 +248,7 @@ export default function RegisterPage() {
               <label className="stack-sm"><span className="label">Password *</span><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} aria-describedby="registration-password-help" required /></label>
               <label className="stack-sm"><span className="label">Confirm password *</span><input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required /></label>
             </div>
-            <p id="registration-password-help" style={{ margin: 0, color: "#667085", fontSize: 13 }}>Use 8–128 characters with an uppercase letter, a number, and a special character.</p>
+            <p id="registration-password-help" style={{ margin: 0, color: "#667085", fontSize: 13 }}>Use 8–128 characters with an uppercase letter, a number, and a special character. Choose a unique password; common or previously exposed passwords cannot be used.</p>
 
             {turnstileSiteKey ? (
               <div

@@ -105,6 +105,7 @@ function validatePassword(password: string): { valid: boolean; message: string }
 }
 
 export async function POST(request: Request) {
+  let stage = "request";
   try {
     const body = await request.json();
     const email = cleanEmail(body.email);
@@ -125,21 +126,33 @@ export async function POST(request: Request) {
     if (profileCheck.error) return NextResponse.json({ error: profileCheck.error }, { status: 400 });
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.valid) return NextResponse.json({ error: passwordCheck.message }, { status: 400 });
+    stage = "security_check";
     const check = await verifyTurnstileToken(request, cleanText(body.captchaToken));
     if (!check.valid) return NextResponse.json({ error: check.message }, { status: 400 });
+    stage = "create_account";
     const { data, error } = await createSupabaseAdminClient().auth.admin.generateLink({
       type: "signup", email, password,
       options: { data: profileCheck.profile },
     });
     if (error) {
+      if (error.code === "weak_password" || error.name === "AuthWeakPasswordError") {
+        return NextResponse.json({
+          code: "weak_password",
+          error: "This password is too common or easy to guess. Choose a longer, unique password that you have not used elsewhere, then try again.",
+        }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
       if (["email_exists", "user_already_exists"].includes(error.code ?? "")) return NextResponse.json(generic);
+      // Record the failure type only, never the submitted password or profile.
+      console.error("registration_auth_failed", { code: error.code, status: error.status });
       throw new Error("Registration unavailable.");
     }
     if (data.user?.email_confirmed_at) return NextResponse.json(generic);
     if (!data.properties?.hashed_token) throw new Error("Confirmation unavailable.");
+    stage = "confirmation_email";
     await sendRegistrationConfirmation(email, data.properties.hashed_token);
     return NextResponse.json(generic, { headers: { "Cache-Control": "no-store" } });
   } catch {
+    console.error("registration_failed", { stage });
     return NextResponse.json({ error: "Unable to complete registration right now. Please try again shortly." }, { status: 503 });
   }
 }

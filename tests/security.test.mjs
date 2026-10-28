@@ -153,6 +153,31 @@ test("registration requires CAPTCHA and emails an unconfirmed signup; it never p
     assert.equal(generated,1);assert.equal(mailed,1);
   } finally {global.fetch=originalFetch;delete process.env.TURNSTILE_SECRET_KEY;}
 });
+test("registration explains provider-rejected weak passwords and permits a strong-password retry", async () => {
+  process.env.TURNSTILE_SECRET_KEY="test-only";
+  const originalFetch=global.fetch;
+  global.fetch=async()=>Response.json({success:true});
+  let mailed=0;
+  let authError={code:"weak_password",name:"AuthWeakPasswordError",status:422};
+  try {
+    const {POST}=load("app/api/register-client/route.ts",{
+      "@/lib/security/request-limits":{protectPublicRequest:async()=>null,requestIp:()=>"unknown"},
+      "@/lib/supabase/admin":{createSupabaseAdminClient:()=>({auth:{admin:{generateLink:async()=>({
+        error:authError,data:authError?null:{user:{email_confirmed_at:null},properties:{hashed_token:"test-hash"}},
+      })}}})},
+      "@/lib/email/confirm-registration":{sendRegistrationConfirmation:async()=>{mailed++;}},
+    });
+    const body={email:"traveler@example.test",profile:registrationProfile,password:"Common!123",captchaToken:"test"};
+    const rejected=await POST(request(body));
+    assert.equal(rejected.status,400,"weak passwords are input errors, not service outages");
+    const result=await rejected.json();
+    assert.equal(result.code,"weak_password");assert.match(result.error,/unique password/);
+    assert(!JSON.stringify(result).includes(body.password));assert.equal(mailed,0);
+    authError=null;
+    assert.equal((await POST(request({...body,password:"Unique!123456789"}))).status,200);
+    assert.equal(mailed,1);
+  } finally {global.fetch=originalFetch;delete process.env.TURNSTILE_SECRET_KEY;}
+});
 test("callback links accounts only after a successful OTP exchange", async () => {
   let verified=false, linked=0;
   const {GET}=load("app/auth/callback/route.ts",{
