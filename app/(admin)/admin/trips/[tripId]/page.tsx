@@ -13,6 +13,8 @@ import { AddressAutocomplete } from "@/components/forms/address-autocomplete";
 import { HotelLibraryPicker } from "@/components/forms/hotel-library-picker";
 import type { HotelLibraryRow } from "@/components/forms/hotel-library-picker";
 import { LinkedDateRange } from "@/components/forms/linked-date-range";
+import { sumBillableComponents, type TripPackageRecord } from "@/lib/trip-pricing";
+import { PackagePricingEditor, ComponentPackageControl } from "./package-pricing-editor";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { sendProposalSharedEmail } from "@/lib/email/proposal-shared";
 import { sendTravelCircleInviteEmail } from "@/lib/email/travel-circle-invite";
@@ -36,6 +38,7 @@ const allowedTripStatuses = [
 ];
 
 const billableTripComponentTypes = [
+  "package",
   "hotel",
   "air",
   "cruise",
@@ -53,6 +56,7 @@ const tripComponentTypeLabels: Record<string, string> = {
   rental_car: "Rental Car",
   activity: "Activity",
   insurance: "Insurance",
+  package: "Package / Bundle",
 };
 
 const savedSectionComponentTypes: Record<string, string> = {
@@ -2837,6 +2841,7 @@ function getComponentLabel(componentType: string) {
     case "transfer": return "Transfer";
     case "activity": return "Activity";
     case "insurance": return "Insurance";
+    case "package": return "Package / Bundle";
     default: return componentType;
   }
 }
@@ -3699,6 +3704,23 @@ async function updateTrip(formData: FormData) {
   if (!tripUpdates.return_date) throw new Error("Return date is required.");
   if (!tripUpdates.destinations) throw new Error("Destinations are required.");
 
+  if (savedSection === "Trip Overview" && formData.has("trip_packages_json")) {
+    const rawPackages = String(formData.get("trip_packages_json") ?? "[]");
+    const { error: packageSaveError } = await supabase.rpc("save_trip_packages", { p_trip_id: tripId, p_packages: JSON.parse(rawPackages) });
+    if (packageSaveError) throw new Error(packageSaveError.message);
+  }
+  const componentPackageIds = new Map<string, string | null>();
+  async function packageIdFor(componentType: string) {
+    if (componentPackageIds.has(componentType)) return componentPackageIds.get(componentType) ?? null;
+    if (formData.get(`${componentType}_included_in_package`) !== "on") return null;
+    const packageId = String(formData.get(`${componentType}_package_id`) ?? "").trim();
+    const { data: packageRow, error: packageError } = await supabase.from("trip_components").select("id").eq("id", packageId).eq("trip_id", tripId).eq("component_type", "package").maybeSingle();
+    if (packageError || !packageRow) throw new Error("Choose a package saved under this trip's Trip Overview.");
+    componentPackageIds.set(componentType, packageRow.id);
+    return packageRow.id;
+  }
+  if (savedComponentType) await packageIdFor(savedComponentType);
+
   const { error: tripError } = await supabase
     .from("trips")
     .update(tripUpdates)
@@ -3866,7 +3888,8 @@ async function updateTrip(formData: FormData) {
     detailTable: string,
     detailPayload: Record<string, unknown>,
   ) {
-    if (!hasAnyValue) return;
+    if (!shouldSaveComponent(componentType) || (!hasAnyValue && formData.get(`${componentType}_included_in_package`) !== "on")) return;
+    componentPayload.package_id = await packageIdFor(componentType);
 
     const { data: existingComponent, error: existingComponentError } =
       await supabase
@@ -4226,7 +4249,7 @@ async function updateTrip(formData: FormData) {
     airAirlineLocator ||
     airConfirmationNumber;
 
-  if (shouldSaveComponent("air") && hasAnyAirValue) {
+  if (shouldSaveComponent("air") && (hasAnyAirValue || formData.get("air_included_in_package") === "on")) {
     const { data: existingAirComponent, error: existingAirComponentError } =
       await supabase
         .from("trip_components")
@@ -4240,6 +4263,7 @@ async function updateTrip(formData: FormData) {
     let componentId: string;
 
     const componentPayload = {
+      package_id: await packageIdFor("air"),
       supplier_id: airSupplierId,
       display_name: airSupplierName || "Air",
       supplier_name: airSupplierName || outboundCarrier || returnCarrier || null,
@@ -5012,16 +5036,13 @@ async function updateTrip(formData: FormData) {
 
   const { data: savedTripComponents, error: savedTripComponentsError } = await supabase
     .from("trip_components")
-    .select("component_type, total_price")
+    .select("component_type, total_price, package_id")
     .eq("trip_id", tripId)
     .in("component_type", billableTripComponentTypes);
 
   if (savedTripComponentsError) throw new Error(savedTripComponentsError.message);
 
-  const componentTotal = (savedTripComponents ?? []).reduce(
-    (sum, component) => sum + Number(component.total_price ?? 0),
-    0,
-  );
+  const componentTotal = sumBillableComponents(savedTripComponents ?? []);
   const calculatedTripTotal = roundMoney(componentTotal + planningFee);
 
   const { data: savedTripLedgerEntries, error: savedTripLedgerError } = await supabase
@@ -5077,6 +5098,7 @@ async function updateTrip(formData: FormData) {
 
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}`);
+  revalidatePath(`/trips/${tripId}/summary`);
   revalidatePath("/admin/trips");
   redirect(`/admin/trips/${tripId}?saved=${encodeURIComponent(savedSection)}#${getSavedSectionAnchor(savedSection)}`);
 }
@@ -5957,6 +5979,13 @@ export default async function AdminTripEditorPage({
   const rentalCar = await loadComponent("rental_car", "rental_car_components");
   const activity = await loadComponent("activity", "activity_components");
   const insurance = await loadComponent("insurance", "insurance_components");
+  const { data: packageRows, error: packageError } = await supabase.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "package").order("created_at");
+  if (packageError) throw new Error(packageError.message);
+  const tripPackages = (packageRows ?? []) as TripPackageRecord[];
+  const packageMemberCounts: Record<string, number> = {};
+  for (const component of [hotel.component, air.component, cruise.component, transfer.component, rentalCar.component, activity.component, insurance.component]) {
+    if (component?.package_id) packageMemberCounts[component.package_id] = (packageMemberCounts[component.package_id] ?? 0) + 1;
+  }
 
   let outboundSegment: any = null;
   let outboundConnectionSegments: any[] = [];
@@ -6298,6 +6327,7 @@ export default async function AdminTripEditorPage({
   const hasInsuranceComponent = hasMeaningfulTripComponent("insurance", insurance.component, insurance.details);
 
   const tripComponentSummaries = [
+    ...tripPackages.map((component) => ({ label: component.display_name || "Package", component, isActive: true })),
     { label: "Hotel", component: hotel.component, isActive: hasHotelComponent },
     { label: "Air", component: air.component, isActive: hasAirComponent },
     { label: "Cruise", component: cruise.component, isActive: hasCruiseComponent },
@@ -6310,10 +6340,7 @@ export default async function AdminTripEditorPage({
   const activeTripComponents = tripComponentSummaries.filter(
     (summary) => summary.isActive,
   );
-  const componentPriceTotal = activeTripComponents.reduce(
-    (sum, summary) => sum + Number(summary.component?.total_price ?? 0),
-    0,
-  );
+  const componentPriceTotal = sumBillableComponents(activeTripComponents.map((summary) => summary.component));
   const proposalPlanningFee = Number(proposal?.planning_fee ?? 0);
   const calculatedProposalTotal = roundMoney(componentPriceTotal + proposalPlanningFee);
   const componentsWithConfirmations = activeTripComponents.filter(
@@ -7572,11 +7599,13 @@ export default async function AdminTripEditorPage({
             )}
           </div>
 
+          <PackagePricingEditor key={JSON.stringify(tripPackages)} packages={tripPackages} suppliers={supplierRows} memberCounts={packageMemberCounts} tripId={trip.id} />
           <SectionSaveButton label="Trip Overview" />
         </CollapsibleSection>
 
         <span id="hotel-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Hotel Component" badge={hasHotelComponent ? "Added" : "Missing"} tone={hasHotelComponent ? "good" : "warning"} />}>
+          <ComponentPackageControl componentType="hotel" packages={tripPackages} defaultPackageId={hotel.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={hotel.component?.id ?? ""}
@@ -7587,7 +7616,7 @@ export default async function AdminTripEditorPage({
               hotel.component?.supplier_name ??
               "Hotel"
             } Commission`}
-            grossBookingAmount={hotel.component?.total_price ?? 0}
+            grossBookingAmount={hotel.component?.package_id ? 0 : hotel.component?.total_price ?? 0}
             fullCommissionAmount={hotel.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="hotel" disabled={!hotel.component} />
@@ -7736,13 +7765,14 @@ export default async function AdminTripEditorPage({
 
         <span id="air-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Air Component" badge={hasAirComponent ? "Added" : "Missing"} tone={hasAirComponent ? "good" : "neutral"} />}>
+          <ComponentPackageControl componentType="air" packages={tripPackages} defaultPackageId={air.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={air.component?.id ?? ""}
             supplierId={air.component?.supplier_id ?? ""}
             bookingNumber={air.component?.confirmation_number ?? ""}
             commissionName={`${air.component?.supplier_name ?? "Air"} Commission`}
-            grossBookingAmount={air.component?.total_price ?? 0}
+            grossBookingAmount={air.component?.package_id ? 0 : air.component?.total_price ?? 0}
             fullCommissionAmount={air.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="air" disabled={!air.component} />
@@ -8029,6 +8059,7 @@ export default async function AdminTripEditorPage({
 
         <span id="cruise-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Cruise Component" badge={hasCruiseComponent ? "Added" : "Missing"} tone={hasCruiseComponent ? "good" : "neutral"} />}>
+          <ComponentPackageControl componentType="cruise" packages={tripPackages} defaultPackageId={cruise.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={cruise.component?.id ?? ""}
@@ -8040,7 +8071,7 @@ export default async function AdminTripEditorPage({
               cruise.component?.supplier_name ??
               "Cruise"
             } Commission`}
-            grossBookingAmount={cruise.component?.total_price ?? 0}
+            grossBookingAmount={cruise.component?.package_id ? 0 : cruise.component?.total_price ?? 0}
             fullCommissionAmount={cruise.component?.commission_admin_only ?? 0}
           />
           <AiWritingToolButton componentType="cruise" disabled={!cruise.component} />
@@ -8298,6 +8329,7 @@ export default async function AdminTripEditorPage({
 
         <span id="transfer-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Transfer Component" badge={hasTransferComponent ? "Added" : "Missing"} tone={hasTransferComponent ? "good" : "neutral"} />}>
+          <ComponentPackageControl componentType="transfer" packages={tripPackages} defaultPackageId={transfer.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={transfer.component?.id ?? ""}
@@ -8308,7 +8340,7 @@ export default async function AdminTripEditorPage({
               transfer.component?.supplier_name ??
               "Transfer"
             } Commission`}
-            grossBookingAmount={transfer.component?.total_price ?? 0}
+            grossBookingAmount={transfer.component?.package_id ? 0 : transfer.component?.total_price ?? 0}
             fullCommissionAmount={
               transfer.details?.commission_amount ??
               transfer.component?.commission_admin_only ??
@@ -8501,6 +8533,7 @@ export default async function AdminTripEditorPage({
 
         <span id="rental_car-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Rental Car Component" badge={hasRentalCarComponent ? "Added" : "Missing"} tone={hasRentalCarComponent ? "good" : "neutral"} />}>
+          <ComponentPackageControl componentType="rental_car" packages={tripPackages} defaultPackageId={rentalCar.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={rentalCar.component?.id ?? ""}
@@ -8511,7 +8544,7 @@ export default async function AdminTripEditorPage({
               rentalCar.component?.supplier_name ??
               "Rental Car"
             } Commission`}
-            grossBookingAmount={rentalCar.component?.total_price ?? 0}
+            grossBookingAmount={rentalCar.component?.package_id ? 0 : rentalCar.component?.total_price ?? 0}
             fullCommissionAmount={
               rentalCar.details?.commission_amount ??
               rentalCar.component?.commission_admin_only ??
@@ -8693,6 +8726,7 @@ export default async function AdminTripEditorPage({
 
         <span id="activity-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Activity Component" badge={hasActivityComponent ? "Added" : "Missing"} tone={hasActivityComponent ? "good" : "neutral"} />}>
+          <ComponentPackageControl componentType="activity" packages={tripPackages} defaultPackageId={activity.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={activity.component?.id ?? ""}
@@ -8703,7 +8737,7 @@ export default async function AdminTripEditorPage({
               activity.component?.supplier_name ??
               "Activity"
             } Commission`}
-            grossBookingAmount={activity.component?.total_price ?? 0}
+            grossBookingAmount={activity.component?.package_id ? 0 : activity.component?.total_price ?? 0}
             fullCommissionAmount={
               activity.details?.commission_amount ??
               activity.component?.commission_admin_only ??
@@ -8887,6 +8921,7 @@ export default async function AdminTripEditorPage({
 
         <span id="insurance-component" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Insurance Component" badge={hasInsuranceComponent ? "Added" : "Missing"} tone={hasInsuranceComponent ? "good" : "warning"} />}>
+          <ComponentPackageControl componentType="insurance" packages={tripPackages} defaultPackageId={insurance.component?.package_id} />
           <ComponentCommissionLink
             tripId={trip.id}
             componentId={insurance.component?.id ?? ""}
@@ -8902,7 +8937,7 @@ export default async function AdminTripEditorPage({
               insurance.component?.supplier_name ??
               "Insurance"
             } Commission`}
-            grossBookingAmount={insurance.component?.total_price ?? 0}
+            grossBookingAmount={insurance.component?.package_id ? 0 : insurance.component?.total_price ?? 0}
             fullCommissionAmount={
               insurance.details?.commission_amount ??
               insurance.component?.commission_admin_only ??
@@ -9338,7 +9373,7 @@ export default async function AdminTripEditorPage({
                 {formatMoney(calculatedProposalTotal)}
               </p>
               <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.45 }}>
-                Component prices ({formatMoney(componentPriceTotal)}) plus planning fee ({formatMoney(proposalPlanningFee)}). This total is calculated automatically.
+                Package prices and separately priced components ({formatMoney(componentPriceTotal)}) plus planning fee ({formatMoney(proposalPlanningFee)}). This total is calculated automatically.
               </p>
             </div>
 

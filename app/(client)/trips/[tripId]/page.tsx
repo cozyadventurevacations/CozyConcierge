@@ -1,3 +1,5 @@
+import { sumBillableComponents, includedPackageName, type TripPackageRecord } from "@/lib/trip-pricing";
+import { PackageSummary } from "@/components/trips/package-summary";
 import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -42,6 +44,7 @@ function roundMoney(value: number) {
 }
 
 const billableTripComponentTypes = [
+  "package",
   "hotel",
   "air",
   "cruise",
@@ -829,7 +832,7 @@ async function recalculateTripPaymentTotals(
   ] = await Promise.all([
     supabase
       .from("trip_components" as any)
-      .select("component_type, total_price")
+      .select("component_type, total_price, package_id")
       .eq("trip_id", tripId)
       .in("component_type", billableTripComponentTypes),
     supabase
@@ -847,10 +850,7 @@ async function recalculateTripPaymentTotals(
   if (proposalError) throw new Error(proposalError.message);
   if (ledgerError) throw new Error(ledgerError.message);
 
-  const componentTotal = (components ?? []).reduce(
-    (sum, component) => sum + Number(component.total_price ?? 0),
-    0,
-  );
+  const componentTotal = sumBillableComponents(components ?? []);
   const planningFee = Number(proposal?.planning_fee ?? 0);
   const calculatedTripTotal = roundMoney(componentTotal + planningFee);
 
@@ -1113,6 +1113,7 @@ export default async function TripDetailPage({
     rentalCarResult,
     activityResult,
     insuranceResult,
+    packagesResult,
   ] = await Promise.all([
     supabaseAdmin.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
     supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
@@ -1128,7 +1129,10 @@ export default async function TripDetailPage({
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "rental_car").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
+    supabaseAdmin.from("trip_components").select("id,display_name,supplier_name,confirmation_number,booking_status,total_price,deposit_amount,deposit_due_date,final_payment_due_date").eq("trip_id", tripId).eq("component_type", "package").order("created_at"),
   ]);
+  if (packagesResult.error) throw new Error(packagesResult.error.message);
+  const tripPackages = (packagesResult.data ?? []) as TripPackageRecord[];
 
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails, insuranceDetails] = await Promise.all([
     airResult.data ? supabaseAdmin.from("air_components").select("*").eq("component_id", airResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
@@ -1263,6 +1267,7 @@ export default async function TripDetailPage({
     });
 
   const hotel = hotelResult.data && hotelDetails.data ? {
+    packageName: includedPackageName(hotelResult.data, tripPackages),
     name: hotelDetails.data.hotel_name ?? null, address: hotelDetails.data.hotel_address ?? null,
     stars: hotelDetails.data.hotel_star_rating ?? null, checkIn: hotelDetails.data.check_in_date ?? null,
     checkOut: hotelDetails.data.check_out_date ?? null, roomCategory: hotelDetails.data.room_category ?? null,
@@ -1289,6 +1294,7 @@ export default async function TripDetailPage({
     .map(mapFlightSegment);
 
   const flight = airResult.data && airDetails.data ? {
+    packageName: includedPackageName(airResult.data, tripPackages),
     flightType: airDetails.data.flight_type ?? null,
     supplier: airResult.data.supplier_name ?? outboundSegment?.carrier ?? null,
     travelerCount: airDetails.data.traveler_count ?? null, rateClass: airDetails.data.rate_class ?? null,
@@ -1301,6 +1307,7 @@ export default async function TripDetailPage({
   } : null;
 
   const cruise = cruiseResult.data && cruiseDetails.data ? {
+    packageName: includedPackageName(cruiseResult.data, tripPackages),
     cruiseLine: cruiseDetails.data.cruise_line ?? null, shipName: cruiseDetails.data.ship_name ?? null,
     sailingDate: cruiseDetails.data.sailing_date ?? null, returnDate: cruiseDetails.data.return_date ?? null,
     departurePort: cruiseDetails.data.departure_port ?? null, arrivalPort: cruiseDetails.data.arrival_port ?? null,
@@ -1311,6 +1318,7 @@ export default async function TripDetailPage({
   } : null;
 
   const transfer = transferResult.data && transferDetails.data ? {
+    packageName: includedPackageName(transferResult.data, tripPackages),
     supplier: transferResult.data.supplier_name ?? transferDetails.data.supplier_name ?? null,
     pickupDatetime: transferDetails.data.pickup_datetime ?? null,
     passengerCount: transferDetails.data.passenger_count ?? null,
@@ -1324,6 +1332,7 @@ export default async function TripDetailPage({
   } : null;
 
   const rentalCar = rentalCarResult.data && rentalCarDetails.data ? {
+    packageName: includedPackageName(rentalCarResult.data, tripPackages),
     supplier: rentalCarResult.data.supplier_name ?? null,
     company: rentalCarDetails.data.rental_company ?? null,
     pickupDatetime: rentalCarDetails.data.pickup_datetime ?? null,
@@ -1339,6 +1348,7 @@ export default async function TripDetailPage({
   } : null;
 
   const activity = activityResult.data && activityDetails.data ? {
+    packageName: includedPackageName(activityResult.data, tripPackages),
     name: activityDetails.data.activity_name ?? null, supplier: activityResult.data.supplier_name ?? null,
     datetime: activityDetails.data.activity_datetime ?? null, location: activityDetails.data.location ?? null,
     participantCount: activityDetails.data.participant_count ?? null, notes: activityDetails.data.activity_notes ?? null,
@@ -1349,6 +1359,7 @@ export default async function TripDetailPage({
   const selectedInsuranceOptionNumber = getSelectedInsuranceOptionNumber(insuranceDetails.data, insuranceResult.data?.booking_status);
   const insuranceQuoteOptions = getVisibleInsuranceQuoteOptions(insuranceDetails.data, insuranceResult.data?.booking_status);
   const insurance = insuranceResult.data && insuranceDetails.data ? {
+    packageName: includedPackageName(insuranceResult.data, tripPackages),
     provider: insuranceDetails.data.provider_name ?? null, planName: insuranceDetails.data.plan_name ?? null,
     quoteOptions: insuranceQuoteOptions,
     selectedOptionNumber: selectedInsuranceOptionNumber,
@@ -1362,15 +1373,8 @@ export default async function TripDetailPage({
     bookingStatus: insuranceResult.data.booking_status ?? null,
   } : null;
 
-  const componentPriceTotal = [
-    hotelResult.data?.total_price,
-    airResult.data?.total_price,
-    cruiseResult.data?.total_price,
-    transferResult.data?.total_price,
-    rentalCarResult.data?.total_price,
-    activityResult.data?.total_price,
-    insuranceResult.data?.total_price,
-  ].reduce((sum, value) => sum + Number(value ?? 0), 0);
+  const pricingComponents = [hotelResult.data, airResult.data, cruiseResult.data, transferResult.data, rentalCarResult.data, activityResult.data, insuranceResult.data];
+  const componentPriceTotal = sumBillableComponents([...pricingComponents, ...tripPackages]);
   const calculatedTripTotal = roundMoney(
     componentPriceTotal + Number(proposalResult.data?.planning_fee ?? 0),
   );
@@ -1459,7 +1463,7 @@ export default async function TripDetailPage({
                 <h3 style={{ margin: 0 }}>{option.planName || `Plan ${option.optionNumber}`}</h3>
                 {selectedInsuranceOptionNumber ? <strong style={{ color: "#166534" }}>Selected plan</strong> : null}
                 <p style={{ margin: 0 }}>{option.providerName}</p>
-                <p style={{ margin: 0, fontWeight: 900 }}>Quoted premium: {fmtMoney(option.premiumAmount)}</p>
+                <p style={{ margin: 0, fontWeight: 900 }}>{insurance.packageName ? `Included in ${insurance.packageName}` : `Quoted premium: ${fmtMoney(option.premiumAmount)}`}</p>
                 {option.coverageDescription ? <p className="preserve-formatting" style={{ margin: 0, lineHeight: 1.5 }}>{option.coverageDescription}</p> : null}
                 {option.brochureUrl ? <a className="btn btn-outline" href={option.brochureUrl} target="_blank" rel="noreferrer">View flyer</a> : null}
                 {isPrimaryClient && !selectedInsuranceOptionNumber && !isInsuranceBooked(insurance.bookingStatus) && insurance.bookingStatus !== "cancelled" ? (
@@ -1478,6 +1482,7 @@ export default async function TripDetailPage({
       ) : null}
 
       <TripDetailClient
+        packageSummary={<PackageSummary packages={tripPackages} members={pricingComponents.filter(Boolean)} />}
         trip={tripForClient}
         proposal={proposalForClient}
         clientNote={clientNoteResult.data ?? null}

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { sumBillableComponents } from "@/lib/trip-pricing";
 
 type SupplierDetail = {
   id: string;
@@ -33,6 +34,7 @@ type TripComponentRow = {
   supplier_name: string | null;
   booking_status: string | null;
   total_price: number | null;
+  package_id: string | null;
   confirmation_number: string | null;
   deposit_due_date: string | null;
   final_payment_due_date: string | null;
@@ -309,7 +311,7 @@ export default async function SupplierDetailPage({
   const { data: componentData, error: componentError } = await supabase
     .from("trip_components")
     .select(
-      "id, trip_id, component_type, display_name, supplier_name, booking_status, total_price, confirmation_number, deposit_due_date, final_payment_due_date, trips(id, trip_name, destinations, departure_date, return_date)",
+      "id, trip_id, component_type, display_name, supplier_name, booking_status, total_price, package_id, confirmation_number, deposit_due_date, final_payment_due_date, trips(id, trip_name, destinations, departure_date, return_date)",
     )
     .eq("supplier_id", supplierId)
     .order("created_at", { ascending: false });
@@ -332,10 +334,7 @@ export default async function SupplierDetailPage({
   const commissionRows = (commissionData ?? []) as CommissionRow[];
   const phoneRows = (phoneData ?? []) as SupplierPhoneRow[];
 
-  const componentTotal = componentRows.reduce(
-    (sum, component) => sum + Number(component.total_price ?? 0),
-    0,
-  );
+  const componentTotal = sumBillableComponents(componentRows);
 
   const fullCommissionTotal = commissionRows.reduce(
     (sum, commission) => sum + Number(commission.full_commission_amount ?? 0),
@@ -535,7 +534,7 @@ export default async function SupplierDetailPage({
                         <td>{component.component_type}</td>
                         <td>{component.display_name ?? component.supplier_name ?? "Not provided"}</td>
                         <td>{component.booking_status ?? "Not provided"}</td>
-                        <td>{formatMoney(component.total_price)}</td>
+                        <td>{component.package_id ? "Included in package" : formatMoney(component.total_price)}</td>
                         <td>{component.confirmation_number ?? "Not provided"}</td>
                         <td>
                           {formatDate(trip?.departure_date, "")}

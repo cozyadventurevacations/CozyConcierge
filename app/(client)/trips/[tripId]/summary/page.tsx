@@ -1,3 +1,5 @@
+import { sumBillableComponents, type TripPackageRecord } from "@/lib/trip-pricing";
+import { PackageSummary } from "@/components/trips/package-summary";
 import { currentClientAccountId } from "@/lib/auth/client-account-id";
 ﻿/* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from "react";
@@ -137,7 +139,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
     if (memberError || memberAccess?.can_view_trip !== true) redirect("/trips");
   }
 
-  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, rentalCarResult, activityResult, insuranceResult, proposalResult] = await Promise.all([
+  const [tripDocsResult, hotelResult, cruiseResult, airResult, transferResult, rentalCarResult, activityResult, insuranceResult, proposalResult, packagesResult] = await Promise.all([
     supabaseAdmin.from("trip_documents").select("id, file_name, component_type, created_at").eq("trip_id", tripId).in("visibility", ["client", "client_travel_circle"]).order("created_at", { ascending: false }),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "hotel").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "cruise").maybeSingle(),
@@ -147,7 +149,10 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
     supabaseAdmin.from("trip_proposals").select("planning_fee").eq("trip_id", tripId).maybeSingle(),
+    supabaseAdmin.from("trip_components").select("id,display_name,supplier_name,confirmation_number,booking_status,total_price,deposit_amount,deposit_due_date,final_payment_due_date").eq("trip_id", tripId).eq("component_type", "package").order("created_at"),
   ]);
+  if (packagesResult.error) throw new Error(packagesResult.error.message);
+  const tripPackages = (packagesResult.data ?? []) as TripPackageRecord[];
 
   const [hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails] = await Promise.all([
     hotelResult.data ? supabaseAdmin.from("hotel_components").select("*").eq("component_id", hotelResult.data.id).maybeSingle() : Promise.resolve({ data: null }),
@@ -182,15 +187,8 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
   const sharedDocs = tripDocsResult.data ?? [];
   const hasBalance = typeof trip.balance_due === "number" && trip.balance_due > 0;
   const generatedDate = fmtDate(new Date().toISOString());
-  const componentPriceTotal = [
-    hotelResult.data?.total_price,
-    cruiseResult.data?.total_price,
-    airResult.data?.total_price,
-    transferResult.data?.total_price,
-    rentalCarResult.data?.total_price,
-    activityResult.data?.total_price,
-    insuranceResult.data?.total_price,
-  ].reduce((sum, value) => sum + Number(value ?? 0), 0);
+  const pricingComponents = [hotelResult.data, cruiseResult.data, airResult.data, transferResult.data, rentalCarResult.data, activityResult.data, insuranceResult.data];
+  const componentPriceTotal = sumBillableComponents([...pricingComponents, ...tripPackages]);
   const calculatedTripTotal = roundMoney(componentPriceTotal + Number(proposalResult.data?.planning_fee ?? 0));
 
   return (
@@ -266,6 +264,7 @@ export default async function TripPrintSummaryPage({ params }: { params: Promise
           </div>
         </Section>
 
+        <PackageSummary packages={tripPackages} members={pricingComponents.filter(Boolean)} />
         <Section title="Documents Shared By Your Advisor" subtitle="Files listed here are available in your Cozy Concierge trip documents area.">
           {sharedDocs.length > 0 ? (
             <div style={{ display: "grid", gap: 8 }}>

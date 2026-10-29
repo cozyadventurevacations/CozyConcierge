@@ -87,6 +87,7 @@ type TimelineGroup = {
 };
 
 type HotelData = {
+  packageName: string | null;
   name: string | null;
   address: string | null;
   stars: string | number | null;
@@ -103,6 +104,7 @@ type HotelData = {
 } | null;
 
 type FlightData = {
+  packageName: string | null;
   flightType: string | null;
   supplier: string | null;
   travelerCount: number | null;
@@ -146,6 +148,7 @@ type FlightData = {
 } | null;
 
 type CruiseData = {
+  packageName: string | null;
   cruiseLine: string | null;
   shipName: string | null;
   sailingDate: string | null;
@@ -163,6 +166,7 @@ type CruiseData = {
 } | null;
 
 type TransferData = {
+  packageName: string | null;
   supplier: string | null;
   pickupDatetime: string | null;
   passengerCount: number | null;
@@ -176,6 +180,7 @@ type TransferData = {
 } | null;
 
 type RentalCarData = {
+  packageName: string | null;
   supplier: string | null;
   company: string | null;
   pickupDatetime: string | null;
@@ -191,6 +196,7 @@ type RentalCarData = {
 } | null;
 
 type ActivityData = {
+  packageName: string | null;
   name: string | null;
   supplier: string | null;
   datetime: string | null;
@@ -203,6 +209,7 @@ type ActivityData = {
 } | null;
 
 type InsuranceData = {
+  packageName: string | null;
   provider: string | null;
   planName: string | null;
   quoteOptions: InsuranceQuoteOption[];
@@ -227,6 +234,7 @@ type InsuranceQuoteOption = {
 };
 
 type TripDetailClientProps = {
+  packageSummary?: ReactNode;
   trip: TripRow;
   proposal: ProposalRow | null;
   clientNote: TripNoteRow | null;
@@ -450,8 +458,8 @@ function InfoItem({ label, value }: { label: string; value: string | number | nu
   );
 }
 
-function PriceItem({ label, value }: { label: string; value: number | null | undefined }) {
-  return <InfoItem label={label} value={fmtMoney(value)} />;
+function PriceItem({ label, value, packageName }: { label: string; value: number | null | undefined; packageName?: string | null }) {
+  return <InfoItem label={label} value={packageName ? `Included in ${packageName}` : fmtMoney(value)} />;
 }
 
 function getComponentTypeLabel(componentType: string | null | undefined) {
@@ -463,6 +471,7 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
     rental_car: "Rental Car",
     activity: "Activity",
     insurance: "Insurance",
+    package: "Package / Bundle",
   };
 
   return componentType ? labels[componentType] ?? componentType : "General";
@@ -867,7 +876,7 @@ function ProposalDecisionCard({
   );
 }
 
-function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, clientDocuments, tripMembers }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[]; tripMembers: TripMemberRow[] }) {
+function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, clientDocuments, tripMembers, packageSummary }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[]; tripMembers: TripMemberRow[]; packageSummary?: ReactNode }) {
   return (
     <div className="stack">
       {clientReminder && (
@@ -897,6 +906,8 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
 />
 
       <ProposalPaymentDetails trip={trip} />
+
+      {packageSummary}
 
       <SectionCard eyebrow="Overview" title="Trip Details">
         <div className="grid grid-2">
@@ -997,8 +1008,8 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Check-out" value={fmtDate(hotel.checkOut)} />
                   <InfoItem label="Room Category" value={hotel.roomCategory} />
                   <InfoItem label="Confirmation" value={hotel.confirmationNumber} />
-                  <PriceItem label="Nightly Rate" value={hotel.nightlyRate} />
-                  <PriceItem label="Total" value={hotel.totalPrice} />
+                  <PriceItem label="Nightly Rate" value={hotel.nightlyRate} packageName={hotel.packageName} />
+                  <PriceItem label="Total" value={hotel.totalPrice} packageName={hotel.packageName} />
                 </div>
                 {hotel.roomDescription && <InfoItem label="Room Description" value={hotel.roomDescription} />}
                 {hotel.hotelDescription && <InfoItem label="Hotel Description" value={hotel.hotelDescription} />}
@@ -1015,7 +1026,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Rate Class" value={flight.rateClass} />
                   <InfoItem label="Locator" value={flight.airlineLocator} />
                   <InfoItem label="Confirmation" value={flight.confirmationNumber} />
-                  <PriceItem label="Total" value={flight.totalPrice} />
+                  <PriceItem label="Total" value={flight.totalPrice} packageName={flight.packageName} />
                 </div>
                 {(flight.outboundSegments?.length ? flight.outboundSegments : flight.outbound ? [flight.outbound] : []).map((segment, index) => (
                   <div key={`outbound-${index}`} className="card stack" style={{ background: "#f7fbfc" }}>
@@ -1064,7 +1075,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Cabin Category" value={cruise.cabinCategory} />
                   <InfoItem label="Cabin Number" value={cruise.cabinNumber} />
                   <InfoItem label="Dining" value={cruise.diningSeating} />
-                  <PriceItem label="Total" value={cruise.totalPrice} />
+                  <PriceItem label="Total" value={cruise.totalPrice} packageName={cruise.packageName} />
                 </div>
                 {cruise.description && <InfoItem label="Description" value={cruise.description} />}
               </Collapsible>
@@ -1081,7 +1092,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Dropoff" value={transfer.dropoffLocation} />
                   <InfoItem label="Vehicle" value={transfer.vehicleType} />
                   <InfoItem label="Confirmation" value={transfer.confirmationNumber} />
-                  <PriceItem label="Total" value={transfer.totalPrice} />
+                  <PriceItem label="Total" value={transfer.totalPrice} packageName={transfer.packageName} />
                 </div>
                 {transfer.notes && <InfoItem label="Notes" value={transfer.notes} />}
               </Collapsible>
@@ -1099,7 +1110,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Vehicle Class" value={rentalCar.vehicleClass} />
                   <InfoItem label="Drivers" value={rentalCar.driverCount} />
                   <InfoItem label="Confirmation" value={rentalCar.confirmationNumber} />
-                  <PriceItem label="Total" value={rentalCar.totalPrice} />
+                  <PriceItem label="Total" value={rentalCar.totalPrice} packageName={rentalCar.packageName} />
                 </div>
                 {rentalCar.notes && <InfoItem label="Notes" value={rentalCar.notes} />}
               </Collapsible>
@@ -1115,7 +1126,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <InfoItem label="Location" value={activity.location} />
                   <InfoItem label="Participants" value={activity.participantCount} />
                   <InfoItem label="Confirmation" value={activity.confirmationNumber} />
-                  <PriceItem label="Total" value={activity.totalPrice} />
+                  <PriceItem label="Total" value={activity.totalPrice} packageName={activity.packageName} />
                 </div>
                 {activity.notes && <InfoItem label="Notes" value={activity.notes} />}
               </Collapsible>
@@ -1139,7 +1150,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                         <h3 style={{ margin: 0 }}>{insurance.selectedOptionNumber ? "Selected insurance plan" : `Plan ${option.optionNumber}`}</h3>
                         <InfoItem label="Provider" value={option.providerName} />
                         <InfoItem label="Plan" value={option.planName} />
-                        <PriceItem label="Premium" value={option.premiumAmount} />
+                        <PriceItem label="Premium" value={option.premiumAmount} packageName={insurance.packageName} />
                         {option.brochureUrl ? (
                           <Link className="btn btn-outline" href={option.brochureUrl} target="_blank">
                             View flyer
@@ -1155,7 +1166,7 @@ function ItineraryTab({ timelineGroups, hotel, flight, cruise, transfer, rentalC
                   <div className="grid grid-2">
                     <InfoItem label="Provider" value={insurance.provider} />
                     <InfoItem label="Plan" value={insurance.planName} />
-                    <PriceItem label="Total Premium" value={insurance.totalPrice} />
+                    <PriceItem label="Total Premium" value={insurance.totalPrice} packageName={insurance.packageName} />
                   </div>
                 )}
                 <div className="grid grid-2">
@@ -1494,6 +1505,7 @@ function HelpTab({ tripId, tripName, advisorEmail, agencyWebsite }: { tripId: st
 // ─── Main client component ────────────────────────────────────────────────────
 
 export function TripDetailClient({
+  packageSummary,
   trip,
   proposal,
   clientNote,
@@ -1607,7 +1619,7 @@ export function TripDetailClient({
 
       {/* Tab content */}
       {activeTab === "overview" && (
-        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} />
+        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} packageSummary={packageSummary} />
       )}
       {activeTab === "proposal" && proposal && (
         <ProposalTab

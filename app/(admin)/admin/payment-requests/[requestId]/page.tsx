@@ -1,3 +1,4 @@
+import { sumBillableComponents } from "@/lib/trip-pricing";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
@@ -46,6 +47,7 @@ type PaymentRequestDocument = {
 
 const allowedStatuses = ["new", "sent", "completed", "cancelled", "declined"];
 const billableTripComponentTypes = [
+  "package",
   "hotel",
   "air",
   "cruise",
@@ -154,7 +156,7 @@ async function recalculateTripPaymentTotals(
   ] = await Promise.all([
     supabase
       .from("trip_components" as any)
-      .select("component_type, total_price")
+      .select("component_type, total_price, package_id")
       .eq("trip_id", tripId)
       .in("component_type", billableTripComponentTypes),
     supabase
@@ -180,10 +182,7 @@ async function recalculateTripPaymentTotals(
     throw new Error(ledgerError.message);
   }
 
-  const componentTotal = (components ?? []).reduce(
-    (sum, component) => sum + Number(component.total_price ?? 0),
-    0,
-  );
+  const componentTotal = sumBillableComponents(components ?? []);
   const planningFee = Number(proposal?.planning_fee ?? 0);
   const calculatedTripTotal = roundMoney(componentTotal + planningFee);
 

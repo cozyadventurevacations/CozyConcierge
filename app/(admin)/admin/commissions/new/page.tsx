@@ -39,6 +39,7 @@ function getComponentTypeLabel(componentType: string | null | undefined) {
     rental_car: "Rental Car",
     activity: "Activity",
     insurance: "Insurance",
+    package: "Package / Bundle",
   };
 
   return componentType ? labels[componentType] ?? componentType : "Trip Component";
