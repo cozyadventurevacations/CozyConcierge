@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { PageShell } from "@/components/layout/page-shell";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { encryptBuffer } from "@/lib/encryption";
+import { HostPaylinkEditor } from "@/components/payments/host-paylink-editor";
 
 type PaymentRequestDetail = {
   id: string;
@@ -13,6 +14,7 @@ type PaymentRequestDetail = {
   requested_at: string | null;
   completed_at: string | null;
   client_message: string | null;
+  payment_link_url: string | null;
   trip_id: string;
   client_account_id: string;
   trips:
@@ -23,6 +25,13 @@ type PaymentRequestDetail = {
         final_payment_due_date: string | null;
         trip_status: string | null;
       }[]
+    | {
+        id: string;
+        trip_name: string | null;
+        balance_due: number | null;
+        final_payment_due_date: string | null;
+        trip_status: string | null;
+      }
     | null;
   client_accounts:
     | {
@@ -31,6 +40,12 @@ type PaymentRequestDetail = {
         email: string | null;
         phone_primary: string | null;
       }[]
+    | {
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        phone_primary: string | null;
+      }
     | null;
 };
 
@@ -618,14 +633,18 @@ async function updatePaymentRequestStatus(formData: FormData) {
   revalidatePath(`/admin/payment-requests/${requestId}`);
   revalidatePath(`/admin/trips/${existingRequest.trip_id}`);
   revalidatePath(`/trips/${existingRequest.trip_id}`);
+  revalidatePath(`/trips/${existingRequest.trip_id}/request-payment`);
 }
 
 export default async function AdminPaymentRequestDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ requestId: string }>;
+  searchParams: Promise<{ paylink?: string }>;
 }) {
   const { requestId } = await params;
+  const { paylink } = await searchParams;
   const { supabase } = await requireAdmin();
 
   if (!requestId || requestId === "undefined") {
@@ -655,6 +674,7 @@ export default async function AdminPaymentRequestDetailPage({
       requested_at,
       completed_at,
       client_message,
+      payment_link_url,
       trip_id,
       client_account_id,
       trips!payment_requests_trip_id_fkey (
@@ -692,8 +712,8 @@ export default async function AdminPaymentRequestDetailPage({
   }
 
   const request = data as PaymentRequestDetail;
-  const trip = request.trips?.[0] ?? null;
-  const client = request.client_accounts?.[0] ?? null;
+  const trip = Array.isArray(request.trips) ? request.trips[0] ?? null : request.trips;
+  const client = Array.isArray(request.client_accounts) ? request.client_accounts[0] ?? null : request.client_accounts;
   const { data: paymentDocumentsData, error: paymentDocumentsError } = await supabase
     .from("trip_documents")
     .select("id, file_name, storage_path, mime_type, file_size_bytes, payment_document_type, is_encrypted, created_at")
@@ -828,6 +848,9 @@ export default async function AdminPaymentRequestDetailPage({
           <StatusButton requestId={request.id} status="declined" label="Mark Declined" />
         </div>
       </div>
+
+      {paylink === "saved" || paylink === "removed" ? <p role="status" className="card" style={{ background: "#f0fdf4", color: "#166534" }}>{paylink === "saved" ? "Paylink saved and available in the client's trip. No payment has been recorded." : "Paylink removed from the client's trip."}</p> : null}
+      <HostPaylinkEditor key={`${request.payment_link_url}:${request.status}`} requestId={request.id} url={request.payment_link_url} status={request.status} />
 
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Payment Documents</h2>

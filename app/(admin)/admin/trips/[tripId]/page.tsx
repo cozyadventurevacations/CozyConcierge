@@ -9057,6 +9057,12 @@ export default async function AdminTripEditorPage({
 
         <span id="trip-payments" className="admin-trip-anchor" />
         <CollapsibleSection title={<SectionTitleWithBadge title="Payments & Adjustments" badge={`${tripPaymentLedgerRows.length} entries`} tone={tripPaymentLedgerRows.length > 0 ? "good" : "neutral"} />}>
+          <div className="card stack" style={{ background: "#f7fbfc" }}>
+            <h3 style={{ margin: 0 }}>Host Agency Paylinks</h3>
+            <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>Share a secure payment link provided by your host agency. The main client opens it from their trip, and enters card details on the host&apos;s website.</p>
+            <Link href={`/admin/trips/${trip.id}/paylink`} className="btn btn-primary" style={{ alignSelf: "flex-start" }}>Add Host Paylink</Link>
+            <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>To replace or remove a link, open its payment request below.</p>
+          </div>
           <div className="grid grid-3">
             <div className="card">
               <span className="label">Total Paid</span>
@@ -9270,7 +9276,7 @@ export default async function AdminTripEditorPage({
                           <td>{formatDate(request.completed_at, "Not completed")}</td>
                           <td>
                             <Link href={`/admin/payment-requests/${request.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "5px 12px", whiteSpace: "nowrap" }}>
-                              View Documents
+                              Manage Paylink &amp; Documents
                             </Link>
                           </td>
                         </tr>

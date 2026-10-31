@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { HostPaymentLinks } from "@/components/payments/host-payment-links";
 
 type TripRow = {
   id: string;
@@ -29,6 +30,7 @@ type PaymentRequestRow = {
   requested_payment_date: string | null;
   status: string | null;
   created_at: string | null;
+  payment_link_url: string | null;
 };
 
 function formatMoney(value: number | null | undefined, fallback = "$0.00") {
@@ -320,11 +322,10 @@ export default async function RequestPaymentPage({
   const { data: recentPaymentRequests, error: paymentRequestsError } =
     await supabase
       .from("payment_requests")
-      .select("id, requested_amount, requested_payment_date, status, created_at")
+      .select("id, requested_amount, requested_payment_date, status, created_at, payment_link_url")
       .eq("trip_id", tripId)
       .eq("client_account_id", clientAccount.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
+      .order("created_at", { ascending: false });
 
   const tripRow = trip as TripRow;
   const paymentRequestRows =
@@ -338,8 +339,8 @@ export default async function RequestPaymentPage({
 
   return (
     <PageShell
-      title="Request Payment Link"
-      subtitle="Submit a secure payment link request for this trip."
+      title="Payments & Paylinks"
+      subtitle="Open a secure payment link or request one from your advisor."
     >
       <div
         className="card stack"
@@ -390,9 +391,11 @@ export default async function RequestPaymentPage({
             color: "#166534",
           }}
         >
-          <strong>Payment request received.</strong> Your advisor will review it and send the proper secure payment link.
+          <strong>Payment request received.</strong> Your advisor will review it and share the host&apos;s paylink here when it is ready.
         </div>
       ) : null}
+
+      <HostPaymentLinks requests={paymentRequestRows} />
 
       <div className="grid grid-3">
         <InfoCard

@@ -234,6 +234,7 @@ type InsuranceQuoteOption = {
 };
 
 type TripDetailClientProps = {
+  paymentLinksSummary?: ReactNode;
   packageSummary?: ReactNode;
   trip: TripRow;
   proposal: ProposalRow | null;
@@ -876,7 +877,7 @@ function ProposalDecisionCard({
   );
 }
 
-function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, clientDocuments, tripMembers, packageSummary }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[]; tripMembers: TripMemberRow[]; packageSummary?: ReactNode }) {
+function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, clientDocuments, tripMembers, packageSummary, paymentLinksSummary }: { trip: TripRow; proposal: ProposalRow | null; clientNote: TripNoteRow | null; clientReminder: TripNoteRow | null; documents: DocumentRow[]; clientDocuments: ClientDocumentRow[]; tripMembers: TripMemberRow[]; packageSummary?: ReactNode; paymentLinksSummary?: ReactNode }) {
   return (
     <div className="stack">
       {clientReminder && (
@@ -906,6 +907,8 @@ function OverviewTab({ trip, proposal, clientNote, clientReminder, documents, cl
 />
 
       <ProposalPaymentDetails trip={trip} />
+
+      {paymentLinksSummary}
 
       {packageSummary}
 
@@ -1505,6 +1508,7 @@ function HelpTab({ tripId, tripName, advisorEmail, agencyWebsite }: { tripId: st
 // ─── Main client component ────────────────────────────────────────────────────
 
 export function TripDetailClient({
+  paymentLinksSummary,
   packageSummary,
   trip,
   proposal,
@@ -1555,7 +1559,7 @@ export function TripDetailClient({
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <Link href={`/trips/${trip.id}/documents`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Documents</Link>
           <Link href="/messages" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Messages</Link>
-          <Link href={`/trips/${trip.id}/request-payment`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Request Payment Link</Link>
+          <Link href={`/trips/${trip.id}/request-payment`} className="btn btn-primary" style={{ fontSize: 13, padding: "8px 14px" }}>Payments &amp; Paylinks</Link>
           <Link href={`/trips/${trip.id}/summary`} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Print Summary</Link>
           <Link href={`/ask-cozy?tripId=${trip.id}`} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>Ask Cozy</Link>
           <Link href="/trips" className="btn btn-outline" style={{ fontSize: 13, padding: "8px 14px" }}>← My Trips</Link>
@@ -1619,7 +1623,7 @@ export function TripDetailClient({
 
       {/* Tab content */}
       {activeTab === "overview" && (
-        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} packageSummary={packageSummary} />
+        <OverviewTab trip={trip} proposal={proposal} clientNote={clientNote} clientReminder={clientReminder} documents={documents} clientDocuments={clientDocuments} tripMembers={tripMembers} packageSummary={packageSummary} paymentLinksSummary={paymentLinksSummary} />
       )}
       {activeTab === "proposal" && proposal && (
         <ProposalTab

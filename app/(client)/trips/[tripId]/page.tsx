@@ -1,5 +1,6 @@
 import { sumBillableComponents, includedPackageName, type TripPackageRecord } from "@/lib/trip-pricing";
 import { PackageSummary } from "@/components/trips/package-summary";
+import { HostPaymentLinks } from "@/components/payments/host-payment-links";
 import { currentClientAccountId } from "@/lib/auth/client-account-id";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -1114,6 +1115,7 @@ export default async function TripDetailPage({
     activityResult,
     insuranceResult,
     packagesResult,
+    paymentLinksResult,
   ] = await Promise.all([
     supabaseAdmin.from("trip_proposals").select("*").eq("trip_id", tripId).maybeSingle(),
     supabaseAdmin.from("trip_notes").select("*").eq("trip_id", tripId).eq("note_type", "client").maybeSingle(),
@@ -1130,8 +1132,10 @@ export default async function TripDetailPage({
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "activity").maybeSingle(),
     supabaseAdmin.from("trip_components").select("*").eq("trip_id", tripId).eq("component_type", "insurance").maybeSingle(),
     supabaseAdmin.from("trip_components").select("id,display_name,supplier_name,confirmation_number,booking_status,total_price,deposit_amount,deposit_due_date,final_payment_due_date").eq("trip_id", tripId).eq("component_type", "package").order("created_at"),
+    supabase.from("payment_requests").select("id,status,requested_amount,requested_payment_date,payment_link_url").eq("trip_id", tripId).eq("client_account_id", clientAccount.id).eq("status", "sent").not("payment_link_url", "is", null).order("created_at", { ascending: false }),
   ]);
   if (packagesResult.error) throw new Error(packagesResult.error.message);
+  if (paymentLinksResult.error) throw new Error(paymentLinksResult.error.message);
   const tripPackages = (packagesResult.data ?? []) as TripPackageRecord[];
 
   const [airDetails, hotelDetails, cruiseDetails, transferDetails, rentalCarDetails, activityDetails, insuranceDetails] = await Promise.all([
@@ -1482,6 +1486,7 @@ export default async function TripDetailPage({
       ) : null}
 
       <TripDetailClient
+        paymentLinksSummary={<HostPaymentLinks requests={paymentLinksResult.data ?? []} />}
         packageSummary={<PackageSummary packages={tripPackages} members={pricingComponents.filter(Boolean)} />}
         trip={tripForClient}
         proposal={proposalForClient}
